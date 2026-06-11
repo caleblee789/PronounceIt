@@ -5,12 +5,17 @@
   const DEFAULT_CONFIG = {
     enabled: true,
     hotkey: "Mod+P",
+    directClickModifier: "alt",
+    popupClickModifier: "alt",
     allowOnQuestionSide: false,
     answerVisible: false,
+    activationMode: "context_menu",
+    theme: "system",
     showContextMenu: true,
     showSaveButton: true,
     unknownTermMessage: "Pronunciation unavailable",
   };
+  const CONTEXT_LIMIT = 160;
 
   let config = Object.assign({}, DEFAULT_CONFIG, window.PronounceItConfig || {});
   let lastPayload = null;
@@ -38,7 +43,7 @@
     }
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
-    return {
+    return Object.assign({
       text: text,
       rect: {
         left: rect.left,
@@ -48,7 +53,7 @@
         width: rect.width,
         height: rect.height,
       },
-    };
+    }, contextFromSelectionRange(range, text));
   }
 
   function wordAtPoint(x, y) {
@@ -61,14 +66,14 @@
     }
 
     const text = range.startContainer.textContent || "";
-    const word = extractTermAtOffset(text, range.startOffset);
-    if (!word) {
+    const span = extractTermSpanAtOffset(text, range.startOffset);
+    if (!span) {
       return null;
     }
 
     const rect = range.getBoundingClientRect();
-    return {
-      text: word,
+    return Object.assign({
+      text: span.text,
       rect: {
         left: rect.left || x,
         top: rect.top || y,
@@ -77,7 +82,7 @@
         width: rect.width || 1,
         height: rect.height || 1,
       },
-    };
+    }, contextFromTextNode(range.startContainer, span.start, span.end));
   }
 
   function termFromElement(element) {
@@ -95,7 +100,7 @@
   }
 
   function normalizedElementText(text) {
-    return String(text || "").replace(/\u00a0/g, " ").trim().replace(/\s+/g, " ");
+    return stripClozeMarkup(text).replace(/\u00a0/g, " ").trim().replace(/\s+/g, " ");
   }
 
   function isPlausibleElementTerm(text) {
@@ -109,7 +114,7 @@
   }
 
   function requestFromTextAndRect(text, rect) {
-    return {
+    return Object.assign({
       text: text,
       rect: {
         left: rect.left || 0,
@@ -119,17 +124,104 @@
         width: rect.width || 1,
         height: rect.height || 1,
       },
-    };
+    }, contextFromText(text, 0, String(text || "").length));
+  }
+
+  function stripClozeMarkup(text) {
+    return String(text || "").replace(/\{\{c\d+::([^{}]*?)(?:::[^{}]*)?\}\}/gi, "$1");
   }
 
   function extractTermAtOffset(text, offset) {
+    const span = extractTermSpanAtOffset(text, offset);
+    return span ? span.text : null;
+  }
+
+  function extractTermSpanAtOffset(text, offset) {
     const safeOffset = Math.max(0, Math.min(offset, text.length));
     const left = text.slice(0, safeOffset);
     const right = text.slice(safeOffset);
     const leftMatch = left.match(/[A-Za-z0-9'\u2010-\u2015-]+$/);
     const rightMatch = right.match(/^[A-Za-z0-9'\u2010-\u2015-]+/);
     const word = ((leftMatch && leftMatch[0]) || "") + ((rightMatch && rightMatch[0]) || "");
-    return /[A-Za-z]/.test(word) ? word : null;
+    if (!/[A-Za-z]/.test(word)) {
+      return null;
+    }
+    const leftLength = leftMatch ? leftMatch[0].length : 0;
+    return {
+      text: word,
+      start: safeOffset - leftLength,
+      end: safeOffset - leftLength + word.length,
+    };
+  }
+
+  function contextFromSelectionRange(range, selected) {
+    if (!range) {
+      return {};
+    }
+    if (
+      range.startContainer &&
+      range.startContainer === range.endContainer &&
+      range.startContainer.nodeType === Node.TEXT_NODE
+    ) {
+      return contextFromTextNode(range.startContainer, range.startOffset, range.endOffset);
+    }
+
+    const element = range.commonAncestorContainer &&
+      (range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+        ? range.commonAncestorContainer.parentElement
+        : range.commonAncestorContainer);
+    const text = normalizedElementText((element && element.textContent) || "");
+    const selectedText = normalizedElementText(selected || "");
+    const offset = selectedText ? text.indexOf(selectedText) : -1;
+    if (offset >= 0) {
+      return contextFromText(text, offset, offset + selectedText.length);
+    }
+    return {};
+  }
+
+  function contextFromTextNode(node, start, end) {
+    const nodeText = (node && node.textContent) || "";
+    const parentContext = contextFromParentText(node, nodeText, start, end);
+    if (parentContext.contextText) {
+      return parentContext;
+    }
+    return contextFromText(nodeText, start, end);
+  }
+
+  function contextFromParentText(node, nodeText, start, end) {
+    let current = node && node.parentElement;
+    let depth = 0;
+    while (current && current !== document.body && depth < 5) {
+      const text = String(current.textContent || "").replace(/\u00a0/g, " ");
+      if (text && text.length <= 1000 && text.length > String(nodeText || "").length) {
+        const nodeOffset = nodeText ? text.indexOf(nodeText) : -1;
+        if (nodeOffset >= 0) {
+          return contextFromText(text, nodeOffset + start, nodeOffset + end);
+        }
+      }
+      current = current.parentElement;
+      depth += 1;
+    }
+    return {};
+  }
+
+  function contextFromText(text, start, end) {
+    const source = String(text || "").replace(/\u00a0/g, " ");
+    if (!source) {
+      return {};
+    }
+    const safeStart = Math.max(0, Math.min(Number(start) || 0, source.length));
+    const safeEnd = Math.max(safeStart, Math.min(Number(end) || safeStart, source.length));
+    const selectedLength = Math.max(0, safeEnd - safeStart);
+    const extra = Math.max(0, CONTEXT_LIMIT - selectedLength);
+    let windowStart = Math.max(0, safeStart - Math.floor(extra / 2));
+    let windowEnd = Math.min(source.length, windowStart + CONTEXT_LIMIT);
+    windowStart = Math.max(0, windowEnd - CONTEXT_LIMIT);
+    return {
+      contextText: source.slice(windowStart, windowEnd),
+      contextOffsetStart: safeStart - windowStart,
+      contextOffsetEnd: safeEnd - windowStart,
+    };
   }
 
   function rangeAtPoint(x, y) {
@@ -190,11 +282,18 @@
     send("lookup", Object.assign({}, request, options || {}));
   }
 
+  function requestAudioOnly(request) {
+    if (!canPronounce() || !request) {
+      return;
+    }
+    send("audioLookup", request);
+  }
+
   function rememberPointerRequest(event) {
     const request =
       selectedText() ||
-      termFromElement(event.target) ||
-      wordAtPoint(event.clientX, event.clientY);
+      wordAtPoint(event.clientX, event.clientY) ||
+      termFromElement(event.target);
     if (request) {
       lastPointerRequest = request;
     }
@@ -245,6 +344,33 @@
     );
   }
 
+  function modifierMatches(event, modifier) {
+    const normalized = String(modifier || "").toLowerCase();
+    if (!normalized || normalized === "disabled") {
+      return false;
+    }
+    if (normalized === "alt" || normalized === "option") {
+      return Boolean(event.altKey);
+    }
+    if (normalized === "shift") {
+      return Boolean(event.shiftKey);
+    }
+    if (normalized === "meta" || normalized === "cmd" || normalized === "command") {
+      return Boolean(event.metaKey);
+    }
+    if (normalized === "ctrl" || normalized === "control") {
+      return Boolean(event.ctrlKey);
+    }
+    if (normalized === "mod") {
+      return Boolean(event.ctrlKey || event.metaKey);
+    }
+    return false;
+  }
+
+  function isPrimaryClick(event) {
+    return event.button === undefined || event.button === 0;
+  }
+
   function requestMenu(event, request) {
     send("menu", Object.assign({}, request, {
       menuX: event.clientX,
@@ -256,23 +382,34 @@
     hideMenu();
     lastPayload = payload;
     menuEl = document.createElement("div");
-    menuEl.className = "pronounceit-menu";
+    applyTheme(menuEl, "pronounceit-menu");
+    menuEl.setAttribute("role", "menu");
+
+    const header = document.createElement("div");
+    header.className = "pronounceit-menu-term";
+    header.textContent = payload.term || payload.requestedText || "";
+    menuEl.appendChild(header);
+
     const play = document.createElement("button");
     play.type = "button";
-    play.textContent = "Play";
+    play.className = "pronounceit-menu-command pronounceit-menu-primary";
+    play.textContent = "Play pronunciation";
+    play.setAttribute("role", "menuitem");
     play.addEventListener("click", function (event) {
       event.stopPropagation();
-      show(Object.assign({}, payload, { autoPlay: true }));
+      playFromMenu(payload);
     });
     menuEl.appendChild(play);
 
     if (config.showSaveButton && !payload.alreadySaved) {
       const save = document.createElement("button");
       save.type = "button";
-      save.textContent = "Add to pronunciation list";
+      save.className = "pronounceit-menu-command";
+      save.textContent = "Save pronunciation";
+      save.setAttribute("role", "menuitem");
       save.addEventListener("click", function (event) {
         event.stopPropagation();
-        show(Object.assign({}, payload, { saveAfterLookup: true }));
+        saveFromMenu(payload);
       });
       menuEl.appendChild(save);
     }
@@ -286,6 +423,18 @@
       menuEl.remove();
       menuEl = null;
     }
+  }
+
+  function playFromMenu(payload) {
+    show(Object.assign({}, payload, { autoPlay: true }));
+  }
+
+  function saveFromMenu(payload) {
+    show(Object.assign({}, payload, { saveAfterLookup: true }));
+  }
+
+  function menuCanSave() {
+    return Boolean(lastPayload && config.showSaveButton && !lastPayload.alreadySaved);
   }
 
   function hidePopup() {
@@ -310,13 +459,17 @@
     hideMenu();
 
     popupEl = document.createElement("div");
-    popupEl.className = "pronounceit-popup";
+    applyTheme(popupEl, "pronounceit-popup");
     popupEl.setAttribute("role", "dialog");
     popupEl.setAttribute("aria-label", "Pronunciation");
 
     const term = document.createElement("div");
     term.className = "pronounceit-term";
     term.textContent = payload.term || payload.requestedText || "";
+
+    const source = document.createElement("div");
+    source.className = "pronounceit-source";
+    source.textContent = sourceLabel(payload);
 
     const pronunciation = document.createElement("div");
     pronunciation.className = payload.found ? "pronounceit-pronunciation" : "pronounceit-pronunciation generated";
@@ -336,6 +489,7 @@
     play.setAttribute("aria-label", "Play pronunciation");
     play.textContent = "Play";
     function playPayload() {
+      updateStatus("Playing...");
       send("speak", {
         text: payload.speechText || payload.term || payload.requestedText || "",
         term: payload.term || payload.requestedText || "",
@@ -350,7 +504,7 @@
       const save = document.createElement("button");
       save.type = "button";
       save.className = "pronounceit-save";
-      save.textContent = "Add to pronunciation list";
+      save.textContent = "Save pronunciation";
       save.addEventListener("click", function () {
         send("save", lastPayload || payload);
       });
@@ -361,6 +515,7 @@
     status.className = "pronounceit-status";
 
     popupEl.appendChild(term);
+    popupEl.appendChild(source);
     popupEl.appendChild(pronunciation);
     popupEl.appendChild(syllables);
     popupEl.appendChild(actions);
@@ -376,6 +531,34 @@
     if (payload.saveAfterLookup && !payload.alreadySaved) {
       send("save", lastPayload || payload);
     }
+  }
+
+  function sourceLabel(payload) {
+    if (payload.found) {
+      return "Curated";
+    }
+    if (payload.audioKind === "generated") {
+      return "Generated";
+    }
+    return "Fallback";
+  }
+
+  function updateStatus(text) {
+    if (!popupEl) {
+      return;
+    }
+    const status = popupEl.querySelector(".pronounceit-status");
+    if (status) {
+      status.textContent = text || "";
+    }
+  }
+
+  function spoken(result) {
+    if (!result || result.ok) {
+      updateStatus("");
+      return;
+    }
+    updateStatus("Could not play audio.");
   }
 
   function saved(result) {
@@ -398,9 +581,77 @@
 
   function configure(nextConfig) {
     config = Object.assign({}, config, nextConfig || {});
+    if (menuEl) {
+      applyTheme(menuEl, "pronounceit-menu");
+    }
+    if (popupEl) {
+      applyTheme(popupEl, "pronounceit-popup");
+    }
+  }
+
+  function applyTheme(element, baseClass) {
+    const theme = resolveTheme(config.theme);
+    element.className = baseClass + " pronounceit-theme-" + theme;
+    element.setAttribute("data-theme", theme);
+  }
+
+  function resolveTheme(themeName) {
+    if (themeName === "clinical_light" || themeName === "slate" || themeName === "high_contrast") {
+      return themeName;
+    }
+    if (themeName === "system" && prefersDarkMode()) {
+      return "slate";
+    }
+    return "clinical_light";
+  }
+
+  function prefersDarkMode() {
+    return Boolean(
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+    );
+  }
+
+  function pronounceDirectClick(event) {
+    if (
+      !canPronounce() ||
+      !isPrimaryClick(event) ||
+      !modifierMatches(event, config.directClickModifier)
+    ) {
+      return;
+    }
+    pendingRequest = selectedText() || rememberPointerRequest(event) || lastPointerRequest;
+    if (!pendingRequest) {
+      return;
+    }
+    event.preventDefault();
+    requestAudioOnly(pendingRequest);
+    pendingRequest = null;
   }
 
   document.addEventListener("keydown", function (event) {
+    if (menuEl) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        hideMenu();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        playFromMenu(lastPayload || {});
+        return;
+      }
+      if ((event.key === "s" || event.key === "S") && menuCanSave()) {
+        event.preventDefault();
+        saveFromMenu(lastPayload);
+        return;
+      }
+    }
+    if (popupEl && event.key === "Escape") {
+      event.preventDefault();
+      hidePopup();
+      return;
+    }
     if (!canPronounce() || !hotkeyMatches(event)) {
       return;
     }
@@ -413,7 +664,7 @@
   });
 
   document.addEventListener("contextmenu", function (event) {
-    if (!canPronounce() || !config.showContextMenu) {
+    if (!canPronounce() || !modifierMatches(event, config.popupClickModifier)) {
       return;
     }
     pendingRequest = rememberPointerRequest(event);
@@ -423,12 +674,13 @@
     event.preventDefault();
     event.stopPropagation();
     hideMenu();
-    requestMenu(event, pendingRequest);
+    requestPronunciation({ autoPlay: true });
   }, true);
 
   document.addEventListener("click", rememberPointerRequest, true);
   document.addEventListener("mousedown", rememberPointerRequest, true);
   document.addEventListener("mouseup", rememberPointerRequest, true);
+  document.addEventListener("mouseup", pronounceDirectClick, true);
   document.addEventListener("pointerdown", rememberPointerRequest, true);
   document.addEventListener("pointerup", rememberPointerRequest, true);
   document.addEventListener("pointermove", rememberPointerRequestThrottled, true);
@@ -453,6 +705,7 @@
     configure: configure,
     show: show,
     showMenu: showMenu,
+    spoken: spoken,
     saved: saved,
     hide: hidePopup,
     pronounceCurrent: pronounceCurrent,
@@ -460,6 +713,8 @@
 
   if (window.PronounceItTestHooks) {
     window.PronounceItTestHooks.extractTermAtOffset = extractTermAtOffset;
+    window.PronounceItTestHooks.extractTermSpanAtOffset = extractTermSpanAtOffset;
+    window.PronounceItTestHooks.contextFromText = contextFromText;
     window.PronounceItTestHooks.termFromElement = termFromElement;
   }
 

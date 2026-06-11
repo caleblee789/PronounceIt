@@ -29,6 +29,11 @@ _saved: SavedPronunciations | None = None
 _custom: CustomPronunciations | None = None
 _reviewer_answer_visible = False
 _tts = CompositeTtsEngine()
+_playback_diagnostics: list[dict[str, Any]] = []
+
+_LOOKUP_START_SHORTCUT_MENU = "shortcut_context_menu"
+_LOOKUP_START_SHORTCUT_ONLY = "shortcut_only"
+_LOOKUP_START_OPTION_SELECT = "option_select"
 
 
 def initialize(addon_module: str) -> None:
@@ -118,6 +123,65 @@ def _install_tools_menu_actions() -> None:
     mw.form.menuTools.addMenu(pronounce_menu)
 
 
+def _lookup_start_choice(config: PronounceItConfig) -> str:
+    if config.activation_mode == "option_select":
+        return _LOOKUP_START_OPTION_SELECT
+    if not config.show_context_menu:
+        return _LOOKUP_START_SHORTCUT_ONLY
+    return _LOOKUP_START_SHORTCUT_MENU
+
+
+def _lookup_start_config(choice: str) -> dict[str, Any]:
+    if choice == _LOOKUP_START_OPTION_SELECT:
+        return {"activation_mode": "option_select", "show_context_menu": False}
+    if choice == _LOOKUP_START_SHORTCUT_ONLY:
+        return {"activation_mode": "context_menu", "show_context_menu": False}
+    return {"activation_mode": "context_menu", "show_context_menu": True}
+
+
+def _add_modifier_items(combo: Any) -> None:
+    for label, value in [
+        ("Option/Alt", "alt"),
+        ("Shift", "shift"),
+        ("Command/Meta", "meta"),
+        ("Control/Ctrl", "ctrl"),
+        ("Mod (Ctrl or Command)", "mod"),
+        ("Disabled", "disabled"),
+    ]:
+        combo.addItem(label, value)
+
+
+def _modifier_display_name(value: str) -> str:
+    return {
+        "alt": "Option/Alt",
+        "shift": "Shift",
+        "meta": "Command/Meta",
+        "ctrl": "Control/Ctrl",
+        "mod": "Mod",
+        "disabled": "Disabled",
+    }.get(value, "Option/Alt")
+
+
+def _behavior_preview_lines(config: PronounceItConfig) -> list[str]:
+    audio_modifier = _modifier_display_name(config.direct_click_modifier)
+    popup_modifier = _modifier_display_name(config.popup_click_modifier)
+    audio_line = (
+        "Audio-only lookup disabled"
+        if config.direct_click_modifier == "disabled"
+        else f"{audio_modifier} + left-click plays audio"
+    )
+    popup_line = (
+        "Popup lookup disabled"
+        if config.popup_click_modifier == "disabled"
+        else f"{popup_modifier} + right-click opens the popup"
+    )
+    return [
+        f"{config.hotkey or DEFAULT_CONFIG['hotkey']} pronounces the current selection",
+        audio_line,
+        popup_line,
+    ]
+
+
 def _show_config_dialog() -> None:
     try:
         from aqt import mw
@@ -147,67 +211,250 @@ def _show_config_dialog() -> None:
     config = _config()
     dialog = QDialog(mw)
     dialog.setWindowTitle("PronounceIt Options")
+    dialog.setObjectName("pronounceitOptions")
+    dialog.setMinimumWidth(500)
+    dialog.setStyleSheet(
+        """
+        QDialog#pronounceitOptions {
+            background: #f7f9fb;
+        }
+        QDialog#pronounceitOptions QLabel#pronounceitIntro {
+            color: #334155;
+            font-size: 13px;
+            line-height: 18px;
+        }
+        QDialog#pronounceitOptions QLabel#pronounceitHelp {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 16px;
+        }
+        QDialog#pronounceitOptions QLabel#pronounceitPreview {
+            background: #eef7f8;
+            border: 1px solid #c6dce3;
+            border-radius: 8px;
+            color: #17324a;
+            font-size: 12px;
+            line-height: 17px;
+            padding: 10px 12px;
+        }
+        QDialog#pronounceitOptions QLabel#pronounceitSection {
+            color: #0f172a;
+            font-size: 12px;
+            font-weight: 650;
+            margin-top: 8px;
+        }
+        QDialog#pronounceitOptions QGroupBox {
+            background: #ffffff;
+            border: 1px solid #d7dee8;
+            border-radius: 8px;
+            font-weight: 650;
+            margin-top: 14px;
+            padding: 16px 12px 12px 12px;
+        }
+        QDialog#pronounceitOptions QGroupBox::title {
+            color: #0f172a;
+            left: 12px;
+            padding: 0 4px;
+            subcontrol-origin: margin;
+        }
+        QDialog#pronounceitOptions QLineEdit,
+        QDialog#pronounceitOptions QComboBox,
+        QDialog#pronounceitOptions QSpinBox {
+            border: 1px solid #c7d0dd;
+            border-radius: 6px;
+            min-height: 28px;
+            padding: 3px 8px;
+        }
+        QDialog#pronounceitOptions QLineEdit:focus,
+        QDialog#pronounceitOptions QComboBox:focus,
+        QDialog#pronounceitOptions QSpinBox:focus {
+            border-color: #1f6f8b;
+        }
+        QDialog#pronounceitOptions QPushButton {
+            border: 1px solid #c7d0dd;
+            border-radius: 6px;
+            min-height: 30px;
+            padding: 5px 10px;
+        }
+        QDialog#pronounceitOptions QPushButton:hover {
+            background: #eef6f8;
+        }
+        QDialog#pronounceitOptions QGroupBox#pronounceitAdvanced {
+            background: #fbfcfe;
+            border-color: #e2e8f0;
+        }
+        """
+    )
     layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(18, 18, 18, 14)
+    layout.setSpacing(10)
 
-    intro = QLabel("Adjust PronounceIt behavior and open its local files.")
+    intro = QLabel(
+        "Choose how PronounceIt appears while reviewing cards. "
+        "Less common controls are under Advanced."
+    )
+    intro.setObjectName("pronounceitIntro")
     intro.setWordWrap(True)
     layout.addWidget(intro)
 
-    settings_box = QGroupBox("Settings")
-    form = QFormLayout(settings_box)
+    preview = QLabel()
+    preview.setObjectName("pronounceitPreview")
+    preview.setWordWrap(True)
+    layout.addWidget(preview)
+
+    def make_form_group(title: str):
+        group = QGroupBox(title)
+        form = QFormLayout(group)
+        form.setContentsMargins(10, 8, 10, 10)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(9)
+        return group, form
+
+    def add_help(form, text: str) -> None:
+        help_label = QLabel(text)
+        help_label.setObjectName("pronounceitHelp")
+        help_label.setWordWrap(True)
+        form.addRow("", help_label)
+
+    def add_section(layout_obj, text: str) -> None:
+        label = QLabel(text)
+        label.setObjectName("pronounceitSection")
+        layout_obj.addWidget(label)
+
+    def set_combo_data(combo, value: str) -> None:
+        index = combo.findData(value)
+        combo.setCurrentIndex(max(0, index))
+
+    review_box, review_form = make_form_group("Review")
 
     enabled = QCheckBox("Enable PronounceIt")
     enabled.setChecked(config.enabled)
-    form.addRow(enabled)
+    review_form.addRow(enabled)
 
     hotkey = QLineEdit(config.hotkey)
     hotkey.setPlaceholderText("Mod+P")
-    form.addRow("Hotkey", hotkey)
+    hotkey.setToolTip(
+        "Use Anki shortcut syntax. Mod maps to Ctrl on Windows/Linux and Cmd on macOS."
+    )
+    review_form.addRow("Keyboard shortcut", hotkey)
 
-    allow_question = QCheckBox("Allow pronunciation before showing the answer")
-    allow_question.setChecked(config.allow_on_question_side)
-    form.addRow(allow_question)
+    direct_click = QComboBox()
+    _add_modifier_items(direct_click)
+    direct_click.setToolTip("Modifier for audio-only pronunciation while reviewing.")
+    set_combo_data(direct_click, config.direct_click_modifier)
+    review_form.addRow("Play audio with modifier + left-click", direct_click)
 
-    show_context = QCheckBox("Show quick menu on right-click/control-click")
-    show_context.setChecked(config.show_context_menu)
-    form.addRow(show_context)
+    popup_click = QComboBox()
+    _add_modifier_items(popup_click)
+    popup_click.setToolTip("Modifier for opening the pronunciation popup while reviewing.")
+    set_combo_data(popup_click, config.popup_click_modifier)
+    review_form.addRow("Open popup with modifier + right-click", popup_click)
+    add_help(
+        review_form,
+        "Default: Option/Alt-left-click plays audio only; Option/Alt-right-click opens the popup and plays audio.",
+    )
 
-    show_save = QCheckBox("Show Add to pronunciation list")
-    show_save.setChecked(config.show_save_button)
-    form.addRow(show_save)
+    layout.addWidget(review_box)
 
-    auto_close = QCheckBox("Close popup when the card changes")
-    auto_close.setChecked(config.auto_close_on_card_change)
-    form.addRow(auto_close)
+    audio_box, audio_form = make_form_group("Audio")
 
     backend = QComboBox()
-    backend.addItem("Bundled/generated audio, then system TTS", "local_audio_then_tts")
-    backend.addItem("Bundled/generated audio only", "local_audio")
-    backend.addItem("System text-to-speech only", "system_tts")
+    backend.addItem("Use local audio, then system voice if needed", "local_audio_then_tts")
+    backend.addItem("Use local audio only", "local_audio")
+    backend.addItem("Use system voice only", "system_tts")
+    backend.setToolTip(
+        "Local audio uses bundled and generated clips. System voice is the operating system text-to-speech fallback."
+    )
     backend_index = backend.findData(config.audio_backend)
     backend.setCurrentIndex(max(0, backend_index))
-    form.addRow("Audio", backend)
+    audio_form.addRow("Audio behavior", backend)
+    add_help(
+        audio_form,
+        "Recommended: use curated local clips first, generate a local clip when needed, then fall back to the system voice.",
+    )
 
+    layout.addWidget(audio_box)
+
+    appearance_box, appearance_form = make_form_group("Appearance")
+    theme = QComboBox()
+    theme.addItem("System", "system")
+    theme.addItem("Clinical Light", "clinical_light")
+    theme.addItem("Slate", "slate")
+    theme.addItem("High Contrast", "high_contrast")
+    theme_index = theme.findData(config.theme)
+    theme.setCurrentIndex(max(0, theme_index))
+    appearance_form.addRow("Theme", theme)
+    layout.addWidget(appearance_box)
+
+    advanced_toggle = QPushButton("Show advanced settings")
+    advanced_toggle.setCheckable(True)
+    reset_button = QPushButton("Reset to defaults")
+    toggle_row = QHBoxLayout()
+    toggle_row.setSpacing(8)
+    toggle_row.addWidget(advanced_toggle)
+    toggle_row.addWidget(reset_button)
+    layout.addLayout(toggle_row)
+
+    advanced_box = QGroupBox("Advanced")
+    advanced_box.setObjectName("pronounceitAdvanced")
+    advanced_layout = QVBoxLayout(advanced_box)
+    advanced_layout.setContentsMargins(10, 8, 10, 10)
+    advanced_layout.setSpacing(10)
+    advanced_box.setVisible(False)
+
+    add_section(advanced_layout, "Study flow")
+    study_form = QFormLayout()
+    study_form.setHorizontalSpacing(16)
+    study_form.setVerticalSpacing(9)
+    allow_question = QCheckBox("Allow lookups before answer is shown")
+    allow_question.setChecked(config.allow_on_question_side)
+    allow_question.setToolTip("Disabled by default so pronunciation help stays answer-side during review.")
+    study_form.addRow(allow_question)
+    add_help(
+        study_form,
+        "Use this only if pronunciation help before reveal will not interfere with your study flow.",
+    )
+    advanced_layout.addLayout(study_form)
+
+    add_section(advanced_layout, "Popup")
+    popup_form = QFormLayout()
+    popup_form.setHorizontalSpacing(16)
+    popup_form.setVerticalSpacing(9)
+    auto_close = QCheckBox("Close popup when the card changes")
+    auto_close.setChecked(config.auto_close_on_card_change)
+    popup_form.addRow(auto_close)
+
+    show_save = QCheckBox("Show Save button in the popup")
+    show_save.setChecked(config.show_save_button)
+    popup_form.addRow(show_save)
+    advanced_layout.addLayout(popup_form)
+
+    add_section(advanced_layout, "Fallback voice")
+    voice_form = QFormLayout()
+    voice_form.setHorizontalSpacing(16)
+    voice_form.setVerticalSpacing(9)
     voice = QLineEdit(config.tts_voice)
     voice.setPlaceholderText("System default")
-    form.addRow("TTS voice", voice)
+    voice.setToolTip("Optional system voice name for generated and fallback speech.")
+    voice_form.addRow("Voice", voice)
 
     rate = QSpinBox()
     rate.setRange(-10, 10)
     rate.setValue(config.tts_rate)
-    form.addRow("TTS rate", rate)
+    rate.setToolTip("Applies where the system text-to-speech engine supports speed changes.")
+    voice_form.addRow("Speed", rate)
 
     volume = QSpinBox()
     volume.setRange(0, 100)
     volume.setSuffix("%")
     volume.setValue(config.tts_volume)
-    form.addRow("TTS volume", volume)
+    volume.setToolTip("Applies where the system text-to-speech engine supports volume changes.")
+    voice_form.addRow("Volume", volume)
+    advanced_layout.addLayout(voice_form)
 
-    layout.addWidget(settings_box)
-
-    tools_box = QGroupBox("Files and Tools")
-    tools_layout = QVBoxLayout(tools_box)
+    add_section(advanced_layout, "Files")
     button_row = QHBoxLayout()
+    button_row.setSpacing(8)
     for label, target in [
         ("Saved List", _saved_pronunciations_path),
         ("Custom Pronunciations", _custom_pronunciations_path),
@@ -217,12 +464,51 @@ def _show_config_dialog() -> None:
         button = QPushButton(label)
         button.clicked.connect(lambda _checked=False, path_factory=target: _open_path(path_factory()))
         button_row.addWidget(button)
-    tools_layout.addLayout(button_row)
+    advanced_layout.addLayout(button_row)
+    layout.addWidget(advanced_box)
 
-    audit_button = QPushButton("Run Dictionary Audit")
-    audit_button.clicked.connect(_show_dictionary_audit)
-    tools_layout.addWidget(audit_button)
-    layout.addWidget(tools_box)
+    def set_advanced_visible(visible: bool) -> None:
+        advanced_box.setVisible(visible)
+        advanced_toggle.setText("Hide advanced settings" if visible else "Show advanced settings")
+
+    advanced_toggle.toggled.connect(set_advanced_visible)
+
+    def current_preview_config() -> PronounceItConfig:
+        return PronounceItConfig.from_mapping(
+            {
+                **config.as_config_mapping(),
+                "hotkey": hotkey.text().strip() or DEFAULT_CONFIG["hotkey"],
+                "direct_click_modifier": direct_click.currentData()
+                or DEFAULT_CONFIG["direct_click_modifier"],
+                "popup_click_modifier": popup_click.currentData()
+                or DEFAULT_CONFIG["popup_click_modifier"],
+            }
+        )
+
+    def update_preview(*_args) -> None:
+        preview.setText("\n".join(_behavior_preview_lines(current_preview_config())))
+
+    def reset_to_defaults(*_args) -> None:
+        defaults = PronounceItConfig.from_mapping(DEFAULT_CONFIG)
+        enabled.setChecked(defaults.enabled)
+        hotkey.setText(defaults.hotkey)
+        set_combo_data(direct_click, defaults.direct_click_modifier)
+        set_combo_data(popup_click, defaults.popup_click_modifier)
+        set_combo_data(backend, defaults.audio_backend)
+        set_combo_data(theme, defaults.theme)
+        allow_question.setChecked(defaults.allow_on_question_side)
+        auto_close.setChecked(defaults.auto_close_on_card_change)
+        show_save.setChecked(defaults.show_save_button)
+        voice.setText(defaults.tts_voice)
+        rate.setValue(defaults.tts_rate)
+        volume.setValue(defaults.tts_volume)
+        update_preview()
+
+    hotkey.textChanged.connect(update_preview)
+    direct_click.currentIndexChanged.connect(update_preview)
+    popup_click.currentIndexChanged.connect(update_preview)
+    reset_button.clicked.connect(reset_to_defaults)
+    update_preview()
 
     try:
         button_flags = QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -235,13 +521,17 @@ def _show_config_dialog() -> None:
         next_config = {
             "enabled": enabled.isChecked(),
             "hotkey": hotkey.text().strip() or DEFAULT_CONFIG["hotkey"],
+            "direct_click_modifier": direct_click.currentData() or DEFAULT_CONFIG["direct_click_modifier"],
+            "popup_click_modifier": popup_click.currentData() or DEFAULT_CONFIG["popup_click_modifier"],
             "tts_voice": voice.text().strip(),
             "tts_rate": rate.value(),
             "tts_volume": volume.value(),
             "audio_backend": backend.currentData() or DEFAULT_CONFIG["audio_backend"],
             "auto_close_on_card_change": auto_close.isChecked(),
             "allow_on_question_side": allow_question.isChecked(),
-            "show_context_menu": show_context.isChecked(),
+            "activation_mode": "context_menu",
+            "theme": theme.currentData() or DEFAULT_CONFIG["theme"],
+            "show_context_menu": False,
             "show_save_button": show_save.isChecked(),
             "unknown_term_message": config.unknown_term_message,
         }
@@ -505,27 +795,7 @@ def _reload_dictionary() -> None:
 
 
 def _on_webview_will_show_context_menu(webview: Any, menu: Any) -> None:
-    try:
-        from aqt import mw
-    except Exception:
-        return
-    if getattr(mw, "state", None) != "review":
-        return
-    if not _pronunciation_allowed():
-        return
-    selected_text = _selected_text_from_webview(webview)
-    if not selected_text:
-        return
-    play_action = menu.addAction("PronounceIt: Play")
-    play_action.triggered.connect(
-        lambda _checked=False, text=selected_text: _pronounce_text_from_reviewer(text)
-    )
-    payload = _lookup_payload(selected_text)
-    if not payload.get("alreadySaved") and _config().show_save_button:
-        save_action = menu.addAction("PronounceIt: Add to pronunciation list")
-        save_action.triggered.connect(
-            lambda _checked=False, text=selected_text: _save_text_from_reviewer(text)
-        )
+    return
 
 
 def _pronounce_current_reviewer_selection() -> None:
@@ -587,12 +857,30 @@ def _lookup_payload(term: str) -> dict[str, Any]:
     })
 
 
+def _lookup_payload_from_request(payload: dict[str, Any]) -> dict[str, Any]:
+    selected_text = display_term(str(payload.get("text", "")))
+    context_text = str(payload.get("contextText") or "")
+    if _dictionary and selected_text and context_text:
+        try:
+            start = int(payload.get("contextOffsetStart", 0))
+            end = int(payload.get("contextOffsetEnd", start))
+        except (TypeError, ValueError):
+            start = 0
+            end = 0
+        context_match = _dictionary.best_context_match(context_text, start, end)
+        if context_match:
+            result = _enrich_lookup_payload(_dictionary.lookup(context_match))
+            result["requestedText"] = selected_text
+            return result
+    return _lookup_payload(selected_text)
+
+
 def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
     result = dict(payload)
     config = _config()
     audio_file = str(result.get("audioFile") or "")
     found = bool(result.get("found"))
-    if found and audio_file:
+    if found and audio_file and _audio_file_is_available(audio_file):
         result["audioKind"] = "bundled"
         result["audioStatus"] = "Bundled audio ready"
         result["audioHelp"] = "Play uses the curated local audio file for this term."
@@ -607,6 +895,34 @@ def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
     result["audioAvailable"] = True
     result["alreadySaved"] = _payload_is_saved(result)
     return result
+
+
+def _audio_file_is_available(audio_file: str) -> bool:
+    if not audio_file:
+        return False
+    relative = Path(audio_file)
+    if relative.is_absolute() or ".." in relative.parts:
+        return False
+    root = _addon_dir()
+    candidates = [
+        root / relative,
+        root / "user_files" / "audio" / relative.name,
+    ]
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            continue
+        try:
+            resolved.relative_to(root.resolve())
+        except ValueError:
+            continue
+        try:
+            if resolved.is_file() and resolved.stat().st_size > 0:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _payload_is_saved(payload: dict[str, Any]) -> bool:
@@ -672,10 +988,12 @@ def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tup
     action, payload = _parse_message(message)
     if action == "lookup":
         _handle_lookup(context, payload)
+    elif action == "audioLookup":
+        _handle_audio_lookup(context, payload)
     elif action == "menu":
         _handle_menu_lookup(context, payload)
     elif action == "speak":
-        _handle_speak(payload)
+        _handle_speak(payload, context)
     elif action == "save":
         _handle_save(context, payload)
     elif action == "ready":
@@ -699,8 +1017,7 @@ def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
     if not _pronunciation_allowed():
         _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
         return
-    selected_text = display_term(str(payload.get("text", "")))
-    result = _lookup_payload(selected_text)
+    result = _lookup_payload_from_request(payload)
     result["rect"] = payload.get("rect", {})
     result["config"] = _js_config_payload()
     result["autoPlay"] = bool(payload.get("autoPlay"))
@@ -708,12 +1025,26 @@ def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
     _eval(context, f"window.PronounceIt && window.PronounceIt.show({json.dumps(result)});")
 
 
+def _handle_audio_lookup(context: Any, payload: dict[str, Any]) -> None:
+    if not _pronunciation_allowed():
+        _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
+        return
+    result = _lookup_payload_from_request(payload)
+    _handle_speak(
+        {
+            "text": result.get("speechText") or result.get("term") or result.get("requestedText") or "",
+            "term": result.get("term") or result.get("requestedText") or "",
+            "audioFile": result.get("audioFile", ""),
+        },
+        context,
+    )
+
+
 def _handle_menu_lookup(context: Any, payload: dict[str, Any]) -> None:
     if not _pronunciation_allowed():
         _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
         return
-    selected_text = display_term(str(payload.get("text", "")))
-    result = _lookup_payload(selected_text)
+    result = _lookup_payload_from_request(payload)
     result["rect"] = payload.get("rect", {})
     result["menuX"] = payload.get("menuX")
     result["menuY"] = payload.get("menuY")
@@ -721,20 +1052,45 @@ def _handle_menu_lookup(context: Any, payload: dict[str, Any]) -> None:
     _eval(context, f"window.PronounceIt && window.PronounceIt.showMenu({json.dumps(result)});")
 
 
-def _handle_speak(payload: dict[str, Any]) -> None:
+def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
     text = display_term(str(payload.get("text") or payload.get("term") or ""))
     config = _config()
-    _tts.speak(
-        text,
-        TtsSettings(
-            voice=config.tts_voice,
-            rate=config.tts_rate,
-            volume=config.tts_volume,
-            audio_backend=config.audio_backend,
-            audio_file=str(payload.get("audioFile") or ""),
-            term=display_term(str(payload.get("term") or "")),
-        ),
+    settings = TtsSettings(
+        voice=config.tts_voice,
+        rate=config.tts_rate,
+        volume=config.tts_volume,
+        audio_backend=config.audio_backend,
+        audio_file=str(payload.get("audioFile") or ""),
+        term=display_term(str(payload.get("term") or "")),
     )
+    result = _tts.speak_result(text, settings)
+    _record_playback_diagnostic(text, settings, result)
+    if context is not None:
+        _send_spoken_result(context, result)
+    return result.ok
+
+
+def _record_playback_diagnostic(text: str, settings: TtsSettings, result: Any) -> None:
+    _playback_diagnostics.append(
+        {
+            "text": text,
+            "term": settings.term,
+            "audioBackend": settings.audio_backend,
+            "audioFile": settings.audio_file,
+            "ok": bool(getattr(result, "ok", False)),
+            "reason": str(getattr(result, "reason", "")),
+            "attempts": list(getattr(result, "attempts", [])),
+        }
+    )
+    del _playback_diagnostics[:-20]
+
+
+def _send_spoken_result(context: Any, result: Any) -> None:
+    payload = {
+        "ok": bool(getattr(result, "ok", False)),
+        "reason": str(getattr(result, "reason", "")),
+    }
+    _eval(context, f"window.PronounceIt && window.PronounceIt.spoken({json.dumps(payload)});")
 
 
 def _handle_save(context: Any, payload: dict[str, Any]) -> None:

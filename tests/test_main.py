@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from pronounceit import main
 from pronounceit.config import PronounceItConfig
 from pronounceit.dictionary import PronunciationDictionary
+from pronounceit.tts import TtsResult
 
 
 class FakeWeb:
@@ -69,11 +70,42 @@ class FakeMenu:
         self.actions.append(("---", FakeAction("---")))
 
 
+class FakeTts:
+    def __init__(self, result: TtsResult) -> None:
+        self.result = result
+        self.calls: list[tuple[str, object]] = []
+
+    def speak_result(self, text: str, settings) -> TtsResult:
+        self.calls.append((text, settings))
+        return self.result
+
+
 class FakeWebContent:
     def __init__(self) -> None:
         self.css: list[str] = []
         self.js: list[str] = []
         self.body = ""
+
+
+def make_phrase_dictionary() -> PronunciationDictionary:
+    entries = {}
+    PronunciationDictionary._merge_entries(
+        entries,
+        [
+            {
+                "term": "bundle branch block",
+                "pronunciation": "BUN-dul branch block",
+                "syllables": "bun-dle branch block",
+            },
+            {
+                "term": "right bundle branch block",
+                "pronunciation": "RYT BUN-dul branch block",
+                "syllables": "right bun-dle branch block",
+            },
+        ],
+        "test",
+    )
+    return PronunciationDictionary(entries)
 
 
 class MainMessageTests(unittest.TestCase):
@@ -99,6 +131,96 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn("window.PronounceIt.show", script)
         self.assertIn("uh-GRAN-yoo-loh-sy-TOH-sis", script)
         self.assertIn("uh gran yoo loh sy toh sis", script)
+
+    def test_lookup_message_uses_longest_context_phrase(self) -> None:
+        reviewer = FakeReviewer()
+        main._dictionary = make_phrase_dictionary()
+        context = "ECG shows right bundle branch block today."
+        start = context.index("branch")
+        payload = {
+            "text": "branch",
+            "contextText": context,
+            "contextOffsetStart": start,
+            "contextOffsetEnd": start + len("branch"),
+            "rect": {"left": 4, "bottom": 8},
+            "autoPlay": True,
+            "saveAfterLookup": True,
+        }
+        handled = main._on_js_message(
+            (False, None),
+            "pronounceit:lookup:" + json.dumps(payload),
+            reviewer,
+        )
+
+        self.assertEqual(handled, (True, None))
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        script = reviewer.web.scripts[0]
+        self.assertIn("window.PronounceIt.show", script)
+        self.assertIn('"requestedText": "branch"', script)
+        self.assertIn('"term": "right bundle branch block"', script)
+        self.assertIn('"left": 4', script)
+        self.assertIn('"autoPlay": true', script)
+        self.assertIn('"saveAfterLookup": true', script)
+
+    def test_menu_lookup_uses_longest_context_phrase(self) -> None:
+        reviewer = FakeReviewer()
+        main._dictionary = make_phrase_dictionary()
+        context = "ECG shows right bundle branch block today."
+        start = context.index("bundle")
+        payload = {
+            "text": "bundle",
+            "contextText": context,
+            "contextOffsetStart": start,
+            "contextOffsetEnd": start + len("bundle"),
+            "rect": {"left": 6, "bottom": 10},
+            "menuX": 30,
+            "menuY": 40,
+        }
+        handled = main._on_js_message(
+            (False, None),
+            "pronounceit:menu:" + json.dumps(payload),
+            reviewer,
+        )
+
+        self.assertEqual(handled, (True, None))
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        script = reviewer.web.scripts[0]
+        self.assertIn("window.PronounceIt.showMenu", script)
+        self.assertIn('"requestedText": "bundle"', script)
+        self.assertIn('"term": "right bundle branch block"', script)
+        self.assertIn('"menuX": 30', script)
+        self.assertIn('"menuY": 40', script)
+
+    def test_audio_lookup_uses_longest_context_phrase_without_popup(self) -> None:
+        reviewer = FakeReviewer()
+        original_tts = main._tts
+        fake_tts = FakeTts(TtsResult(True, "playing local audio"))
+        try:
+            main._dictionary = make_phrase_dictionary()
+            main._tts = fake_tts
+            context = "ECG shows right bundle branch block today."
+            start = context.index("bundle")
+            handled = main._on_js_message(
+                (False, None),
+                "pronounceit:audioLookup:"
+                + json.dumps(
+                    {
+                        "text": "bundle",
+                        "contextText": context,
+                        "contextOffsetStart": start,
+                        "contextOffsetEnd": start + len("bundle"),
+                    }
+                ),
+                reviewer,
+            )
+        finally:
+            main._tts = original_tts
+
+        self.assertEqual(handled, (True, None))
+        self.assertEqual(len(fake_tts.calls), 1)
+        self.assertEqual(fake_tts.calls[0][1].term, "right bundle branch block")
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
 
     def test_lookup_message_is_blocked_on_question_side_by_default(self) -> None:
         reviewer = FakeReviewer()
@@ -164,7 +286,7 @@ class MainMessageTests(unittest.TestCase):
             web_content.body.index("window.PronounceIt = {"),
         )
 
-    def test_native_context_menu_hook_adds_pronounce_action_in_review(self) -> None:
+    def test_native_context_menu_hook_does_not_add_pronounce_action_in_review(self) -> None:
         class FakeMw:
             state = "review"
 
@@ -187,12 +309,9 @@ class MainMessageTests(unittest.TestCase):
         finally:
             builtins.__import__ = original_import
 
-        self.assertEqual([action[0] for action in menu.actions], [
-            "PronounceIt: Play",
-            "PronounceIt: Add to pronunciation list",
-        ])
+        self.assertEqual(menu.actions, [])
 
-    def test_native_context_menu_hides_add_when_term_is_already_saved(self) -> None:
+    def test_native_context_menu_hook_stays_disabled_when_term_is_already_saved(self) -> None:
         class FakeMw:
             state = "review"
 
@@ -222,7 +341,7 @@ class MainMessageTests(unittest.TestCase):
             main._saved = original_saved
             builtins.__import__ = original_import
 
-        self.assertEqual([action[0] for action in menu.actions], ["PronounceIt: Play"])
+        self.assertEqual(menu.actions, [])
 
     def test_native_context_menu_hook_is_hidden_on_question_side_by_default(self) -> None:
         class FakeMw:
@@ -249,6 +368,34 @@ class MainMessageTests(unittest.TestCase):
         finally:
             builtins.__import__ = original_import
             main._reviewer_answer_visible = original_answer_visible
+
+        self.assertEqual(menu.actions, [])
+
+    def test_native_context_menu_hook_is_hidden_in_option_select_mode(self) -> None:
+        class FakeMw:
+            state = "review"
+
+        original_import = __import__
+        original_config = main._config
+
+        def fake_import(name, *args, **kwargs):
+            if name == "aqt":
+                class FakeAqt:
+                    mw = FakeMw()
+
+                return FakeAqt
+            return original_import(name, *args, **kwargs)
+
+        import builtins
+
+        menu = FakeMenu()
+        try:
+            main._config = lambda: PronounceItConfig.from_mapping({"activation_mode": "option_select"})
+            builtins.__import__ = fake_import
+            main._on_webview_will_show_context_menu(FakeWebView("clozapine"), menu)
+        finally:
+            builtins.__import__ = original_import
+            main._config = original_config
 
         self.assertEqual(menu.actions, [])
 
@@ -392,6 +539,70 @@ class MainMessageTests(unittest.TestCase):
         )
         self.assertEqual(submenu.actions[0][1].shortcut, "Ctrl+P")
 
+    def test_lookup_start_choice_reflects_existing_config(self) -> None:
+        self.assertEqual(
+            main._lookup_start_choice(PronounceItConfig.from_mapping({})),
+            main._LOOKUP_START_SHORTCUT_ONLY,
+        )
+        self.assertEqual(
+            main._lookup_start_choice(
+                PronounceItConfig.from_mapping({"show_context_menu": False})
+            ),
+            main._LOOKUP_START_SHORTCUT_ONLY,
+        )
+        self.assertEqual(
+            main._lookup_start_choice(
+                PronounceItConfig.from_mapping({"activation_mode": "option_select"})
+            ),
+            main._LOOKUP_START_OPTION_SELECT,
+        )
+
+    def test_lookup_start_config_writes_existing_keys(self) -> None:
+        self.assertEqual(
+            main._lookup_start_config(main._LOOKUP_START_SHORTCUT_MENU),
+            {"activation_mode": "context_menu", "show_context_menu": True},
+        )
+        self.assertEqual(
+            main._lookup_start_config(main._LOOKUP_START_SHORTCUT_ONLY),
+            {"activation_mode": "context_menu", "show_context_menu": False},
+        )
+        self.assertEqual(
+            main._lookup_start_config(main._LOOKUP_START_OPTION_SELECT),
+            {"activation_mode": "option_select", "show_context_menu": False},
+        )
+
+    def test_lookup_start_config_defaults_to_shortcut_and_menu(self) -> None:
+        self.assertEqual(
+            main._lookup_start_config("unknown"),
+            {"activation_mode": "context_menu", "show_context_menu": True},
+        )
+
+    def test_modifier_display_names_are_plain_language(self) -> None:
+        self.assertEqual(main._modifier_display_name("alt"), "Option/Alt")
+        self.assertEqual(main._modifier_display_name("meta"), "Command/Meta")
+        self.assertEqual(main._modifier_display_name("disabled"), "Disabled")
+        self.assertEqual(main._modifier_display_name("mystery"), "Option/Alt")
+
+    def test_behavior_preview_lines_describe_current_controls(self) -> None:
+        preview = main._behavior_preview_lines(
+            PronounceItConfig.from_mapping(
+                {
+                    "hotkey": "Mod+P",
+                    "direct_click_modifier": "alt",
+                    "popup_click_modifier": "disabled",
+                }
+            )
+        )
+
+        self.assertEqual(
+            preview,
+            [
+                "Mod+P pronounces the current selection",
+                "Option/Alt + left-click plays audio",
+                "Popup lookup disabled",
+            ],
+        )
+
     def test_lookup_payload_supports_manual_pronunciation(self) -> None:
         payload = main._lookup_payload("GCS")
 
@@ -409,11 +620,71 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(payload["audioStatus"], "Generated audio available")
         self.assertTrue(payload["audioAvailable"])
 
+    def test_lookup_payload_does_not_label_missing_bundled_audio_ready(self) -> None:
+        with TemporaryDirectory() as tmp:
+            original_root = main._addon_root
+            original_config = main._config
+            try:
+                main._addon_root = Path(tmp)
+                main._config = lambda: PronounceItConfig.from_mapping({})
+                payload = main._enrich_lookup_payload(
+                    {
+                        "requestedText": "Example",
+                        "term": "Example",
+                        "pronunciation": "EX-am-pul",
+                        "syllables": "ex-am-ple",
+                        "speechText": "ex am pul",
+                        "audioFile": "audio/example.aiff",
+                        "found": True,
+                    }
+                )
+            finally:
+                main._addon_root = original_root
+                main._config = original_config
+
+        self.assertEqual(payload["audioKind"], "generated")
+        self.assertNotEqual(payload["audioStatus"], "Bundled audio ready")
+
+    def test_handle_speak_sends_success_callback(self) -> None:
+        reviewer = FakeReviewer()
+        original_tts = main._tts
+        try:
+            main._tts = FakeTts(TtsResult(True, "playing local audio"))
+            ok = main._handle_speak(
+                {"text": "kloh zuh peen", "term": "clozapine", "audioFile": "audio/clozapine.aiff"},
+                reviewer,
+            )
+        finally:
+            main._tts = original_tts
+
+        self.assertTrue(ok)
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
+        self.assertIn('"ok": true', reviewer.web.scripts[0])
+
+    def test_handle_speak_sends_failure_callback(self) -> None:
+        reviewer = FakeReviewer()
+        original_tts = main._tts
+        try:
+            main._tts = FakeTts(TtsResult(False, "local audio unavailable"))
+            ok = main._handle_speak(
+                {"text": "kloh zuh peen", "term": "clozapine", "audioFile": "audio/missing.aiff"},
+                reviewer,
+            )
+        finally:
+            main._tts = original_tts
+
+        self.assertFalse(ok)
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        self.assertIn('"ok": false', reviewer.web.scripts[0])
+        self.assertIn("local audio unavailable", reviewer.web.scripts[0])
+
     def test_write_config_sanitizes_config_mapping(self) -> None:
-        written = main._write_config({"audio_backend": "bad", "tts_volume": 200})
+        written = main._write_config({"audio_backend": "bad", "tts_volume": 200, "theme": "neon"})
 
         self.assertEqual(written["audio_backend"], "local_audio_then_tts")
         self.assertEqual(written["tts_volume"], 100)
+        self.assertEqual(written["theme"], "system")
 
     def test_show_manual_pronunciation_displays_and_speaks_phonetic_text(self) -> None:
         shown: list[tuple[str, str]] = []

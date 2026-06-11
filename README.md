@@ -1,6 +1,6 @@
 # PronounceIt
 
-PronounceIt is an Anki desktop add-on for medical students who want fast, answer-side pronunciation help while reviewing cards. Select a word or short medical phrase after revealing an answer, press `Ctrl+P` / `Cmd+P`, or use the right-click/control-click quick menu, and PronounceIt opens a compact reviewer pop-up with a student-friendly pronunciation guide, syllable breakdown, and replayable audio.
+PronounceIt is an Anki desktop add-on for medical students who want fast, answer-side pronunciation help while reviewing cards. Option/Alt-left-click a word to play pronunciation audio immediately, Option/Alt-right-click to open a compact reviewer pop-up, or select text and press `Ctrl+P` / `Cmd+P`.
 
 The add-on is designed for review flow: quick to invoke, quiet when the answer is still hidden, and backed by a large bundled pronunciation corpus so common medical, pharmacology, anatomy, pathology, and clinical terms can play without relying on raw system text-to-speech.
 
@@ -10,8 +10,8 @@ The add-on is designed for review flow: quick to invoke, quiet when the answer i
 - Answer-side lookup by default, with an option to allow question-side lookup.
 - `Ctrl+P` / `Cmd+P` hotkey using Anki's `Mod+P` convention.
 - AMBOSS-style floating pop-up anchored near the selected text.
-- JavaScript reviewer quick menu with Play and save actions.
-- Native Anki webview context-menu fallback for selected text.
+- Option/Alt-left-click audio-only pronunciation.
+- Option/Alt-right-click pop-up with autoplay, Play, and save actions.
 - Tools > PronounceIt menu for manual lookup, saved words, custom corrections, dictionary audit, and configuration.
 - Bundled medical dictionary with about 95,900 unique runtime terms.
 - About 95,600 bundled AIFF clips generated from pronunciation-friendly speech text.
@@ -36,12 +36,12 @@ Audio is intentionally spoken from normalized pronunciation text instead of the 
 
 1. Review a card in Anki.
 2. Reveal the answer.
-3. Select a term, such as `agranulocytosis`.
-4. Press `Ctrl+P` on Windows/Linux or `Cmd+P` on macOS.
+3. Option/Alt-left-click a term, such as `agranulocytosis`, to play audio only.
+4. Option/Alt-right-click a term to open the pop-up and play audio.
 5. Use the pop-up Play button to replay the audio.
 6. Use the save button to add useful terms to the local saved pronunciation list.
 
-You can also right-click/control-click selected text and choose the PronounceIt action, or use Tools > PronounceIt > Pronounce Current Selection.
+You can also select text and press `Ctrl+P` on Windows/Linux or `Cmd+P` on macOS, or use Tools > PronounceIt > Pronounce Current Selection.
 
 ## Tools Menu
 
@@ -58,23 +58,24 @@ PronounceIt adds a grouped Tools > PronounceIt submenu:
 
 Anki stores the add-on config from `config.json`. The same options are documented in `config.md`.
 
-Key settings:
+The settings dialog keeps common review choices on the main screen and places less common controls under Advanced.
 
-- `enabled`: turns reviewer integration on or off.
-- `hotkey`: defaults to `Mod+P`, which maps to Ctrl on Windows/Linux and Cmd on macOS.
-- `audio_backend`: defaults to `local_audio_then_tts`.
-- `allow_on_question_side`: defaults to `false` so lookup starts after the answer is revealed.
-- `show_context_menu`: controls the custom right-click/control-click action.
-- `show_save_button`: controls the saved-pronunciation button in the pop-up.
-- `auto_close_on_card_change`: closes the pop-up when Anki advances to another card.
-- `tts_voice`, `tts_rate`, `tts_volume`: tune fallback system TTS where supported.
-- `unknown_term_message`: controls the pop-up text for terms not found in the bundled dictionary.
+Main settings:
 
-Supported audio backend values:
+- Keyboard shortcut: defaults to `Mod+P`, which maps to Ctrl on Windows/Linux and Cmd on macOS.
+- Left-click audio key and right-click popup key: both default to Option/Alt and can be customized separately.
+- Audio behavior: defaults to local audio first, with system voice only as a fallback.
+- Theme: defaults to `system`; supported presets are `system`, `clinical_light`, `slate`, and `high_contrast`.
 
-- `local_audio_then_tts`: play bundled audio first, generate a cached local clip for unbundled terms when possible, then fall back to system TTS.
-- `local_audio`: require bundled or generated local audio.
-- `system_tts`: skip local audio and use system TTS directly.
+Advanced settings include pre-answer lookup, popup auto-close, Save button visibility, fallback voice/speed/volume, and shortcuts to local PronounceIt files. The dictionary audit remains available from Tools > PronounceIt > Dictionary Audit.
+
+The main settings write click modifier keys for the reviewer controls:
+
+- `direct_click_modifier`: controls audio-only left-click pronunciation.
+- `popup_click_modifier`: controls right-click popup pronunciation.
+- `activation_mode` and `show_context_menu`: retained for compatibility with older configs.
+- `audio_backend`: accepts `local_audio_then_tts`, `local_audio`, or `system_tts`.
+- `allow_on_question_side`, `show_save_button`, `auto_close_on_card_change`, `tts_voice`, `tts_rate`, `tts_volume`, and `unknown_term_message`: continue to work from `config.json`.
 
 ## Local User Files
 
@@ -120,7 +121,8 @@ A custom pronunciation entry can include:
 2. Go to Tools > Add-ons > View Files.
 3. Copy or symlink this repository folder into `addons21/pronounceit`.
 4. Restart Anki.
-5. Review a card, reveal the answer, select a medical term, and press `Ctrl+P` / `Cmd+P`.
+5. Review a card, reveal the answer, and Option/Alt-left-click a medical term to hear it.
+6. Option/Alt-right-click the same term to confirm the reviewer popup opens and plays audio.
 
 ## Build A Release Archive
 
@@ -209,8 +211,15 @@ See `PRONUNCIATION_QA.md` for the detailed acceptance criteria.
 
 This repository currently includes the built archive at `dist/pronounceit.ankiaddon`. GitHub releases should attach that file as the downloadable Anki package.
 
-Suggested first release tag:
+Suggested next release tag:
 
 ```text
-v1.0.0
+v1.0.1
 ```
+
+Release focus:
+
+- Adds Option/Alt-left-click audio-only pronunciation and Option/Alt-right-click popup pronunciation in the reviewer.
+- Refreshes the settings dialog with clearer Review, Audio, Appearance, and Advanced sections.
+- Adds theme presets for system, clinical light, slate, and high contrast reviewer popups.
+- Keeps older config keys compatible while documenting the newer click modifier settings.

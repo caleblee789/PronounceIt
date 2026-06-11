@@ -7,6 +7,7 @@ from pronounceit.dictionary import (
     PronunciationDictionary,
     audio_slug,
     default_audio_file,
+    display_term,
     is_plausible_selection,
     lookup_variants,
     normalize_term,
@@ -15,10 +16,58 @@ from pronounceit.dictionary import (
 
 
 class DictionaryTests(unittest.TestCase):
+    def make_dictionary(self) -> PronunciationDictionary:
+        entries = {}
+        items = [
+            {
+                "term": "bundle branch block",
+                "pronunciation": "BUN-dul branch block",
+                "syllables": "bun-dle branch block",
+            },
+            {
+                "term": "right bundle branch block",
+                "pronunciation": "RYT BUN-dul branch block",
+                "syllables": "right bun-dle branch block",
+            },
+            {
+                "term": "acute lymphoblastic leukemia",
+                "pronunciation": "uh-KYOOT lim-foh-BLAS-tik loo-KEE-mee-uh",
+                "syllables": "a-cute lym-pho-blas-tic leu-ke-mi-a",
+            },
+            {
+                "term": "focal seizure",
+                "pronunciation": "FOH-kul SEE-zhur",
+                "syllables": "fo-cal sei-zure",
+            },
+            {
+                "term": "right bundle branch block override",
+                "pronunciation": "RYT BUN-dul branch block OH-vur-ryd",
+                "syllables": "right bun-dle branch block o-ver-ride",
+                "aliases": ["RBBB"],
+                "source": "user-override",
+            },
+            {
+                "term": "Wolff-Parkinson-White",
+                "pronunciation": "WOOLF PARK-in-sun WYTE",
+                "syllables": "wolff par-kin-son white",
+            },
+        ]
+        PronunciationDictionary._merge_entries(entries, items, "test")
+        return PronunciationDictionary(entries)
+
     def test_normalize_term_trims_card_punctuation(self) -> None:
         self.assertEqual(normalize_term("  Agranulocytosis, "), "agranulocytosis")
         self.assertEqual(normalize_term("Crohn disease (CD)"), "crohn disease")
         self.assertEqual(normalize_term("Staphylococcus aureus [MSSA]"), "staphylococcus aureus")
+
+    def test_cloze_markup_is_stripped_before_lookup(self) -> None:
+        dictionary = PronunciationDictionary.bundled()
+
+        self.assertEqual(display_term("{{c1::clozapine}}"), "clozapine")
+        self.assertEqual(display_term("{{c1::clozapine::antipsychotic}}"), "clozapine")
+        self.assertTrue(is_plausible_selection("{{c1::clozapine}}"))
+        self.assertTrue(dictionary.lookup("{{c1::clozapine}}")["found"])
+        self.assertTrue(dictionary.lookup("{{c1::clozapine::antipsychotic}}")["found"])
 
     def test_rejects_overbroad_selection(self) -> None:
         self.assertFalse(
@@ -52,6 +101,70 @@ class DictionaryTests(unittest.TestCase):
     def test_lookup_variants_are_conservative(self) -> None:
         self.assertEqual(lookup_variants("carcinomas"), ["carcinomas", "carcinoma"])
         self.assertEqual(lookup_variants("pathologies"), ["pathologies", "pathology"])
+
+    def test_best_context_match_prefers_longest_dictionary_phrase(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "ECG shows right bundle branch block today."
+        start = context.index("bundle")
+        leukemia_context = "Concern for acute lymphoblastic leukemia."
+        leukemia_start = leukemia_context.index("lymphoblastic")
+
+        self.assertEqual(
+            dictionary.best_context_match(context, start, start + len("bundle")),
+            "right bundle branch block",
+        )
+        self.assertEqual(
+            dictionary.best_context_match(
+                leukemia_context,
+                leukemia_start,
+                leukemia_start + len("lymphoblastic"),
+            ),
+            "acute lymphoblastic leukemia",
+        )
+
+    def test_best_context_match_falls_back_when_no_phrase_matches(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "ECG shows unrelated branch wording today."
+        start = context.index("branch")
+
+        self.assertEqual(dictionary.best_context_match(context, start, start + len("branch")), "")
+
+    def test_best_context_match_does_not_cross_hard_punctuation(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "ECG shows right bundle. branch block today."
+        start = context.index("branch")
+
+        self.assertEqual(dictionary.best_context_match(context, start, start + len("branch")), "")
+
+    def test_best_context_match_uses_aliases_plurals_and_overrides(self) -> None:
+        dictionary = self.make_dictionary()
+        plural_context = "History includes focal seizures after fever."
+        plural_start = plural_context.index("seizures")
+        alias_context = "ECG shows RBBB today."
+        alias_start = alias_context.index("RBBB")
+
+        self.assertEqual(
+            dictionary.best_context_match(
+                plural_context,
+                plural_start,
+                plural_start + len("seizures"),
+            ),
+            "focal seizures",
+        )
+        self.assertEqual(
+            dictionary.best_context_match(alias_context, alias_start, alias_start + len("RBBB")),
+            "RBBB",
+        )
+
+    def test_best_context_match_handles_hyphenated_terms(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "Possible Wolff\u2011Parkinson\u2011White pattern."
+        start = context.index("Parkinson")
+
+        self.assertEqual(
+            dictionary.best_context_match(context, start, start + len("Parkinson")),
+            "Wolff\u2011Parkinson\u2011White",
+        )
 
     def test_dictionary_has_release_sized_seed_list(self) -> None:
         dictionary = PronunciationDictionary.bundled()
