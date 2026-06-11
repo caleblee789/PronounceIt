@@ -196,6 +196,19 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn('"menuX": 30', script)
         self.assertIn('"menuY": 40', script)
 
+    def test_support_message_opens_support_url(self) -> None:
+        reviewer = FakeReviewer()
+        original_open_support_url = main._open_support_url
+        calls = []
+        try:
+            main._open_support_url = lambda: calls.append(main.SUPPORT_URL)
+            handled = main._on_js_message((False, None), "pronounceit:support:{}", reviewer)
+        finally:
+            main._open_support_url = original_open_support_url
+
+        self.assertEqual(handled, (True, None))
+        self.assertEqual(calls, ["https://buymeacoffee.com/caleblee78f"])
+
     def test_audio_lookup_uses_longest_context_phrase_without_popup(self) -> None:
         reviewer = FakeReviewer()
         original_tts = main._tts

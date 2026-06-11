@@ -21,6 +21,8 @@ from .tts import (
 MESSAGE_PREFIX = "pronounceit:"
 WEB_JS_FILE = Path("web") / "pronounceit.js"
 WEB_CSS_FILE = Path("web") / "pronounceit.css"
+SUPPORT_URL = "https://buymeacoffee.com/caleblee78f"
+SUPPORT_TOOLTIP = "If you're enjoying PronounceIt, consider buying me a coffee."
 
 _addon_module = ""
 _addon_root: Path | None = None
@@ -389,10 +391,14 @@ def _show_config_dialog() -> None:
     advanced_toggle = QPushButton("Show advanced settings")
     advanced_toggle.setCheckable(True)
     reset_button = QPushButton("Reset to defaults")
+    support_button = QPushButton("Coffee")
+    support_button.setToolTip(SUPPORT_TOOLTIP)
     toggle_row = QHBoxLayout()
     toggle_row.setSpacing(8)
     toggle_row.addWidget(advanced_toggle)
     toggle_row.addWidget(reset_button)
+    toggle_row.addStretch(1)
+    toggle_row.addWidget(support_button)
     layout.addLayout(toggle_row)
 
     advanced_box = QGroupBox("Advanced")
@@ -508,6 +514,7 @@ def _show_config_dialog() -> None:
     direct_click.currentIndexChanged.connect(update_preview)
     popup_click.currentIndexChanged.connect(update_preview)
     reset_button.clicked.connect(reset_to_defaults)
+    support_button.clicked.connect(lambda _checked=False: _open_support_url())
     update_preview()
 
     try:
@@ -585,6 +592,21 @@ def _open_path(path: Path) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
     except Exception as exc:
         showInfo(f"Could not open {path}.\n\n{exc}", title="PronounceIt")
+
+
+def _open_support_url() -> None:
+    try:
+        from aqt.qt import QDesktopServices, QUrl
+        from aqt.utils import showInfo
+    except Exception:
+        _show_text("PronounceIt", SUPPORT_URL)
+        return
+
+    try:
+        if not QDesktopServices.openUrl(QUrl(SUPPORT_URL)):
+            showInfo(f"Could not open {SUPPORT_URL}.", title="PronounceIt")
+    except Exception as exc:
+        showInfo(f"Could not open {SUPPORT_URL}.\n\n{exc}", title="PronounceIt")
 
 
 def _show_saved_pronunciations() -> None:
@@ -1209,6 +1231,8 @@ def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tup
         _handle_speak(payload, context)
     elif action == "save":
         _handle_save(context, payload)
+    elif action == "support":
+        _open_support_url()
     elif action == "ready":
         _send_config(context)
     return True, None

@@ -1,5 +1,9 @@
 # PronounceIt Release Checklist
 
+For release-prep merges to `main`, run the checks below but do not create a
+GitHub Release, do not create a `v1.1.0` tag, and do not upload to AnkiWeb until
+the publish step is explicitly approved.
+
 Run these checks before distributing `dist/pronounceit.ankiaddon`:
 
 ```bash

@@ -89,6 +89,10 @@ user_files/custom_pronunciations.json
 
 These files stay local to your Anki profile and are preserved during add-on upgrades.
 
+## License
+
+PronounceIt is released under the MIT License. See `LICENSE` for details.
+
 ## For Developers
 
 The sections below are for local development, release checks, and pronunciation corpus maintenance.
@@ -143,14 +147,15 @@ See `RELEASE_CHECKLIST.md` for the full release gate and manual Anki smoke test.
 
 ## Release Notes
 
-Current release tag:
+Prepared release tag:
 
 ```text
-v1.0.2
+v1.1.0
 ```
 
 Release focus:
 
+- Adds a lightweight Support action in the quick menu and settings dialog.
 - Keeps answer-side Option/Alt-left-click audio fast and turns Option/Alt-right-click into a focused quick menu.
 - Moves Save pronunciation into the quick menu, with immediate Saved/Already saved feedback.
 - Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.

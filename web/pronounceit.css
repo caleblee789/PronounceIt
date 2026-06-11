@@ -116,6 +116,16 @@
   font-weight: 700;
 }
 
+.pronounceit-menu-support {
+  font-size: 12px;
+  min-height: 28px;
+  padding: 5px 10px;
+}
+
+.pronounceit-menu-support::before {
+  opacity: 0.72;
+}
+
 .pronounceit-menu button:hover,
 .pronounceit-menu button:focus {
   background: var(--pronounceit-hover);

@@ -20,6 +20,7 @@ INCLUDE_FILES = [
     "config.json",
     "config.md",
     "manifest.json",
+    "LICENSE",
     "README.md",
     "PRONUNCIATION_QA.md",
 ]
@@ -34,6 +35,7 @@ REQUIRED_ARCHIVE_FILES = {
     "__init__.py",
     "config.json",
     "manifest.json",
+    "LICENSE",
     "PRONUNCIATION_QA.md",
     "pronounceit/main.py",
     "pronounceit/dictionary.py",

@@ -20,11 +20,13 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn('send("speak"', js)
         self.assertIn("payload.audioFile", js)
         self.assertIn('send("save"', js)
+        self.assertIn('send("support"', js)
         self.assertIn("payload.autoPlay", js)
         self.assertNotIn("payload.saveAfterLookup", js)
         self.assertNotIn("pronounceit-save", js)
         self.assertIn("payload.alreadySaved", js)
         self.assertIn("payload.speechText", js)
+        self.assertIn("If you're enjoying PronounceIt, consider buying me a coffee.", js)
         self.assertIn("contextmenu", js)
         self.assertIn("keydown", js)
         self.assertIn("wordAtPoint", js)
@@ -1005,6 +1007,27 @@ if (!menuTerm || menuTerm.textContent !== "clozapine") {
 if (!elements.some((element) => element.textContent === "Save pronunciation")) {
   throw new Error("missing Save pronunciation action");
 }
+const supportButton = body.querySelector(".pronounceit-menu-support");
+if (!supportButton || supportButton.textContent !== "Support") {
+  throw new Error("missing Support action");
+}
+if (supportButton.title !== "If you're enjoying PronounceIt, consider buying me a coffee.") {
+  throw new Error(`bad Support tooltip: ${supportButton.title}`);
+}
+supportButton.listeners.click({ stopPropagation() {} });
+const support = messages.find((message) => message.startsWith("pronounceit:support:"));
+if (!support) {
+  throw new Error(`missing support message: ${JSON.stringify(messages)}`);
+}
+messages.length = 0;
+sandbox.window.PronounceIt.showMenu({
+  term: "clozapine",
+  speechText: "kloh zuh peen",
+  audioFile: "audio/clozapine.aiff",
+  found: true,
+  menuX: 12,
+  menuY: 24,
+});
 listeners.keydown({ key: "Enter", preventDefault() {} });
 const speak = messages.find((message) => message.startsWith("pronounceit:speak:"));
 if (!speak) {
@@ -1055,6 +1078,7 @@ if (body.querySelector(".pronounceit-menu")) {
 
         self.assertIn(".pronounceit-popup", css)
         self.assertIn(".pronounceit-menu", css)
+        self.assertIn(".pronounceit-menu-support", css)
         self.assertIn(".pronounceit-pronunciation.generated", css)
         self.assertIn("position: fixed", css)
         self.assertIn("z-index", css)

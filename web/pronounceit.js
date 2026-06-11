@@ -16,6 +16,7 @@
     unknownTermMessage: "Pronunciation unavailable",
   };
   const CONTEXT_LIMIT = 160;
+  const SUPPORT_TOOLTIP = "If you're enjoying PronounceIt, consider buying me a coffee.";
 
   let config = Object.assign({}, DEFAULT_CONFIG, window.PronounceItConfig || {});
   let lastPayload = null;
@@ -413,6 +414,20 @@
       });
       menuEl.appendChild(save);
     }
+
+    const support = document.createElement("button");
+    support.type = "button";
+    support.className = "pronounceit-menu-command pronounceit-menu-support";
+    support.textContent = "Support";
+    support.title = SUPPORT_TOOLTIP;
+    support.setAttribute("aria-label", SUPPORT_TOOLTIP);
+    support.setAttribute("role", "menuitem");
+    support.addEventListener("click", function (event) {
+      event.stopPropagation();
+      send("support", {});
+      hideMenu();
+    });
+    menuEl.appendChild(support);
 
     document.body.appendChild(menuEl);
     placeElement(menuEl, Number(payload.menuX || 24), Number(payload.menuY || 24));
