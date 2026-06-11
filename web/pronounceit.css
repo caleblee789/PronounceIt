@@ -1,0 +1,117 @@
+.pronounceit-menu,
+.pronounceit-popup {
+  box-sizing: border-box;
+  position: fixed;
+  z-index: 2147483647;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1f2933;
+}
+
+.pronounceit-menu {
+  min-width: 188px;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(31, 41, 51, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+}
+
+.pronounceit-menu button {
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #1f2933;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 18px;
+  min-height: 32px;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.pronounceit-menu button:hover {
+  background: #eef5f2;
+}
+
+.pronounceit-popup {
+  width: min(360px, calc(100vw - 20px));
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(31, 41, 51, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.22);
+  text-align: left;
+}
+
+.pronounceit-term {
+  color: #101820;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+}
+
+.pronounceit-pronunciation {
+  color: #164e63;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 20px;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.pronounceit-pronunciation.generated {
+  color: #176b87;
+  font-weight: 600;
+}
+
+.pronounceit-syllables {
+  color: #52616b;
+  font-size: 12px;
+  line-height: 18px;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.pronounceit-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pronounceit-actions button {
+  border: 1px solid rgba(31, 41, 51, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  min-height: 34px;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.pronounceit-icon-button {
+  background: #176b87;
+  color: #ffffff;
+}
+
+.pronounceit-save {
+  background: #f7faf9;
+  color: #1f2933;
+}
+
+.pronounceit-actions button:hover {
+  filter: brightness(0.96);
+}
+
+.pronounceit-status {
+  color: #3f7d20;
+  font-size: 12px;
+  line-height: 16px;
+  min-height: 16px;
+  margin-top: 8px;
+}

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "hotkey": "Mod+P",
+  "tts_voice": "",
+  "tts_rate": 0,
+  "tts_volume": 100,
+  "audio_backend": "local_audio_then_tts",
+  "auto_close_on_card_change": true,
+  "allow_on_question_side": false,
+  "show_context_menu": true,
+  "show_save_button": true,
+  "unknown_term_message": "Pronunciation unavailable"
+}

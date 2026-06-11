@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+user_files/custom_pronunciations.json
+user_files/saved_pronunciations.json
+user_files/generated_audio/*

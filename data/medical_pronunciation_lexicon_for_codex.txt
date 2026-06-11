@@ -1,0 +1,515 @@
+Medical Pronunciation Lexicon for Anki Add-on
+
+Format:
+term | student-friendly pronunciation
+
+General / Symptoms / Signs
+agranulocytosis | uh-GRAN-yoo-loh-sy-TOH-sis
+anaphylaxis | an-uh-fuh-LAK-sis
+angioedema | AN-jee-oh-uh-DEE-muh
+apoptosis | ay-pop-TOH-sis
+ascites | uh-SY-teez
+atelectasis | at-uh-LEK-tuh-sis
+cachexia | kuh-KEK-see-uh
+cataplexy | KAT-uh-plek-see
+catalepsy | KAT-uh-lep-see
+cyanosis | SY-uh-NOH-sis
+diaphoresis | dye-uh-fuh-REE-sis
+dysdiadochokinesia | dis-DYE-ad-oh-koh-ky-NEE-zhuh
+epistaxis | ep-ih-STAK-sis
+erythema | ehr-uh-THEE-muh
+exanthem | eg-ZAN-them
+hemoptysis | hih-MOP-tih-sis
+hematemesis | hee-muh-TEM-uh-sis
+hematochezia | hee-muh-toh-KEE-zhuh
+hirsutism | HER-soo-tiz-um
+icterus | IK-ter-us
+jaundice | JAWN-dis
+koilonychia | koy-loh-NIK-ee-uh
+leukoplakia | loo-koh-PLAY-kee-uh
+melena | muh-LEE-nuh
+myoclonus | my-OK-luh-nus
+nystagmus | nih-STAG-mus
+orthopnea | or-THOP-nee-uh
+paroxysmal | pair-uk-SIZ-mul
+petechiae | puh-TEE-kee-ee
+pruritus | proo-RY-tus
+purpura | PUR-pyoo-ruh
+rhinorrhea | rye-noh-REE-uh
+syncope | SIN-kuh-pee
+tinnitus | TIN-ih-tus or tuh-NY-tus
+urticaria | ur-tih-KAIR-ee-uh
+xanthoma | zan-THOH-muh
+xerostomia | zeer-oh-STOH-mee-uh
+
+Eponyms / Named Syndromes / Clinical Signs
+Achilles tendinopathy | uh-KIL-eez ten-dih-NOP-uh-thee
+Alzheimer disease | ALTS-hy-mer
+Apgar score | AP-gar
+Babinski sign | buh-BIN-skee
+Beck triad | BEK TRY-ad
+Brudzinski sign | broo-JIN-skee
+Charcot joint | shar-KOH
+Charcot triad | shar-KOH TRY-ad
+Chvostek sign | KVOH-stek
+Cushing syndrome | KUSH-ing
+Epley maneuver | EP-lee
+Finkelstein test | FINK-el-stine
+Guillain-Barre syndrome | gee-YAN buh-RAY
+Hirschsprung disease | HIRSH-sproong
+Kernig sign | KER-nig
+Klinefelter syndrome | KLYN-fel-ter
+Leriche syndrome | luh-REESH
+Meniere disease | men-YAIR
+Osler node | OZ-ler
+Pancoast tumor | PAN-kohst
+Phalen test | FAY-len
+Raynaud phenomenon | ray-NOH
+Rovsing sign | ROV-sing
+Sengstaken-Blakemore tube | SENG-stay-ken BLAKE-more
+Trousseau sign | troo-SOH
+Virchow node | FEER-koh or VIR-koh
+Wallenberg syndrome | WALL-en-berg
+Wernicke encephalopathy | VER-nih-kuh en-sef-uh-LOP-uh-thee
+Wolff-Parkinson-White | wolf PARK-in-sun white
+
+Pharmacology / Drugs
+acetaminophen | uh-see-tuh-MIN-oh-fen
+acetazolamide | uh-see-tuh-ZOL-uh-mide
+acyclovir | ay-SY-kloh-veer
+adalimumab | ay-duh-LIM-yoo-mab
+alendronate | uh-LEN-droh-nate
+allopurinol | al-oh-PURE-ih-nol
+amiodarone | uh-MEE-oh-duh-rohn
+amitriptyline | am-ih-TRIP-tih-leen
+amlodipine | am-LOH-dih-peen
+amoxicillin | uh-MOK-sih-sil-in
+amphotericin B | am-foh-TER-ih-sin bee
+apixaban | uh-PIX-uh-ban
+aripiprazole | air-ih-PIP-ruh-zohl
+atenolol | uh-TEN-oh-lol
+atorvastatin | uh-TOR-vuh-stat-in
+azathioprine | ay-zuh-THY-oh-preen
+azithromycin | uh-ZITH-roh-MY-sin
+benztropine | BENZ-troh-peen
+bupropion | byoo-PROH-pee-on
+buspirone | BYOO-spih-rohn
+cabergoline | kuh-BER-goh-leen
+carbamazepine | kar-buh-MAZ-uh-peen
+carbidopa-levodopa | kar-bih-DOH-puh leh-voh-DOH-puh
+carvedilol | kar-VED-ih-lol
+cefazolin | sef-AZ-oh-lin
+cefepime | SEF-eh-peem
+cephalexin | sef-uh-LEK-sin
+ceftriaxone | sef-try-AK-sohn
+celecoxib | sel-eh-KOK-sib
+cetirizine | seh-TEER-ih-zeen
+chloramphenicol | klor-am-FEN-ih-kol
+chlorthalidone | klor-THAL-ih-dohn
+ciprofloxacin | sip-roh-FLOK-suh-sin
+clindamycin | klin-duh-MY-sin
+clopidogrel | kloh-PID-oh-grel
+clozapine | KLOH-zuh-peen
+colchicine | KOL-chih-seen
+cyclobenzaprine | sy-kloh-BEN-zuh-preen
+cyclophosphamide | sy-kloh-FOS-fuh-mide
+dabigatran | duh-BIG-uh-tran
+daptomycin | DAP-toh-MY-sin
+dexamethasone | dek-suh-METH-uh-sohn
+dexmedetomidine | deks-med-eh-TOH-mih-deen
+diltiazem | dil-TYE-uh-zem
+diphenhydramine | dye-fen-HY-druh-meen
+dulaglutide | doo-luh-GLOO-tide
+duloxetine | doo-LOK-seh-teen
+empagliflozin | em-puh-glih-FLOH-zin
+enoxaparin | ee-nok-suh-PAIR-in
+ertapenem | er-tuh-PEN-em
+escitalopram | es-sye-TAL-oh-pram
+esomeprazole | es-oh-MEP-ruh-zohl
+etanercept | eh-TAN-er-sept
+ezetimibe | eh-ZET-ih-mibe
+famotidine | fuh-MOH-tih-deen
+fentanyl | FEN-tuh-nil
+fexofenadine | feks-oh-FEN-uh-deen
+fluconazole | floo-KOH-nuh-zohl
+flumazenil | floo-MAZ-uh-nil
+fluoxetine | floo-OK-seh-teen
+furosemide | fyoo-ROH-suh-mide
+gabapentin | gab-uh-PEN-tin
+gentamicin | jen-tuh-MY-sin
+glimepiride | gly-MEP-ih-ride
+glyburide | GLY-byoo-ride
+griseofulvin | griz-ee-oh-FUL-vin
+guaifenesin | gwye-FEN-eh-sin
+haloperidol | hal-oh-PAIR-ih-dol
+heparin | HEP-uh-rin
+hydralazine | HY-dral-uh-zeen
+hydrochlorothiazide | hy-droh-klor-oh-THY-uh-zide
+hydroxychloroquine | hy-drok-see-KLOR-oh-kwin
+ibuprofen | eye-byoo-PROH-fen
+imipenem | ih-mih-PEN-em
+infliximab | in-FLIK-sih-mab
+ipratropium | ip-ruh-TROH-pee-um
+isoniazid | eye-soh-NY-uh-zid
+ivermectin | eye-ver-MEK-tin
+ketorolac | kee-tor-oh-LAK
+labetalol | luh-BET-uh-lol
+lamotrigine | luh-MOH-trih-jeen
+lansoprazole | lan-SOH-pruh-zohl
+levetiracetam | leh-vuh-tye-RAS-uh-tam
+levofloxacin | lee-voh-FLOK-suh-sin
+levothyroxine | lee-voh-thy-ROK-seen
+lidocaine | LYE-doh-kane
+liraglutide | leer-uh-GLOO-tide
+lisdexamfetamine | lis-deks-am-FET-uh-meen
+lisinopril | lye-SIN-oh-pril
+lithium | LITH-ee-um
+lorazepam | lor-AZ-uh-pam
+losartan | loh-SAR-tan
+meropenem | mer-oh-PEN-em
+methimazole | meh-THIM-uh-zohl
+methotrexate | meth-oh-TREK-sate
+metoclopramide | met-oh-KLOH-pruh-mide
+metoprolol | meh-TOH-proh-lol
+metronidazole | met-roh-NY-duh-zohl
+mirtazapine | mer-TAZ-uh-peen
+moxifloxacin | mok-sih-FLOK-suh-sin
+mycophenolate mofetil | my-koh-FEN-oh-late MOH-feh-til
+nifedipine | nye-FED-ih-peen
+nitrofurantoin | nye-troh-fyoo-RAN-toyn
+norepinephrine | nor-ep-ih-NEF-rin
+olanzapine | oh-LAN-zuh-peen
+omeprazole | oh-MEP-ruh-zohl
+ondansetron | on-DAN-seh-tron
+oxcarbazepine | oks-kar-BAZ-uh-peen
+pantoprazole | pan-TOH-pruh-zohl
+paroxetine | puh-ROK-seh-teen
+phenazopyridine | fen-ay-zoh-PEER-ih-deen
+phenobarbital | fee-noh-BAR-bih-tal
+phenytoin | FEN-ih-toyn
+piperacillin-tazobactam | pi-per-uh-SIL-in tay-zoh-BAK-tam
+pravastatin | PRAV-uh-stat-in
+prednisone | PRED-nih-sohn
+pregabalin | preh-GAB-uh-lin
+propofol | PROH-poh-fol
+propranolol | proh-PRAN-oh-lol
+propylthiouracil | proh-pil-thy-oh-YOOR-uh-sil
+quetiapine | kwe-TYE-uh-peen
+rabeprazole | ruh-BEP-ruh-zohl
+risperidone | ris-PAIR-ih-dohn
+rivaroxaban | riv-uh-ROK-suh-ban
+rosuvastatin | roh-SOO-vuh-stat-in
+sacubitril-valsartan | suh-KYOO-bih-tril val-SAR-tan
+semaglutide | sem-uh-GLOO-tide
+sitagliptin | sit-uh-GLIP-tin
+spironolactone | spy-roh-noh-LAK-tohn
+succinylcholine | suk-sih-nil-KOH-leen
+sulfamethoxazole-trimethoprim | sul-fuh-meth-OK-suh-zohl try-METH-oh-prim
+tacrolimus | tuh-KROH-lih-mus
+tamoxifen | tuh-MOK-sih-fen
+tamsulosin | tam-SOO-loh-sin
+terbinafine | ter-BIN-uh-feen
+ticagrelor | tye-KAG-reh-lor
+tinidazole | tye-NID-uh-zohl
+tiotropium | tye-oh-TROH-pee-um
+topiramate | toh-PEER-uh-mate
+trazodone | TRAZ-oh-dohn
+triamcinolone | try-am-SIN-oh-lohn
+valacyclovir | val-ay-SY-kloh-veer
+valganciclovir | val-gan-SY-kloh-veer
+vancomycin | van-koh-MY-sin
+varenicline | vuh-REN-ih-kleen
+venlafaxine | ven-luh-FAK-seen
+verapamil | ver-AP-uh-mil
+voriconazole | vor-ih-KOH-nuh-zohl
+warfarin | WAR-fuh-rin
+ziprasidone | zih-PRAS-ih-dohn
+zolpidem | ZOHL-pih-dem
+
+Microbiology / Organisms
+Actinomyces | ak-tih-noh-MY-seez
+Anaplasma | an-uh-PLAZ-muh
+Ascaris lumbricoides | AS-kuh-ris lum-brih-KOY-deez
+Aspergillus | as-per-JIL-us
+Babesia | buh-BEE-zee-uh
+Bacteroides fragilis | bak-tuh-ROY-deez FRAJ-ih-lis
+Bordetella pertussis | bor-duh-TEL-uh per-TUH-sis
+Borrelia burgdorferi | bor-REL-ee-uh burg-DOR-fer-eye
+Brucella | broo-SELL-uh
+Campylobacter jejuni | KAM-pih-loh-bak-ter juh-JOO-nee
+Candida albicans | KAN-dih-duh AL-bih-kanz
+Chikungunya | chik-un-GOON-yuh
+Chlamydia trachomatis | kluh-MID-ee-uh truh-KOH-muh-tis
+Clostridioides difficile | kloh-STRID-ee-OY-deez dif-ih-SEEL
+Coccidioides | kok-sid-ee-OY-deez
+Corynebacterium diphtheriae | kor-rye-nee-bak-TEER-ee-um dif-THEER-ee-ee
+Cryptococcus neoformans | krip-toh-KOK-us nee-oh-FOR-manz
+Cryptosporidium | krip-toh-spo-RID-ee-um
+Cytomegalovirus | SY-toh-MEG-uh-loh-vy-rus
+Dientamoeba fragilis | dye-en-tuh-MEE-buh FRAJ-ih-lis
+Echinococcus granulosus | eh-kih-noh-KOK-us gran-yoo-LOH-sus
+Ehrlichia | air-LIK-ee-uh
+Entamoeba histolytica | en-tuh-MEE-buh his-toh-LIT-ih-kuh
+Enterococcus faecalis | en-ter-oh-KOK-us fee-KAL-is
+Epstein-Barr virus | EP-stine BAR
+Escherichia coli | esh-er-IK-ee-uh KOH-lye
+Francisella tularensis | fran-sih-SELL-uh too-luh-REN-sis
+Gardnerella vaginalis | gard-ner-EL-uh vaj-ih-NAL-is
+Giardia lamblia | jee-AR-dee-uh LAM-blee-uh
+Haemophilus influenzae | hee-MOF-ih-lus in-floo-EN-zee
+Helicobacter pylori | HEL-ih-koh-bak-ter pye-LOR-eye
+Histoplasma capsulatum | his-toh-PLAZ-muh kap-soo-LAY-tum
+Klebsiella pneumoniae | kleb-see-EL-uh noo-MOH-nee-ee
+Legionella pneumophila | lee-juh-NEL-uh noo-moh-FIL-uh
+Leishmania | leesh-MAY-nee-uh
+Leptospira interrogans | lep-toh-SPY-ruh in-TER-oh-ganz
+Listeria monocytogenes | lis-TEER-ee-uh mon-oh-sy-TAH-juh-neez
+Moraxella catarrhalis | mor-uh-KSEL-uh kuh-TAR-uh-lis
+Mycobacterium avium complex | my-koh-bak-TEER-ee-um AY-vee-um
+Mycobacterium tuberculosis | my-koh-bak-TEER-ee-um too-ber-kyoo-LOH-sis
+Mycoplasma pneumoniae | my-koh-PLAZ-muh noo-MOH-nee-ee
+Naegleria fowleri | nay-GLEER-ee-uh FOWL-er-eye
+Neisseria gonorrhoeae | nye-SEER-ee-uh gon-uh-REE-ee
+Neisseria meningitidis | nye-SEER-ee-uh meh-nin-jih-TID-is
+Nocardia | noh-KAR-dee-uh
+Onchocerca volvulus | on-koh-SER-kuh VOL-vyoo-lus
+Paracoccidioides | pair-uh-kok-sid-ee-OY-deez
+Parvovirus B19 | PAR-voh-vy-rus bee-nineteen
+Plasmodium falciparum | plaz-MOH-dee-um fal-SIP-uh-rum
+Pneumocystis jirovecii | noo-moh-SIS-tis yee-roh-VET-see-ee
+Proteus mirabilis | PROH-tee-us mih-RAB-ih-lis
+Pseudomonas aeruginosa | soo-doh-MOH-nas air-oo-jih-NOH-suh
+Rickettsia rickettsii | rih-KET-see-uh rih-KET-see-eye
+Salmonella | sal-muh-NEL-uh
+Schistosoma | shis-toh-SOH-muh
+Serratia marcescens | seh-RAY-shee-uh mar-SESS-enz
+Shigella | shih-GEL-uh
+Staphylococcus aureus | staf-ih-loh-KOK-us OR-ee-us
+Stenotrophomonas maltophilia | sten-oh-troh-foh-MOH-nas mal-toh-FIL-ee-uh
+Streptococcus agalactiae | strep-toh-KOK-us ag-uh-LAK-tee-ee
+Streptococcus pneumoniae | strep-toh-KOK-us noo-MOH-nee-ee
+Streptococcus pyogenes | strep-toh-KOK-us pye-AH-juh-neez
+Strongyloides stercoralis | stron-jih-LOY-deez ster-koh-RAL-is
+Taenia solium | TEE-nee-uh SOH-lee-um
+Toxoplasma gondii | tok-soh-PLAZ-muh GON-dee-eye
+Treponema pallidum | treh-poh-NEE-muh PAL-ih-dum
+Trichomonas vaginalis | trik-oh-MOH-nas vaj-ih-NAL-is
+Trichophyton | try-KOH-fih-ton
+Trypanosoma cruzi | try-pan-oh-SOH-muh KROO-zee
+Ureaplasma urealyticum | yoo-ree-uh-PLAZ-muh yoo-ree-uh-LIT-ih-kum
+Vibrio vulnificus | VIB-ree-oh vul-NIF-ih-kus
+Yersinia enterocolitica | yer-SIN-ee-uh en-ter-oh-koh-LIT-ih-kuh
+
+Gastroenterology
+achalasia | ak-uh-LAY-zhuh
+choledocholithiasis | koh-LED-oh-koh-lih-THY-uh-sis
+cholecystitis | koh-lee-sis-TY-tis
+cholelithiasis | koh-lee-lih-THY-uh-sis
+cirrhosis | sih-ROH-sis
+Crohn disease | KROHN
+diverticulitis | dye-ver-tik-yoo-LY-tis
+dysphagia | dis-FAY-jee-uh
+odynophagia | oh-din-oh-FAY-jee-uh
+esophagitis | eh-sof-uh-JY-tis
+gastroesophageal reflux | gas-troh-eh-sof-uh-JEE-ul REE-fluks
+gastroparesis | gas-troh-puh-REE-sis
+hematochezia | hee-muh-toh-KEE-zhuh
+intussusception | in-tuh-suh-SEP-shun
+ischemic colitis | is-KEE-mik koh-LY-tis
+Mallory-Weiss tear | MAL-oh-ree WYSS
+mesenteric ischemia | meh-zen-TAIR-ik is-KEE-mee-uh
+pancreatitis | pan-kree-uh-TY-tis
+pyloric stenosis | pye-LOR-ik steh-NOH-sis
+sclerosing cholangitis | skluh-ROH-sing koh-lan-JY-tis
+ulcerative colitis | UL-ser-uh-tiv koh-LY-tis
+volvulus | VOL-vyoo-lus
+
+Cardiology
+angiography | an-jee-AH-gruh-fee
+aortic regurgitation | ay-OR-tik ree-gur-jih-TAY-shun
+aortic stenosis | ay-OR-tik steh-NOH-sis
+arrhythmia | uh-RITH-mee-uh
+atherosclerosis | ath-er-oh-skluh-ROH-sis
+cardiomyopathy | kar-dee-oh-my-OP-uh-thee
+coarctation | koh-ark-TAY-shun
+commotio cordis | koh-MOH-shee-oh KOR-dis
+decompensated heart failure | dee-KOM-pen-say-ted
+endocarditis | en-doh-kar-DY-tis
+hypertrophic cardiomyopathy | hy-per-TROH-fik kar-dee-oh-my-OP-uh-thee
+myocarditis | my-oh-kar-DY-tis
+pericarditis | pair-ih-kar-DY-tis
+pericardiocentesis | pair-ih-kar-dee-oh-sen-TEE-sis
+pericardial effusion | pair-ih-KAR-dee-ul eh-FYOO-zhun
+supraventricular tachycardia | soo-pruh-ven-TRIK-yoo-ler tak-ee-KAR-dee-uh
+tachyarrhythmia | tak-ee-uh-RITH-mee-uh
+tetralogy of Fallot | teh-TRAL-uh-jee uhv fah-LOH
+thrombophlebitis | throm-boh-fleh-BY-tis
+torsades de pointes | tor-SAHDS duh PWANT
+ventricular fibrillation | ven-TRIK-yoo-ler fih-bril-AY-shun
+
+Renal / Urology
+alkalosis | al-kuh-LOH-sis
+anuria | an-YOOR-ee-uh
+azotemia | ay-zoh-TEE-mee-uh
+cystitis | sis-TY-tis
+dysuria | dis-YOOR-ee-uh
+glomerulonephritis | gloh-MAIR-yoo-loh-neh-FRY-tis
+hydronephrosis | hy-droh-neh-FROH-sis
+hypospadias | hye-poh-SPAY-dee-us
+nephrolithiasis | nef-roh-lih-THY-uh-sis
+oliguria | ah-lih-GYOO-ree-uh
+pyelonephritis | pye-eh-loh-neh-FRY-tis
+ureter | YUR-uh-ter
+urethra | yoo-REE-thruh
+vesicoureteral reflux | veh-zih-koh-yoo-REE-ter-ul REE-fluks
+
+OB/GYN
+amenorrhea | ay-men-uh-REE-uh
+amniocentesis | am-nee-oh-sen-TEE-sis
+bartholinitis | bar-toh-lih-NY-tis
+chorioamnionitis | kor-ee-oh-am-nee-oh-NY-tis
+dysmenorrhea | dis-men-uh-REE-uh
+dyspareunia | dis-puh-ROO-nee-uh
+endometriosis | en-doh-mee-tree-OH-sis
+gonorrhea | gon-uh-REE-uh
+leiomyoma | lye-oh-my-OH-muh
+menorrhagia | men-oh-RAY-jee-uh
+mittelschmerz | MIT-ul-shmerts
+oligomenorrhea | ah-lih-goh-men-uh-REE-uh
+preeclampsia | pree-ee-KLAMP-see-uh
+salpingitis | sal-pin-JY-tis
+teratoma | tair-uh-TOH-muh
+vulvovaginitis | vul-voh-vaj-ih-NY-tis
+
+Neurology
+aphasia | uh-FAY-zhuh
+apraxia | uh-PRAK-see-uh
+asterixis | as-ter-IK-sis
+bradykinesia | bray-dee-ky-NEE-zhuh
+catatonia | kat-uh-TOH-nee-uh
+chorea | koh-REE-uh
+dysarthria | dis-AR-three-uh
+dyslexia | dis-LEK-see-uh
+encephalitis | en-sef-uh-LY-tis
+encephalopathy | en-sef-uh-LOP-uh-thee
+glioblastoma | glee-oh-blas-TOH-muh
+hemiballismus | hem-ee-buh-LIZ-mus
+hydrocephalus | hy-droh-SEF-uh-lus
+meningioma | meh-nin-jee-OH-muh
+meningitis | men-in-JY-tis
+myasthenia gravis | my-us-THEE-nee-uh GRAV-is
+neuralgia | noo-RAL-juh
+neurofibromatosis | noo-roh-fy-broh-muh-TOH-sis
+papilledema | pap-il-uh-DEE-muh
+paresthesia | pair-es-THEE-zhuh
+pseudotumor cerebri | SOO-doh-too-mor suh-REE-bry
+spondylolisthesis | spon-dih-loh-lis-THEE-sis
+subarachnoid hemorrhage | sub-uh-RAK-noyd HEM-uh-rij
+
+Dermatology
+acanthosis nigricans | ak-an-THOH-sis NY-grih-kanz
+alopecia areata | al-oh-PEE-shuh air-ee-AH-tuh
+bullous pemphigoid | BUL-us PEM-fih-goyd
+carbuncle | KAR-bunk-ul
+cellulitis | sel-yoo-LY-tis
+dermatophyte | der-MAT-oh-fyte
+erysipelas | air-ih-SIP-uh-lus
+hidradenitis suppurativa | hy-drad-uh-NY-tis suh-PYOO-ruh-tiv-uh
+impetigo | im-puh-TY-goh
+lichen planus | LYE-ken PLAY-nus
+molluscum contagiosum | moh-LUS-kum kon-tay-jee-OH-sum
+onychomycosis | oh-nih-koh-my-KOH-sis
+psoriasis | soh-RY-uh-sis
+seborrheic keratosis | seb-oh-REE-ik kair-uh-TOH-sis
+tinea corporis | TIN-ee-uh KOR-puh-ris
+tinea cruris | TIN-ee-uh KROO-ris
+tinea pedis | TIN-ee-uh PED-is
+vitiligo | vit-ih-LY-goh
+
+MSK / Rheumatology
+achondroplasia | ay-kon-droh-PLAY-zhuh
+ankylosing spondylitis | AN-kih-loh-sing spon-dih-LY-tis
+arthrocentesis | ar-throh-sen-TEE-sis
+bursitis | bur-SY-tis
+de Quervain tenosynovitis | duh-kair-VAN ten-oh-sin-oh-VY-tis
+epicondylitis | ep-ih-kon-dih-LY-tis
+genu valgum | JEN-yoo VAL-gum
+genu varum | JEN-yoo VAIR-um
+kyphosis | kye-FOH-sis
+lordosis | lor-DOH-sis
+osteomalacia | os-tee-oh-muh-LAY-shuh
+osteomyelitis | os-tee-oh-my-uh-LY-tis
+osteoporosis | os-tee-oh-puh-ROH-sis
+scoliosis | skoh-lee-OH-sis
+spondylitis | spon-dih-LY-tis
+tenosynovitis | ten-oh-sin-oh-VY-tis
+
+Endocrine
+acromegaly | ak-roh-MEG-uh-lee
+Addison disease | AD-ih-sun
+aldosteronism | al-DOS-ter-oh-niz-um
+Cushing disease | KUSH-ing
+diabetes insipidus | dye-uh-BEE-teez in-SIP-ih-dus
+diabetes mellitus | dye-uh-BEE-teez meh-LY-tus
+euthyroid | yoo-THY-royd
+galactorrhea | guh-lak-toh-REE-uh
+gynecomastia | guy-neh-koh-MAS-tee-uh
+Hashimoto thyroiditis | hah-shee-MOH-toh thy-roy-DY-tis
+hyperparathyroidism | hy-per-pair-uh-THY-royd-iz-um
+pheochromocytoma | fee-oh-kroh-moh-sy-TOH-muh
+prolactinoma | proh-lak-tih-NOH-muh
+thyrotoxicosis | thy-roh-tok-sih-KOH-sis
+
+Pathology / Hematology / General Disease Terms
+acidosis | as-ih-DOH-sis
+amyloidosis | am-ih-loy-DOH-sis
+anaplasia | an-uh-PLAY-zhuh
+aneuploidy | AN-yoo-ploy-dee
+dysplasia | dis-PLAY-zhuh
+hemochromatosis | hee-moh-kroh-muh-TOH-sis
+hyperplasia | hy-per-PLAY-zhuh
+hypertrophy | hy-PER-truh-fee
+hypoplasia | hy-poh-PLAY-zhuh
+metaplasia | met-uh-PLAY-zhuh
+neoplasia | nee-oh-PLAY-zhuh
+paraneoplastic | pair-uh-nee-oh-PLAS-tik
+sarcoidosis | sar-koy-DOH-sis
+thrombocytopenia | throm-boh-sy-toh-PEE-nee-uh
+
+Procedures / Diagnostics
+abdominocentesis | ab-dom-ih-noh-sen-TEE-sis
+arthroscopy | ar-THROS-kuh-pee
+bronchoscopy | bron-KOS-kuh-pee
+cholecystectomy | koh-lee-sis-TEK-tuh-mee
+colonoscopy | koh-luh-NOS-kuh-pee
+cricothyrotomy | kry-koh-thy-ROT-uh-mee
+electroencephalogram | ee-lek-troh-en-SEF-uh-loh-gram
+electrocardiogram | ee-lek-troh-KAR-dee-oh-gram
+endoscopy | en-DOS-kuh-pee
+laparoscopy | lap-uh-ROS-kuh-pee
+laryngoscopy | lair-in-GOS-kuh-pee
+paracentesis | pair-uh-sen-TEE-sis
+thoracentesis | thor-uh-sen-TEE-sis
+tracheostomy | tray-kee-OS-tuh-mee
+tympanocentesis | tim-pan-oh-sen-TEE-sis
+
+
+
+Suggested Pronunciation System Priority
+
+1. Exact-match medical lexicon.
+2. Case-insensitive normalized match that strips punctuation, plural endings, Greek letters, and parentheticals.
+3. Alias matching for brand/generic drugs, eponyms, and organism abbreviations.
+4. Suffix rules for unknown words:
+   -itis -> usually EYE-tis
+   -emia -> usually EE-mee-uh
+   -osis -> usually OH-sis
+   -ectomy -> usually EK-tuh-mee
+   -ostomy -> usually OS-tuh-mee
+   -centesis -> usually sen-TEE-sis
+   -plasty -> usually plas-tee
+   -oma -> usually OH-muh
+   -pathy -> usually PATH-ee
+   -penia -> usually PEE-nee-uh
+   -phagia -> usually FAY-jee-uh
+   -rrhea -> usually REE-uh
