@@ -17,6 +17,8 @@ class BuildScriptTests(unittest.TestCase):
         self.assertTrue(build_ankiaddon.should_include(Path("pronounceit/main.py")))
         self.assertTrue(build_ankiaddon.should_include(Path("user_files/custom_pronunciations.sample.json")))
         self.assertIn("audio", build_ankiaddon.INCLUDE_DIRS)
+        self.assertIn("LICENSE", build_ankiaddon.INCLUDE_FILES)
+        self.assertIn("LICENSE", build_ankiaddon.REQUIRED_ARCHIVE_FILES)
 
     def test_validate_archive_rejects_forbidden_paths(self) -> None:
         with TemporaryDirectory() as tmp:

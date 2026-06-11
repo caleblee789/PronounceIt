@@ -52,19 +52,33 @@ class SavedPronunciations:
             "found": bool(payload.get("found")),
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
+        for key in ("cardId", "noteId", "deckId", "deckName"):
+            if payload.get(key) not in (None, ""):
+                record[key] = payload[key]
         items.append(record)
         self.path.write_text(json.dumps(items, indent=2, sort_keys=True), encoding="utf-8")
         return SaveResult(saved=True, duplicate=False, total=len(items))
 
     def contains(self, payload: dict[str, Any]) -> bool:
-        key = str(payload.get("term") or payload.get("requestedText") or "").casefold()
+        key = saved_entry_key(payload)
         if not key:
             return False
         for item in self.load():
-            item_key = str(item.get("term") or item.get("requestedText") or "").casefold()
-            if item_key == key:
+            if saved_entry_key(item) == key:
                 return True
         return False
+
+    def remove_entry(self, key: str) -> bool:
+        target = str(key or "").casefold()
+        if not target:
+            return False
+        items = self.load()
+        next_items = [item for item in items if saved_entry_key(item) != target]
+        if len(next_items) == len(items):
+            return False
+        self.user_dir.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(next_items, indent=2, sort_keys=True), encoding="utf-8")
+        return True
 
 
 class CustomPronunciations:
@@ -142,3 +156,7 @@ def format_saved_entries(items: list[dict[str, Any]]) -> str:
             ]
         )
     return "\n".join(lines).rstrip()
+
+
+def saved_entry_key(item: dict[str, Any]) -> str:
+    return str(item.get("term") or item.get("requestedText") or "").casefold()

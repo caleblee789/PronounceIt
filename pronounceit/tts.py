@@ -3,7 +3,7 @@ from __future__ import annotations
 import platform
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from typing import Any
@@ -22,11 +22,22 @@ class TtsSettings:
     term: str = ""
 
 
+@dataclass(frozen=True)
+class TtsResult:
+    ok: bool
+    reason: str = ""
+    attempts: list[str] = field(default_factory=list)
+
+
 class TtsEngine:
     name = "base"
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
         raise NotImplementedError
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
+        ok = self.speak(text, settings)
+        return TtsResult(ok=ok, reason="" if ok else "backend unavailable")
 
 
 class QtTextToSpeechEngine(TtsEngine):
@@ -49,9 +60,15 @@ class QtTextToSpeechEngine(TtsEngine):
         return self._engine
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
+        return self.speak_result(text, settings).ok
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend == "local_audio":
-            return False
-        engine = self._ensure_engine()
+            return TtsResult(False, "system TTS disabled")
+        try:
+            engine = self._ensure_engine()
+        except Exception as exc:
+            return TtsResult(False, "Qt TextToSpeech is unavailable", [str(exc)])
         if settings.volume is not None and hasattr(engine, "setVolume"):
             engine.setVolume(max(0, min(100, settings.volume)) / 100)
         if settings.rate and hasattr(engine, "setRate"):
@@ -61,16 +78,22 @@ class QtTextToSpeechEngine(TtsEngine):
                 if settings.voice.casefold() in voice.name().casefold():
                     engine.setVoice(voice)
                     break
-        engine.say(text)
-        return True
+        try:
+            engine.say(text)
+        except Exception as exc:
+            return TtsResult(False, "Qt TextToSpeech failed to speak", [str(exc)])
+        return TtsResult(True, "playing with Qt TextToSpeech")
 
 
 class CommandTtsEngine(TtsEngine):
     name = "platform-command"
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
+        return self.speak_result(text, settings).ok
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend == "local_audio":
-            return False
+            return TtsResult(False, "system TTS disabled")
         system = platform.system()
         command: list[str] | None = None
         if system == "Darwin" and shutil.which("say"):
@@ -96,9 +119,12 @@ class CommandTtsEngine(TtsEngine):
             command = ["espeak", text]
 
         if not command:
-            return False
-        subprocess.Popen(command)
-        return True
+            return TtsResult(False, "no system TTS command is available")
+        try:
+            subprocess.Popen(command)
+        except Exception as exc:
+            return TtsResult(False, "system TTS command failed to start", [str(exc)])
+        return TtsResult(True, "playing with system TTS command")
 
 
 class LocalAudioFileEngine(TtsEngine):
@@ -108,16 +134,22 @@ class LocalAudioFileEngine(TtsEngine):
         self.addon_root = addon_root
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
+        return self.speak_result(text, settings).ok
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
-            return False
+            return TtsResult(False, "local audio disabled")
         audio_path = self._resolve_audio_file(settings.audio_file)
         if audio_path is None:
-            return False
+            return TtsResult(False, "local audio unavailable")
         command = self._playback_command(audio_path)
         if command is None:
-            return False
-        subprocess.Popen(command)
-        return True
+            return TtsResult(False, "no local audio playback command is available")
+        try:
+            subprocess.Popen(command)
+        except Exception as exc:
+            return TtsResult(False, "local audio playback failed to start", [str(exc)])
+        return TtsResult(True, "playing local audio")
 
     def _resolve_audio_file(self, audio_file: str) -> Path | None:
         if not audio_file:
@@ -175,16 +207,19 @@ class GeneratedAudioFileEngine(TtsEngine):
         self._player = LocalAudioFileEngine(addon_root)
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
+        return self.speak_result(text, settings).ok
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
-            return False
+            return TtsResult(False, "generated audio disabled")
         speech_text = " ".join(text.split())
         if not speech_text:
-            return False
+            return TtsResult(False, "empty speech text")
         audio_path = self._cache_path(settings.term or speech_text)
         if not audio_path.exists() and not self._generate_audio(speech_text, audio_path, settings):
-            return False
+            return TtsResult(False, "generated audio unavailable")
         relative_path = audio_path.relative_to(self.addon_root).as_posix()
-        return self._player.speak(
+        result = self._player.speak_result(
             text,
             TtsSettings(
                 voice=settings.voice,
@@ -195,6 +230,9 @@ class GeneratedAudioFileEngine(TtsEngine):
                 term=settings.term,
             ),
         )
+        if not result.ok:
+            return TtsResult(False, result.reason or "generated audio playback failed", result.attempts)
+        return TtsResult(True, "playing generated audio", result.attempts)
 
     def _cache_path(self, key: str) -> Path:
         slug = _audio_slug(key) or "pronounceit_term"
@@ -204,13 +242,19 @@ class GeneratedAudioFileEngine(TtsEngine):
         say = shutil.which("say")
         if not say:
             return False
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False
         command = [say]
         if settings.voice:
             command.extend(["-v", settings.voice])
         command.extend(["-o", str(output_path), speech_text])
-        result = subprocess.run(command, text=True, capture_output=True)
-        return result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+        try:
+            result = subprocess.run(command, text=True, capture_output=True)
+            return result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+        except Exception:
+            return False
 
 
 class CompositeTtsEngine(TtsEngine):
@@ -220,15 +264,29 @@ class CompositeTtsEngine(TtsEngine):
         self.engines = engines or [QtTextToSpeechEngine(), CommandTtsEngine()]
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
+        return self.speak_result(text, settings).ok
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if not text.strip():
-            return False
+            return TtsResult(False, "empty speech text")
+        attempts: list[str] = []
+        last_reason = "no audio backend succeeded"
         for engine in self.engines:
             try:
-                if engine.speak(text, settings):
-                    return True
-            except Exception:
+                result = engine.speak_result(text, settings)
+                reason = result.reason or ("ok" if result.ok else "unavailable")
+                attempts.append(f"{engine.name}: {reason}")
+                attempts.extend(result.attempts)
+                if result.ok:
+                    return TtsResult(True, reason, attempts)
+                last_reason = reason
+            except Exception as exc:
+                last_reason = f"{engine.name} failed"
+                attempts.append(f"{engine.name}: {exc}")
                 continue
-        return False
+        if settings.audio_backend == "local_audio":
+            last_reason = "local audio unavailable"
+        return TtsResult(False, last_reason, attempts)
 
 
 def _is_relative_to(path: Path, parent: Path) -> bool:

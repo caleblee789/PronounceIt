@@ -9,6 +9,9 @@ from typing import Any
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "medical_pronunciations.json"
 TERM_RE = re.compile(r"[^\s.,;!?{}\[\]<>\"`][^.,;!?{}\[\]<>\"`]{0,79}")
+CLOZE_RE = re.compile(r"\{\{c\d+::([^{}]*?)(?:::[^{}]*)?\}\}", re.IGNORECASE)
+CONTEXT_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\u2010-\u2015-]*")
+CONTEXT_BOUNDARY_RE = re.compile(r"[\n\r.,;:!?{}\[\]<>\"`]")
 
 
 @dataclass(frozen=True)
@@ -33,7 +36,7 @@ class PronunciationEntry:
 
 
 def normalize_term(value: str) -> str:
-    cleaned = " ".join(value.replace("\u00a0", " ").split())
+    cleaned = " ".join(strip_cloze_markup(value).replace("\u00a0", " ").split())
     cleaned = strip_trailing_parenthetical(cleaned)
     cleaned = cleaned.strip(".,;:!?()[]{}<>\"`")
     cleaned = re.sub(r"[\u2010-\u2015-]+", " ", cleaned)
@@ -42,9 +45,13 @@ def normalize_term(value: str) -> str:
 
 
 def display_term(value: str) -> str:
-    cleaned = " ".join(value.replace("\u00a0", " ").split())
+    cleaned = " ".join(strip_cloze_markup(value).replace("\u00a0", " ").split())
     cleaned = strip_trailing_parenthetical(cleaned)
     return cleaned.strip(".,;:!?()[]{}<>\"`")
+
+
+def strip_cloze_markup(value: str) -> str:
+    return CLOZE_RE.sub(lambda match: match.group(1), str(value or ""))
 
 
 def strip_trailing_parenthetical(value: str) -> str:
@@ -106,6 +113,68 @@ class PronunciationDictionary:
     def contains(self, term: str) -> bool:
         return self._find_entry(term) is not None
 
+    def best_context_match(
+        self,
+        context_text: str,
+        start: int,
+        end: int,
+        max_words: int = 4,
+    ) -> str:
+        text = strip_cloze_markup(str(context_text or "")).replace("\u00a0", " ")
+        if not text:
+            return ""
+
+        selected_start = max(0, min(int(start or 0), len(text)))
+        selected_end = max(selected_start, min(int(end or selected_start), len(text)))
+        tokens = list(CONTEXT_TOKEN_RE.finditer(text))
+        if not tokens:
+            return ""
+
+        selected_indexes = [
+            index
+            for index, token in enumerate(tokens)
+            if token.start() < selected_end and token.end() > selected_start
+        ]
+        if not selected_indexes:
+            nearest_index = min(
+                range(len(tokens)),
+                key=lambda index: _span_distance(
+                    tokens[index].start(),
+                    tokens[index].end(),
+                    selected_start,
+                    selected_end,
+                ),
+            )
+            selected_indexes = [nearest_index]
+
+        first_selected = min(selected_indexes)
+        last_selected = max(selected_indexes)
+        best: tuple[int, int, int, str] | None = None
+
+        for first in range(max(0, last_selected - max_words + 1), first_selected + 1):
+            for last in range(last_selected, min(len(tokens), first + max_words)):
+                word_count = last - first + 1
+                if first > first_selected or last < last_selected:
+                    continue
+                if word_count > max_words:
+                    continue
+                if _tokens_cross_context_boundary(text, tokens, first, last):
+                    continue
+                candidate = display_term(text[tokens[first].start() : tokens[last].end()])
+                if not candidate or not self.contains(candidate):
+                    continue
+                distance = _span_distance(
+                    tokens[first].start(),
+                    tokens[last].end(),
+                    selected_start,
+                    selected_end,
+                )
+                score = (-word_count, distance, tokens[first].start(), candidate)
+                if best is None or score < best:
+                    best = score
+
+        return best[3] if best else ""
+
     def count(self) -> int:
         return len({entry.term.casefold() for entry in self._entries.values()})
 
@@ -132,11 +201,48 @@ def lookup_variants(value: str) -> list[str]:
     elif normalized.endswith("s") and len(normalized) > 3:
         variants.append(normalized[:-1])
 
+    if " " in normalized:
+        prefix, final_word = normalized.rsplit(" ", 1)
+        for final_variant in _final_word_variants(final_word):
+            variants.append(f"{prefix} {final_variant}")
+
     deduped: list[str] = []
     for variant in variants:
         if variant and variant not in deduped:
             deduped.append(variant)
     return deduped
+
+
+def _final_word_variants(word: str) -> list[str]:
+    variants: list[str] = []
+    if word.endswith("'s"):
+        variants.append(word[:-2])
+    elif word.endswith("s'"):
+        variants.append(word[:-1])
+    elif word.endswith("ies") and len(word) > 4:
+        variants.append(word[:-3] + "y")
+    elif word.endswith("es") and len(word) > 3:
+        variants.append(word[:-2])
+        variants.append(word[:-1])
+    elif word.endswith("s") and len(word) > 3:
+        variants.append(word[:-1])
+    return variants
+
+
+def _span_distance(start: int, end: int, selected_start: int, selected_end: int) -> int:
+    if start < selected_end and end > selected_start:
+        return 0
+    if end <= selected_start:
+        return selected_start - end
+    return start - selected_end
+
+
+def _tokens_cross_context_boundary(text: str, tokens: list[re.Match[str]], first: int, last: int) -> bool:
+    for index in range(first, last):
+        between = text[tokens[index].end() : tokens[index + 1].start()]
+        if CONTEXT_BOUNDARY_RE.search(between):
+            return True
+    return False
 
 
 def unknown_payload(term: str, reason: str = "not-in-dictionary") -> dict[str, Any]:

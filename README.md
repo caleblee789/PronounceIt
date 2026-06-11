@@ -1,146 +1,138 @@
 # PronounceIt
 
-PronounceIt is an Anki desktop add-on for medical students who want fast, answer-side pronunciation help while reviewing cards. Select a word or short medical phrase after revealing an answer, press `Ctrl+P` / `Cmd+P`, or use the right-click/control-click quick menu, and PronounceIt opens a compact reviewer pop-up with a student-friendly pronunciation guide, syllable breakdown, and replayable audio.
+PronounceIt is an Anki desktop add-on for medical students who want quick pronunciation help while reviewing cards.
 
-The add-on is designed for review flow: quick to invoke, quiet when the answer is still hidden, and backed by a large bundled pronunciation corpus so common medical, pharmacology, anatomy, pathology, and clinical terms can play without relying on raw system text-to-speech.
+Use it after revealing an answer:
 
-## Highlights
+- Option/Alt-left-click a term to play pronunciation audio immediately.
+- Option/Alt-right-click a term to open a quick menu with Play and Save pronunciation actions.
+- Select text and press `Ctrl+P` on Windows/Linux or `Cmd+P` on macOS.
 
-- Reviewer-first lookup for selected words and short phrases.
-- Answer-side lookup by default, with an option to allow question-side lookup.
-- `Ctrl+P` / `Cmd+P` hotkey using Anki's `Mod+P` convention.
-- AMBOSS-style floating pop-up anchored near the selected text.
-- JavaScript reviewer quick menu with Play and save actions.
-- Native Anki webview context-menu fallback for selected text.
-- Tools > PronounceIt menu for manual lookup, saved words, custom corrections, dictionary audit, and configuration.
-- Bundled medical dictionary with about 95,900 unique runtime terms.
-- About 95,600 bundled AIFF clips generated from pronunciation-friendly speech text.
-- Local audio first, generated local audio second, and system TTS only as fallback by default.
-- Custom pronunciation overrides through `user_files/custom_pronunciations.json`.
-- Saved pronunciation list in `user_files/saved_pronunciations.json`, preserved by Anki during add-on upgrades.
-- Release audit that checks dictionary coverage, high-yield terms, source lexicon consistency, speech text safety, stress markers, and bundled audio.
+PronounceIt includes a large bundled medical pronunciation library, so common anatomy, pathology, pharmacology, and clinical terms can play without depending on raw system text-to-speech.
 
-## How It Works
+## Install
 
-PronounceIt injects a small JavaScript and CSS reviewer integration into Anki webviews. When review is enabled, it watches for selected text and sends pronunciation requests back to the Python add-on. The Python side normalizes the selection, looks it up in the bundled dictionary plus any user overrides, and returns a payload for the pop-up.
-
-The bundled dictionary uses student-friendly phonetics rather than IPA. Stressed syllables are capitalized, for example:
+Install the built Anki add-on package:
 
 ```text
-agranulocytosis -> uh-gran-yoo-loh-sy-TOH-sis
+dist/pronounceit.ankiaddon
 ```
 
-Audio is intentionally spoken from normalized pronunciation text instead of the raw medical spelling. This helps avoid common system-TTS misreadings of medical terms.
+In Anki, open the package through `Tools > Add-ons > Install from file...`, then restart Anki.
 
-## Reviewer Usage
+## How To Use
 
-1. Review a card in Anki.
+1. Start reviewing cards in Anki.
 2. Reveal the answer.
-3. Select a term, such as `agranulocytosis`.
-4. Press `Ctrl+P` on Windows/Linux or `Cmd+P` on macOS.
-5. Use the pop-up Play button to replay the audio.
-6. Use the save button to add useful terms to the local saved pronunciation list.
+3. Option/Alt-left-click a medical term to hear it immediately.
+4. Option/Alt-right-click a term to open the quick menu.
+5. Choose `Play pronunciation` to open the popup and replay the audio.
+6. Choose `Save pronunciation` for words that are hard to remember.
 
-You can also right-click/control-click selected text and choose the PronounceIt action, or use Tools > PronounceIt > Pronounce Current Selection.
+PronounceIt is answer-side by default so pronunciation help does not spoil a card before you reveal it.
+
+## Saved Pronunciations
+
+Saved words are available from:
+
+```text
+Tools > PronounceIt > Saved Pronunciations...
+```
+
+The saved list lets you:
+
+- Search saved terms.
+- Play a saved pronunciation again.
+- Open the original card or note in Anki Browser when available.
+- Remove words you no longer need to practice.
+
+Saved pronunciations are stored locally in `user_files/saved_pronunciations.json` and are preserved during add-on upgrades.
 
 ## Tools Menu
 
-PronounceIt adds a grouped Tools > PronounceIt submenu:
+PronounceIt adds a `Tools > PronounceIt` submenu:
 
-- Pronounce Current Selection: pronounces selected reviewer text.
-- Pronounce Manually: opens a dialog for terms that are hard to select or when another add-on intercepts selection behavior.
-- Saved Pronunciations: shows locally saved words.
-- Add or Update Custom Pronunciation: writes local pronunciation corrections.
-- Dictionary Audit: runs the bundled quality audit from inside Anki.
-- Configure Add-on: opens the settings dialog.
+- `Pronounce Current Selection`: pronounce selected reviewer text.
+- `Pronounce Manually...`: type a word or term that is hard to select.
+- `Saved Pronunciations...`: review saved words.
+- `Add or Update Custom Pronunciation...`: add a local correction.
+- `Dictionary Audit...`: run the bundled pronunciation quality audit.
+- `Configure Add-on...`: open settings.
 
-## Configuration
+## Settings
 
-Anki stores the add-on config from `config.json`. The same options are documented in `config.md`.
+Open settings from:
 
-Key settings:
-
-- `enabled`: turns reviewer integration on or off.
-- `hotkey`: defaults to `Mod+P`, which maps to Ctrl on Windows/Linux and Cmd on macOS.
-- `audio_backend`: defaults to `local_audio_then_tts`.
-- `allow_on_question_side`: defaults to `false` so lookup starts after the answer is revealed.
-- `show_context_menu`: controls the custom right-click/control-click action.
-- `show_save_button`: controls the saved-pronunciation button in the pop-up.
-- `auto_close_on_card_change`: closes the pop-up when Anki advances to another card.
-- `tts_voice`, `tts_rate`, `tts_volume`: tune fallback system TTS where supported.
-- `unknown_term_message`: controls the pop-up text for terms not found in the bundled dictionary.
-
-Supported audio backend values:
-
-- `local_audio_then_tts`: play bundled audio first, generate a cached local clip for unbundled terms when possible, then fall back to system TTS.
-- `local_audio`: require bundled or generated local audio.
-- `system_tts`: skip local audio and use system TTS directly.
-
-## Local User Files
-
-Anki preserves the `user_files/` directory when an add-on is upgraded.
-
-- `user_files/saved_pronunciations.json`: terms saved from the reviewer pop-up.
-- `user_files/custom_pronunciations.sample.json`: copy this to `custom_pronunciations.json` to create local overrides by hand.
-- `user_files/custom_pronunciations.json`: local pronunciation corrections, excluded from release archives.
-- `user_files/generated_audio/`: cached fallback audio for unbundled terms, excluded from release archives.
-
-A custom pronunciation entry can include:
-
-```json
-{
-  "term": "example term",
-  "pronunciation": "eg-ZAM-pul term",
-  "syllables": "eg-zam-pul term",
-  "speechText": "eg zam pul term",
-  "audioFile": "audio/example_term.aiff"
-}
+```text
+Tools > PronounceIt > Configure Add-on...
 ```
 
-`speechText` is optional, but useful when the displayed guide is clear for students and the system voice needs a different prompt.
+Common settings include:
 
-## Project Layout
+- Keyboard shortcut: defaults to `Mod+P`, which means Ctrl on Windows/Linux and Cmd on macOS.
+- Left-click audio modifier: defaults to Option/Alt.
+- Right-click quick-menu modifier: defaults to Option/Alt.
+- Audio behavior: defaults to local audio first, with system voice only as a fallback.
+- Theme: `system`, `clinical_light`, `slate`, or `high_contrast`.
+
+Advanced settings include pre-answer lookup, popup auto-close, quick-menu Save visibility, fallback voice/speed/volume, and shortcuts to local PronounceIt files.
+
+## Custom Pronunciations
+
+Use `Tools > PronounceIt > Add or Update Custom Pronunciation...` for local corrections.
+
+PronounceIt stores custom corrections in:
+
+```text
+user_files/custom_pronunciations.json
+```
+
+These files stay local to your Anki profile and are preserved during add-on upgrades.
+
+## License
+
+PronounceIt is released under the MIT License. See `LICENSE` for details.
+
+## For Developers
+
+The sections below are for local development, release checks, and pronunciation corpus maintenance.
+
+### Project Layout
 
 - `__init__.py`: Anki add-on entrypoint.
 - `manifest.json`: Anki add-on metadata.
 - `pronounceit/`: Python add-on code.
 - `web/`: reviewer JavaScript and CSS assets.
 - `data/medical_pronunciations.json`: bundled pronunciation corpus.
-- `data/high_yield_checklist.json`: release-gated high-yield term checklist.
-- `data/medical_pronunciation_lexicon_for_codex.txt`: source lexicon used for curated QA.
 - `audio/`: bundled AIFF audio clips.
 - `user_files/`: Anki-preserved local user data.
 - `scripts/`: build, audit, import, generation, and corpus maintenance scripts.
-- `tests/`: unit tests for dictionary, config, TTS, storage, web assets, QA, and build behavior.
+- `tests/`: unit tests.
 - `dist/pronounceit.ankiaddon`: built Anki add-on archive.
 
-## Install For Local Testing
+### Local Testing
 
 1. Open Anki.
-2. Go to Tools > Add-ons > View Files.
+2. Go to `Tools > Add-ons > View Files`.
 3. Copy or symlink this repository folder into `addons21/pronounceit`.
 4. Restart Anki.
-5. Review a card, reveal the answer, select a medical term, and press `Ctrl+P` / `Cmd+P`.
+5. Review a card, reveal the answer, and test Option/Alt-left-click plus Option/Alt-right-click.
 
-## Build A Release Archive
-
-Run:
+### Build
 
 ```bash
 python3 scripts/build_ankiaddon.py
 ```
 
-The script writes:
+The archive is written to:
 
 ```text
 dist/pronounceit.ankiaddon
 ```
 
-The archive places add-on files at the zip root, as AnkiWeb expects. The build refuses to produce a release archive if the pronunciation audit fails or forbidden development files are present in the archive.
+### Validation
 
-## Validation
-
-Run the release checks before distribution:
+Run before distribution:
 
 ```bash
 python3 -m unittest discover -s tests
@@ -151,16 +143,32 @@ python3 scripts/build_ankiaddon.py
 unzip -l dist/pronounceit.ankiaddon
 ```
 
-The release audit currently expects:
+See `RELEASE_CHECKLIST.md` for the full release gate and manual Anki smoke test.
 
-- About 95,900 runtime dictionary terms.
-- 155 high-yield checklist terms with no missing entries.
-- 462 source lexicon terms with no missing runtime entries or pronunciation mismatches.
-- Display pronunciation, syllables, stress capitalization, safe speech text, and a non-empty bundled audio file for every bundled entry.
+## Release Notes
 
-See `RELEASE_CHECKLIST.md` for the full gate and manual Anki smoke test.
+Prepared release tag:
 
-## Corpus Maintenance
+```text
+v1.1.0
+```
+
+Release focus:
+
+- Adds a lightweight Support action in the quick menu and settings dialog.
+- Keeps answer-side Option/Alt-left-click audio fast and turns Option/Alt-right-click into a focused quick menu.
+- Moves Save pronunciation into the quick menu, with immediate Saved/Already saved feedback.
+- Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.
+- Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
+- Refreshes README and config wording around the quick menu and saved-word workflow.
+
+### Corpus Maintenance
+
+PronounceIt favors readable medical-student pronunciations over formal IPA. Stress is marked with capital letters, for example:
+
+```text
+agranulocytosis -> uh-GRAN-yoo-loh-sy-TOH-sis
+```
 
 When updating the bundled database from the source lexicon, run:
 
@@ -168,7 +176,7 @@ When updating the bundled database from the source lexicon, run:
 python3 scripts/import_source_lexicon.py
 ```
 
-To expand from a large word list with generated G2P pronunciations, install the generation-only dependency and run:
+To expand from a larger word list, install generation-only dependencies and run:
 
 ```bash
 python3 -m pip install -r requirements-generation.txt
@@ -180,37 +188,10 @@ python3 scripts/generate_bundled_audio.py
 python3 scripts/audit_pronunciations.py
 ```
 
-The word-list pipeline excludes abbreviations and formula-like entries, skips already bundled terms, labels machine-generated entries as `generated-g2p-en`, and writes accepted, excluded, and needs-review reports under `data/`. `g2p-en` may download NLTK assets during first use.
-
 After changing `data/medical_pronunciations.json`, regenerate bundled clips:
 
 ```bash
 python3 scripts/generate_bundled_audio.py --force
 ```
 
-Then run the full validation gate.
-
-## Pronunciation QA
-
-PronounceIt favors readable medical-student guidance over formal IPA. Terms in `data/medical_pronunciations.json` are product data and should be reviewed before release expansions.
-
-Quality rules:
-
-- Prefer common US medical-school usage when pronunciation varies regionally.
-- Keep display pronunciations readable and stress-marked with capital letters.
-- Keep `speechText` lowercase, space-separated, hyphen-free, and free of alternate-pronunciation wording such as `or`.
-- Include aliases for abbreviations, alternate spellings, and plural forms that automatic fallback will not catch.
-- Add broadly useful new terms to `data/high_yield_checklist.json` when they represent common medical-school review content.
-- Promote local corrections into the bundled corpus when they are useful beyond one user's deck.
-
-See `PRONUNCIATION_QA.md` for the detailed acceptance criteria.
-
-## Release Notes
-
-This repository currently includes the built archive at `dist/pronounceit.ankiaddon`. GitHub releases should attach that file as the downloadable Anki package.
-
-Suggested first release tag:
-
-```text
-v1.0.0
-```
+See `PRONUNCIATION_QA.md` for pronunciation acceptance criteria.

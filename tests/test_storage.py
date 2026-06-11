@@ -20,6 +20,10 @@ class StorageTests(unittest.TestCase):
                 "syllables": "a-gran-u-lo-cy-to-sis",
                 "source": "bundled-medical",
                 "found": True,
+                "cardId": 123,
+                "noteId": 456,
+                "deckId": 789,
+                "deckName": "Medical School",
             }
 
             first = storage.save_entry(payload)
@@ -31,8 +35,29 @@ class StorageTests(unittest.TestCase):
             self.assertTrue(second.duplicate)
             saved = json.loads((tmp_path / "user_files" / "saved_pronunciations.json").read_text())
             self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["cardId"], 123)
+            self.assertEqual(saved[0]["noteId"], 456)
+            self.assertEqual(saved[0]["deckId"], 789)
+            self.assertEqual(saved[0]["deckName"], "Medical School")
             self.assertTrue(storage.contains({"term": "Agranulocytosis"}))
             self.assertFalse(storage.contains({"term": "clozapine"}))
+
+    def test_saved_pronunciations_remove_entry(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            storage = SavedPronunciations(tmp_path)
+            storage.save_entry({"term": "Agranulocytosis", "pronunciation": "first"})
+            storage.save_entry({"term": "Clozapine", "pronunciation": "second"})
+
+            self.assertTrue(storage.remove_entry("agranulocytosis"))
+            self.assertFalse(storage.remove_entry("missing"))
+
+            saved = json.loads((tmp_path / "user_files" / "saved_pronunciations.json").read_text())
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["term"], "Clozapine")
 
     def test_format_saved_entries_for_viewer(self) -> None:
         text = format_saved_entries(
