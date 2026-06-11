@@ -21,7 +21,8 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn("payload.audioFile", js)
         self.assertIn('send("save"', js)
         self.assertIn("payload.autoPlay", js)
-        self.assertIn("payload.saveAfterLookup", js)
+        self.assertNotIn("payload.saveAfterLookup", js)
+        self.assertNotIn("pronounceit-save", js)
         self.assertIn("payload.alreadySaved", js)
         self.assertIn("payload.speechText", js)
         self.assertIn("contextmenu", js)
@@ -53,7 +54,7 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn("function textNodeRangeAtPoint", js)
         self.assertIn("function nearestTextOffset", js)
         self.assertIn("modifierMatches(event, config.popupClickModifier)", js)
-        self.assertIn("requestPronunciation({ autoPlay: true })", js)
+        self.assertIn("requestMenu(event, pendingRequest)", js)
 
     def test_hotkey_and_tools_can_use_last_pointer_word(self) -> None:
         js = (ROOT / "web" / "pronounceit.js").read_text(encoding="utf-8")
@@ -314,14 +315,13 @@ for (const callback of listeners.contextmenu || []) {
     stopPropagation() {},
   });
 }
-const lookup = messages.find((message) => message.startsWith("pronounceit:lookup:"));
+const lookup = messages.find((message) => message.startsWith("pronounceit:menu:"));
 if (!lookup) {
-  throw new Error(`missing lookup message: ${JSON.stringify(messages)}`);
+  throw new Error(`missing menu message: ${JSON.stringify(messages)}`);
 }
-const payload = JSON.parse(lookup.replace("pronounceit:lookup:", ""));
+const payload = JSON.parse(lookup.replace("pronounceit:menu:", ""));
 if (
   payload.text !== "bundle" ||
-  payload.autoPlay !== true ||
   payload.contextText !== source ||
   payload.contextOffsetStart !== start ||
   payload.contextOffsetEnd !== start + "bundle".length
@@ -401,14 +401,13 @@ for (const callback of listeners.contextmenu || []) {
     stopPropagation() {},
   });
 }
-const lookup = messages.find((message) => message.startsWith("pronounceit:lookup:"));
+const lookup = messages.find((message) => message.startsWith("pronounceit:menu:"));
 if (!lookup) {
-  throw new Error(`missing lookup message: ${JSON.stringify(messages)}`);
+  throw new Error(`missing menu message: ${JSON.stringify(messages)}`);
 }
-const payload = JSON.parse(lookup.replace("pronounceit:lookup:", ""));
+const payload = JSON.parse(lookup.replace("pronounceit:menu:", ""));
 if (
   payload.text !== "bundle" ||
-  payload.autoPlay !== true ||
   payload.contextText !== parent.textContent ||
   payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "bundle"
 ) {
@@ -563,12 +562,12 @@ for (const callback of listeners.contextmenu || []) {
   });
 }
 const audio = messages.find((message) => message.startsWith("pronounceit:audioLookup:"));
-const popup = messages.find((message) => message.startsWith("pronounceit:lookup:"));
+const popup = messages.find((message) => message.startsWith("pronounceit:menu:"));
 if (!audio || !popup) {
   throw new Error(`missing shift modifier messages: ${JSON.stringify(messages)}`);
 }
-const popupPayload = JSON.parse(popup.replace("pronounceit:lookup:", ""));
-if (popupPayload.autoPlay !== true || popupPayload.text !== "bundle") {
+const popupPayload = JSON.parse(popup.replace("pronounceit:menu:", ""));
+if (popupPayload.text !== "bundle") {
   throw new Error(`bad popup payload: ${JSON.stringify(popupPayload)}`);
 }
 """
@@ -880,6 +879,9 @@ const status = body.querySelector(".pronounceit-status");
 if (!status || status.textContent !== "Playing...") {
   throw new Error(`expected playing status, got ${status && status.textContent}`);
 }
+if (body.querySelector(".pronounceit-save")) {
+  throw new Error("popup should not contain a save button");
+}
 const speak = messages.find((message) => message.startsWith("pronounceit:speak:"));
 if (!speak) {
   throw new Error(`missing speak message: ${JSON.stringify(messages)}`);
@@ -1021,6 +1023,11 @@ listeners.keydown({ key: "s", preventDefault() {} });
 const save = messages.find((message) => message.startsWith("pronounceit:save:"));
 if (!save) {
   throw new Error(`missing save message after S: ${JSON.stringify(messages)}`);
+}
+sandbox.window.PronounceIt.saved({ saved: true, duplicate: false, alreadySaved: true });
+const saveButton = body.querySelector(".pronounceit-menu-save");
+if (!saveButton || saveButton.textContent !== "Saved" || !saveButton.disabled) {
+  throw new Error(`expected saved menu feedback, got ${saveButton && saveButton.textContent}`);
 }
 messages.length = 0;
 sandbox.window.PronounceIt.showMenu({

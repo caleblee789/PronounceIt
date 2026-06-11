@@ -122,6 +122,21 @@
   outline: none;
 }
 
+.pronounceit-menu button:disabled {
+  cursor: default;
+  opacity: 0.78;
+}
+
+.pronounceit-menu-saved {
+  color: var(--pronounceit-status);
+  font-weight: 700;
+}
+
+.pronounceit-menu-saved::before {
+  color: var(--pronounceit-status);
+  content: ">";
+}
+
 .pronounceit-popup {
   width: min(348px, calc(100vw - 20px));
   padding: 16px;
@@ -201,13 +216,6 @@
   border-color: var(--pronounceit-accent);
   color: var(--pronounceit-accent-text);
   min-width: 74px;
-}
-
-.pronounceit-save {
-  background: var(--pronounceit-surface);
-  color: var(--pronounceit-text);
-  flex: 1 1 188px;
-  max-width: 100%;
 }
 
 .pronounceit-actions button:hover,

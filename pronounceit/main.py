@@ -7,7 +7,7 @@ from typing import Any
 from .config import DEFAULT_CONFIG, PronounceItConfig
 from .dictionary import PronunciationDictionary, display_term
 from .qa import audit_pronunciations
-from .storage import CustomPronunciations, SavedPronunciations, format_saved_entries
+from .storage import CustomPronunciations, SavedPronunciations, format_saved_entries, saved_entry_key
 from .tts import (
     CommandTtsEngine,
     CompositeTtsEngine,
@@ -171,9 +171,9 @@ def _behavior_preview_lines(config: PronounceItConfig) -> list[str]:
         else f"{audio_modifier} + left-click plays audio"
     )
     popup_line = (
-        "Popup lookup disabled"
+        "Quick menu disabled"
         if config.popup_click_modifier == "disabled"
-        else f"{popup_modifier} + right-click opens the popup"
+        else f"{popup_modifier} + right-click opens the quick menu"
     )
     return [
         f"{config.hotkey or DEFAULT_CONFIG['hotkey']} pronounces the current selection",
@@ -346,12 +346,12 @@ def _show_config_dialog() -> None:
 
     popup_click = QComboBox()
     _add_modifier_items(popup_click)
-    popup_click.setToolTip("Modifier for opening the pronunciation popup while reviewing.")
+    popup_click.setToolTip("Modifier for opening the pronunciation quick menu while reviewing.")
     set_combo_data(popup_click, config.popup_click_modifier)
-    review_form.addRow("Open popup with modifier + right-click", popup_click)
+    review_form.addRow("Open quick menu with modifier + right-click", popup_click)
     add_help(
         review_form,
-        "Default: Option/Alt-left-click plays audio only; Option/Alt-right-click opens the popup and plays audio.",
+        "Default: Option/Alt-left-click plays audio only; Option/Alt-right-click opens the quick menu.",
     )
 
     layout.addWidget(review_box)
@@ -424,7 +424,7 @@ def _show_config_dialog() -> None:
     auto_close.setChecked(config.auto_close_on_card_change)
     popup_form.addRow(auto_close)
 
-    show_save = QCheckBox("Show Save button in the popup")
+    show_save = QCheckBox("Show Save pronunciation in the quick menu")
     show_save.setChecked(config.show_save_button)
     popup_form.addRow(show_save)
     advanced_layout.addLayout(popup_form)
@@ -591,7 +591,230 @@ def _show_saved_pronunciations() -> None:
     if not _saved:
         _show_text("PronounceIt Saved Pronunciations", "No saved pronunciations yet.")
         return
-    _show_text("PronounceIt Saved Pronunciations", format_saved_entries(_saved.load()))
+    items = _saved.load()
+    try:
+        from aqt import mw
+        from aqt.qt import (
+            QAbstractItemView,
+            QDialog,
+            QHBoxLayout,
+            QHeaderView,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QTableWidget,
+            QTableWidgetItem,
+            QVBoxLayout,
+        )
+    except Exception:
+        _show_text("PronounceIt Saved Pronunciations", format_saved_entries(items))
+        return
+
+    dialog = QDialog(mw)
+    dialog.setWindowTitle("PronounceIt Saved Pronunciations")
+    dialog.setMinimumSize(720, 420)
+
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(16, 16, 16, 14)
+    layout.setSpacing(10)
+
+    intro = QLabel("Saved words for pronunciations you want to revisit.")
+    layout.addWidget(intro)
+
+    search = QLineEdit()
+    search.setPlaceholderText("Search saved words")
+    layout.addWidget(search)
+
+    empty = QLabel("Saved words will appear here after you use Save pronunciation from the quick menu.")
+    empty.setWordWrap(True)
+    layout.addWidget(empty)
+
+    table = QTableWidget(0, 4)
+    table.setHorizontalHeaderLabels(["Term", "Pronunciation", "Details", "Saved"])
+    table.setAlternatingRowColors(True)
+    try:
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+    except AttributeError:
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    layout.addWidget(table)
+
+    action_row = QHBoxLayout()
+    play_button = QPushButton("Play")
+    open_button = QPushButton("Open Original")
+    remove_button = QPushButton("Remove")
+    close_button = QPushButton("Close")
+    action_row.addWidget(play_button)
+    action_row.addWidget(open_button)
+    action_row.addWidget(remove_button)
+    action_row.addStretch(1)
+    action_row.addWidget(close_button)
+    layout.addLayout(action_row)
+
+    visible_items: list[dict[str, Any]] = []
+
+    def selected_item() -> dict[str, Any] | None:
+        row = table.currentRow()
+        if row < 0 or row >= len(visible_items):
+            return None
+        return visible_items[row]
+
+    def update_buttons() -> None:
+        item = selected_item()
+        has_item = item is not None
+        play_button.setEnabled(has_item)
+        remove_button.setEnabled(has_item)
+        open_button.setEnabled(bool(item and _saved_origin_search_query(item)))
+
+    def add_cell(row: int, column: int, text: str) -> None:
+        table.setItem(row, column, QTableWidgetItem(text))
+
+    def refresh() -> None:
+        query = search.text().strip().casefold()
+        visible_items.clear()
+        for item in items:
+            if not query or query in _saved_entry_search_text(item):
+                visible_items.append(item)
+
+        table.setRowCount(len(visible_items))
+        for row, item in enumerate(visible_items):
+            term = str(item.get("term") or item.get("requestedText") or "Unknown term")
+            pronunciation = str(item.get("pronunciation") or "Pronunciation unavailable")
+            details = _saved_entry_details(item)
+            created = _saved_entry_date(item)
+            add_cell(row, 0, term)
+            add_cell(row, 1, pronunciation)
+            add_cell(row, 2, details)
+            add_cell(row, 3, created)
+
+        empty.setVisible(not visible_items)
+        table.setVisible(bool(visible_items))
+        if visible_items:
+            table.selectRow(0)
+        update_buttons()
+
+    def play_selected() -> None:
+        item = selected_item()
+        if not item:
+            return
+        _handle_speak(
+            {
+                "text": item.get("speechText") or item.get("term") or item.get("requestedText") or "",
+                "term": item.get("term") or item.get("requestedText") or "",
+                "audioFile": item.get("audioFile", ""),
+            }
+        )
+
+    def open_selected() -> None:
+        item = selected_item()
+        if item:
+            _open_saved_origin(item)
+
+    def remove_selected() -> None:
+        item = selected_item()
+        if not item or not _saved:
+            return
+        if _saved.remove_entry(saved_entry_key(item)):
+            items[:] = _saved.load()
+            refresh()
+
+    search.textChanged.connect(refresh)
+    table.itemSelectionChanged.connect(update_buttons)
+    play_button.clicked.connect(play_selected)
+    open_button.clicked.connect(open_selected)
+    remove_button.clicked.connect(remove_selected)
+    close_button.clicked.connect(dialog.reject)
+
+    refresh()
+    if hasattr(dialog, "exec"):
+        dialog.exec()
+    else:
+        dialog.exec_()
+
+
+def _saved_entry_search_text(item: dict[str, Any]) -> str:
+    parts = [
+        item.get("term"),
+        item.get("requestedText"),
+        item.get("pronunciation"),
+        item.get("syllables"),
+        item.get("source"),
+        item.get("deckName"),
+    ]
+    return " ".join(str(part) for part in parts if part).casefold()
+
+
+def _saved_entry_details(item: dict[str, Any]) -> str:
+    details = []
+    syllables = item.get("syllables")
+    source = item.get("source")
+    deck_name = item.get("deckName")
+    if syllables:
+        details.append(f"Syllables: {syllables}")
+    if source:
+        details.append(f"Source: {source}")
+    if deck_name:
+        details.append(f"Deck: {deck_name}")
+    return " | ".join(details) if details else "No details"
+
+
+def _saved_entry_date(item: dict[str, Any]) -> str:
+    created = str(item.get("createdAt") or "")
+    if "T" in created:
+        return created.split("T", 1)[0]
+    return created or "Unknown"
+
+
+def _saved_origin_search_query(item: dict[str, Any]) -> str:
+    note_id = _clean_identifier(item.get("noteId"))
+    if note_id:
+        return f"nid:{note_id}"
+    card_id = _clean_identifier(item.get("cardId"))
+    if card_id:
+        return f"cid:{card_id}"
+    return ""
+
+
+def _clean_identifier(value: Any) -> str:
+    text = str(value or "").strip()
+    return text if text.isdigit() else ""
+
+
+def _open_saved_origin(item: dict[str, Any]) -> bool:
+    query = _saved_origin_search_query(item)
+    if not query:
+        return False
+    try:
+        from aqt import dialogs, mw
+        from aqt.utils import showInfo
+    except Exception:
+        _show_text("PronounceIt", f"Original card search: {query}")
+        return False
+
+    try:
+        browser = dialogs.open("Browser", mw)
+        _set_browser_search(browser, query)
+        return True
+    except Exception as exc:
+        showInfo(f"Could not open the original card.\n\nSearch: {query}\n\n{exc}", title="PronounceIt")
+        return False
+
+
+def _set_browser_search(browser: Any, query: str) -> None:
+    if hasattr(browser, "search_for"):
+        browser.search_for(query)
+        return
+    search_edit = getattr(getattr(browser, "form", None), "searchEdit", None)
+    line_edit = search_edit.lineEdit() if hasattr(search_edit, "lineEdit") else search_edit
+    if hasattr(line_edit, "setText"):
+        line_edit.setText(query)
+    if hasattr(browser, "onSearchActivated"):
+        browser.onSearchActivated()
+    elif hasattr(browser, "search"):
+        browser.search()
 
 
 def _show_dictionary_audit() -> None:
@@ -833,16 +1056,6 @@ def _pronounce_text_from_reviewer(selected_text: str) -> None:
         _handle_lookup(reviewer, {"text": selected_text, "rect": {}, "autoPlay": True})
 
 
-def _save_text_from_reviewer(selected_text: str) -> None:
-    try:
-        from aqt import mw
-    except Exception:
-        return
-    reviewer = getattr(mw, "reviewer", None)
-    if reviewer is not None and _pronunciation_allowed():
-        _handle_lookup(reviewer, {"text": selected_text, "rect": {}, "saveAfterLookup": True})
-
-
 def _lookup_payload(term: str) -> dict[str, Any]:
     clean = display_term(term)
     if _dictionary:
@@ -1021,7 +1234,6 @@ def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
     result["rect"] = payload.get("rect", {})
     result["config"] = _js_config_payload()
     result["autoPlay"] = bool(payload.get("autoPlay"))
-    result["saveAfterLookup"] = bool(payload.get("saveAfterLookup")) and not result.get("alreadySaved")
     _eval(context, f"window.PronounceIt && window.PronounceIt.show({json.dumps(result)});")
 
 
@@ -1096,7 +1308,7 @@ def _send_spoken_result(context: Any, result: Any) -> None:
 def _handle_save(context: Any, payload: dict[str, Any]) -> None:
     if not _saved:
         return
-    result = _saved.save_entry(payload)
+    result = _saved.save_entry(_payload_with_origin(context, payload))
     js_payload = json.dumps(
         {
             "saved": result.saved,
@@ -1106,6 +1318,87 @@ def _handle_save(context: Any, payload: dict[str, Any]) -> None:
         }
     )
     _eval(context, f"window.PronounceIt && window.PronounceIt.saved({js_payload});")
+
+
+def _payload_with_origin(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    result = dict(payload)
+    for key, value in _origin_metadata(context).items():
+        if value not in (None, ""):
+            result[key] = value
+    return result
+
+
+def _origin_metadata(context: Any) -> dict[str, Any]:
+    card = getattr(context, "card", None)
+    if card is None:
+        return {}
+
+    card_id = _object_value(card, "id")
+    note_id = _object_value(card, "nid") or _object_value(card, "note_id")
+    deck_id = _object_value(card, "did") or _object_value(card, "deck_id")
+    note = _call_object_value(card, "note")
+    if not note_id and note is not None:
+        note_id = _object_value(note, "id")
+
+    metadata: dict[str, Any] = {}
+    if card_id not in (None, ""):
+        metadata["cardId"] = card_id
+    if note_id not in (None, ""):
+        metadata["noteId"] = note_id
+    if deck_id not in (None, ""):
+        metadata["deckId"] = deck_id
+        deck_name = _deck_name(deck_id)
+        if deck_name:
+            metadata["deckName"] = deck_name
+    return metadata
+
+
+def _object_value(obj: Any, name: str) -> Any:
+    if obj is None:
+        return None
+    try:
+        value = getattr(obj, name)
+    except Exception:
+        return None
+    if callable(value):
+        try:
+            return value()
+        except Exception:
+            return None
+    return value
+
+
+def _call_object_value(obj: Any, name: str) -> Any:
+    if obj is None:
+        return None
+    try:
+        value = getattr(obj, name)
+    except Exception:
+        return None
+    if not callable(value):
+        return value
+    try:
+        return value()
+    except Exception:
+        return None
+
+
+def _deck_name(deck_id: Any) -> str:
+    try:
+        from aqt import mw
+
+        decks = getattr(getattr(mw, "col", None), "decks", None)
+        if decks is None:
+            return ""
+        if hasattr(decks, "name"):
+            return str(decks.name(deck_id) or "")
+        if hasattr(decks, "get"):
+            deck = decks.get(deck_id)
+            if isinstance(deck, dict):
+                return str(deck.get("name") or "")
+    except Exception:
+        return ""
+    return ""
 
 
 def _send_config(context: Any) -> None:

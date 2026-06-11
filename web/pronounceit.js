@@ -404,7 +404,7 @@
     if (config.showSaveButton && !payload.alreadySaved) {
       const save = document.createElement("button");
       save.type = "button";
-      save.className = "pronounceit-menu-command";
+      save.className = "pronounceit-menu-command pronounceit-menu-save";
       save.textContent = "Save pronunciation";
       save.setAttribute("role", "menuitem");
       save.addEventListener("click", function (event) {
@@ -430,7 +430,7 @@
   }
 
   function saveFromMenu(payload) {
-    show(Object.assign({}, payload, { saveAfterLookup: true }));
+    send("save", payload);
   }
 
   function menuCanSave() {
@@ -500,17 +500,6 @@
     play.addEventListener("click", playPayload);
     actions.appendChild(play);
 
-    if (config.showSaveButton && !payload.alreadySaved) {
-      const save = document.createElement("button");
-      save.type = "button";
-      save.className = "pronounceit-save";
-      save.textContent = "Save pronunciation";
-      save.addEventListener("click", function () {
-        send("save", lastPayload || payload);
-      });
-      actions.appendChild(save);
-    }
-
     const status = document.createElement("div");
     status.className = "pronounceit-status";
 
@@ -527,9 +516,6 @@
 
     if (payload.autoPlay) {
       playPayload();
-    }
-    if (payload.saveAfterLookup && !payload.alreadySaved) {
-      send("save", lastPayload || payload);
     }
   }
 
@@ -562,20 +548,24 @@
   }
 
   function saved(result) {
+    if (result.alreadySaved) {
+      lastPayload = Object.assign({}, lastPayload || {}, { alreadySaved: true });
+      if (menuEl) {
+        const save = menuEl.querySelector(".pronounceit-menu-save");
+        if (save) {
+          save.textContent = result.duplicate ? "Already saved" : "Saved";
+          save.disabled = true;
+          save.setAttribute("aria-disabled", "true");
+          save.className = "pronounceit-menu-command pronounceit-menu-save pronounceit-menu-saved";
+        }
+      }
+    }
     if (!popupEl) {
       return;
     }
     const status = popupEl.querySelector(".pronounceit-status");
-    if (!status) {
-      return;
-    }
-    status.textContent = result.duplicate ? "Already in your list." : "Saved.";
-    if (result.alreadySaved) {
-      lastPayload = Object.assign({}, lastPayload || {}, { alreadySaved: true });
-      const save = popupEl.querySelector(".pronounceit-save");
-      if (save) {
-        save.remove();
-      }
+    if (status) {
+      status.textContent = result.duplicate ? "Already in your list." : "Saved.";
     }
   }
 
@@ -674,7 +664,7 @@
     event.preventDefault();
     event.stopPropagation();
     hideMenu();
-    requestPronunciation({ autoPlay: true });
+    requestMenu(event, pendingRequest);
   }, true);
 
   document.addEventListener("click", rememberPointerRequest, true);

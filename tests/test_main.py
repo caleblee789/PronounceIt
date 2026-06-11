@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from pronounceit import main
 from pronounceit.config import PronounceItConfig
 from pronounceit.dictionary import PronunciationDictionary
+from pronounceit.storage import SavedPronunciations
 from pronounceit.tts import TtsResult
 
 
@@ -23,6 +24,12 @@ class FakeReviewer:
     def __init__(self) -> None:
         self.web = FakeWeb()
         self.card = object()
+
+
+class FakeOriginCard:
+    id = 123
+    nid = 456
+    did = 789
 
 
 class FakeWebView:
@@ -144,7 +151,6 @@ class MainMessageTests(unittest.TestCase):
             "contextOffsetEnd": start + len("branch"),
             "rect": {"left": 4, "bottom": 8},
             "autoPlay": True,
-            "saveAfterLookup": True,
         }
         handled = main._on_js_message(
             (False, None),
@@ -160,7 +166,6 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn('"term": "right bundle branch block"', script)
         self.assertIn('"left": 4', script)
         self.assertIn('"autoPlay": true', script)
-        self.assertIn('"saveAfterLookup": true', script)
 
     def test_menu_lookup_uses_longest_context_phrase(self) -> None:
         reviewer = FakeReviewer()
@@ -599,7 +604,7 @@ class MainMessageTests(unittest.TestCase):
             [
                 "Mod+P pronounces the current selection",
                 "Option/Alt + left-click plays audio",
-                "Popup lookup disabled",
+                "Quick menu disabled",
             ],
         )
 
@@ -644,6 +649,44 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertEqual(payload["audioKind"], "generated")
         self.assertNotEqual(payload["audioStatus"], "Bundled audio ready")
+
+    def test_handle_save_includes_reviewer_origin_metadata(self) -> None:
+        with TemporaryDirectory() as tmp:
+            reviewer = FakeReviewer()
+            reviewer.card = FakeOriginCard()
+            original_saved = main._saved
+            original_deck_name = main._deck_name
+            try:
+                main._saved = SavedPronunciations(Path(tmp))
+                main._deck_name = lambda deck_id: "Medical School" if deck_id == 789 else ""
+                main._handle_save(
+                    reviewer,
+                    {
+                        "term": "Agranulocytosis",
+                        "requestedText": "agranulocytosis",
+                        "pronunciation": "uh-GRAN-yoo-loh-sy-TOH-sis",
+                        "syllables": "a-gran-u-lo-cy-to-sis",
+                        "found": True,
+                    },
+                )
+                saved = main._saved.load()
+            finally:
+                main._saved = original_saved
+                main._deck_name = original_deck_name
+
+        self.assertEqual(saved[0]["cardId"], 123)
+        self.assertEqual(saved[0]["noteId"], 456)
+        self.assertEqual(saved[0]["deckId"], 789)
+        self.assertEqual(saved[0]["deckName"], "Medical School")
+        self.assertIn("window.PronounceIt && window.PronounceIt.saved", reviewer.web.scripts[0])
+
+    def test_saved_origin_search_prefers_note_id_then_card_id(self) -> None:
+        self.assertEqual(
+            main._saved_origin_search_query({"noteId": 456, "cardId": 123}),
+            "nid:456",
+        )
+        self.assertEqual(main._saved_origin_search_query({"cardId": "123"}), "cid:123")
+        self.assertEqual(main._saved_origin_search_query({"cardId": "not-an-id"}), "")
 
     def test_handle_speak_sends_success_callback(self) -> None:
         reviewer = FakeReviewer()
