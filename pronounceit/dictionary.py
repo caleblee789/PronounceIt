@@ -175,6 +175,48 @@ class PronunciationDictionary:
 
         return best[3] if best else ""
 
+    def context_fallback_term(
+        self,
+        context_text: str,
+        start: int,
+        end: int,
+        max_words: int = 4,
+    ) -> str:
+        text = strip_cloze_markup(str(context_text or "")).replace("\u00a0", " ")
+        if not text:
+            return ""
+
+        selected_start = max(0, min(int(start or 0), len(text)))
+        selected_end = max(selected_start, min(int(end or selected_start), len(text)))
+        tokens = list(CONTEXT_TOKEN_RE.finditer(text))
+        if not tokens:
+            return ""
+
+        selected_indexes = [
+            index
+            for index, token in enumerate(tokens)
+            if token.start() < selected_end and token.end() > selected_start
+        ]
+        if not selected_indexes:
+            nearest_index = min(
+                range(len(tokens)),
+                key=lambda index: _span_distance(
+                    tokens[index].start(),
+                    tokens[index].end(),
+                    selected_start,
+                    selected_end,
+                ),
+            )
+            selected_indexes = [nearest_index]
+
+        first = min(selected_indexes)
+        last = max(selected_indexes)
+        if last - first + 1 > max_words:
+            return ""
+        if _tokens_cross_context_boundary(text, tokens, first, last):
+            return ""
+        return display_term(text[tokens[first].start() : tokens[last].end()])
+
     def count(self) -> int:
         return len({entry.term.casefold() for entry in self._entries.values()})
 

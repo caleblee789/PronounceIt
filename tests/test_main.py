@@ -100,6 +100,11 @@ def make_phrase_dictionary() -> PronunciationDictionary:
         entries,
         [
             {
+                "term": "bundle",
+                "pronunciation": "BUN-dul",
+                "syllables": "bun-dle",
+            },
+            {
                 "term": "bundle branch block",
                 "pronunciation": "BUN-dul branch block",
                 "syllables": "bun-dle branch block",
@@ -108,6 +113,11 @@ def make_phrase_dictionary() -> PronunciationDictionary:
                 "term": "right bundle branch block",
                 "pronunciation": "RYT BUN-dul branch block",
                 "syllables": "right bun-dle branch block",
+            },
+            {
+                "term": "acute interstitial nephritis",
+                "pronunciation": "uh-KYOOT in-tur-STISH-ul neh-FRY-tis",
+                "syllables": "a-cute in-ter-sti-tial ne-phri-tis",
             },
         ],
         "test",
@@ -166,6 +176,32 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn('"term": "right bundle branch block"', script)
         self.assertIn('"left": 4', script)
         self.assertIn('"autoPlay": true', script)
+
+    def test_lookup_message_prefers_context_phrase_over_exact_word_match(self) -> None:
+        reviewer = FakeReviewer()
+        main._dictionary = make_phrase_dictionary()
+        context = "ECG shows right bundle branch block today."
+        start = context.index("bundle")
+        handled = main._on_js_message(
+            (False, None),
+            "pronounceit:lookup:"
+            + json.dumps(
+                {
+                    "text": "bundle",
+                    "selectedText": "bundle",
+                    "contextText": context,
+                    "contextOffsetStart": start,
+                    "contextOffsetEnd": start + len("bundle"),
+                    "rect": {"left": 4, "bottom": 8},
+                }
+            ),
+            reviewer,
+        )
+
+        self.assertEqual(handled, (True, None))
+        script = reviewer.web.scripts[0]
+        self.assertIn('"requestedText": "bundle"', script)
+        self.assertIn('"term": "right bundle branch block"', script)
 
     def test_menu_lookup_uses_longest_context_phrase(self) -> None:
         reviewer = FakeReviewer()
@@ -239,6 +275,67 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(fake_tts.calls[0][1].term, "right bundle branch block")
         self.assertEqual(len(reviewer.web.scripts), 1)
         self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
+
+    def test_audio_lookup_uses_acute_interstitial_nephritis_context(self) -> None:
+        reviewer = FakeReviewer()
+        original_tts = main._tts
+        fake_tts = FakeTts(TtsResult(True, "playing local audio"))
+        try:
+            main._dictionary = make_phrase_dictionary()
+            main._tts = fake_tts
+            context = "Does this patient have acute interstitial nephritis (AIN)?"
+            start = context.index("interstitial")
+            handled = main._on_js_message(
+                (False, None),
+                "pronounceit:audioLookup:"
+                + json.dumps(
+                    {
+                        "text": "interstitial",
+                        "contextText": context,
+                        "contextOffsetStart": start,
+                        "contextOffsetEnd": start + len("interstitial"),
+                    }
+                ),
+                reviewer,
+            )
+        finally:
+            main._tts = original_tts
+
+        self.assertEqual(handled, (True, None))
+        self.assertEqual(len(fake_tts.calls), 1)
+        self.assertEqual(fake_tts.calls[0][1].term, "acute interstitial nephritis")
+
+    def test_audio_lookup_expands_partial_unknown_phrase_from_context(self) -> None:
+        reviewer = FakeReviewer()
+        original_tts = main._tts
+        fake_tts = FakeTts(TtsResult(True, "playing generated audio"))
+        try:
+            main._dictionary = make_phrase_dictionary()
+            main._tts = fake_tts
+            context = "REM sleep improves memory."
+            start = context.index("REM") + 1
+            end = context.index("sleep") + len("sle")
+            handled = main._on_js_message(
+                (False, None),
+                "pronounceit:audioLookup:"
+                + json.dumps(
+                    {
+                        "text": "REM sleep",
+                        "selectedText": "EM sle",
+                        "contextText": context,
+                        "contextOffsetStart": start,
+                        "contextOffsetEnd": end,
+                    }
+                ),
+                reviewer,
+            )
+        finally:
+            main._tts = original_tts
+
+        self.assertEqual(handled, (True, None))
+        self.assertEqual(len(fake_tts.calls), 1)
+        self.assertEqual(fake_tts.calls[0][0], "REM sleep")
+        self.assertEqual(fake_tts.calls[0][1].term, "REM sleep")
 
     def test_lookup_message_is_blocked_on_question_side_by_default(self) -> None:
         reviewer = FakeReviewer()
@@ -506,7 +603,7 @@ class MainMessageTests(unittest.TestCase):
             ["window.PronounceIt && window.PronounceIt.pronounceCurrent();"],
         )
 
-    def test_tools_menu_installs_single_pronounceit_submenu(self) -> None:
+    def test_tools_menu_installs_single_pronounceit_settings_action(self) -> None:
         class FakeAddonManager:
             def getConfig(self, module):
                 return {"hotkey": "Mod+P"}
@@ -523,7 +620,6 @@ class MainMessageTests(unittest.TestCase):
         fake_aqt.mw = FakeMw()
         fake_qt = types.ModuleType("aqt.qt")
         fake_qt.QAction = FakeAction
-        fake_qt.QMenu = FakeMenu
         original_aqt = sys.modules.get("aqt")
         original_qt = sys.modules.get("aqt.qt")
         try:
@@ -540,22 +636,11 @@ class MainMessageTests(unittest.TestCase):
             else:
                 sys.modules["aqt.qt"] = original_qt
 
-        self.assertEqual(len(FakeMw.form.menuTools.submenus), 1)
-        submenu = FakeMw.form.menuTools.submenus[0]
-        self.assertEqual(submenu.title, "PronounceIt")
-        labels = [label for label, _action in submenu.actions if label != "---"]
-        self.assertEqual(
-            labels,
-            [
-                "Pronounce Current Selection",
-                "Pronounce Manually...",
-                "Saved Pronunciations...",
-                "Add or Update Custom Pronunciation...",
-                "Dictionary Audit...",
-                "Configure Add-on...",
-            ],
-        )
-        self.assertEqual(submenu.actions[0][1].shortcut, "Ctrl+P")
+        self.assertEqual(FakeMw.form.menuTools.submenus, [])
+        self.assertEqual(len(FakeMw.form.menuTools.actions), 1)
+        label, action = FakeMw.form.menuTools.actions[0]
+        self.assertEqual(label, "PronounceIt Settings...")
+        self.assertIs(action.callback, main._show_config_dialog)
 
     def test_lookup_start_choice_reflects_existing_config(self) -> None:
         self.assertEqual(
@@ -598,8 +683,20 @@ class MainMessageTests(unittest.TestCase):
     def test_modifier_display_names_are_plain_language(self) -> None:
         self.assertEqual(main._modifier_display_name("alt"), "Option/Alt")
         self.assertEqual(main._modifier_display_name("meta"), "Command/Meta")
+        self.assertEqual(main._modifier_display_name("mod", platform="darwin"), "Command")
+        self.assertEqual(main._modifier_display_name("mod", platform="linux"), "Ctrl")
         self.assertEqual(main._modifier_display_name("disabled"), "Disabled")
         self.assertEqual(main._modifier_display_name("mystery"), "Option/Alt")
+
+    def test_hotkey_display_replaces_platform_mod_name(self) -> None:
+        self.assertEqual(main._hotkey_display_name("Mod+P", platform="darwin"), "Command+P")
+        self.assertEqual(main._hotkey_display_name("Mod+P", platform="linux"), "Ctrl+P")
+        self.assertEqual(main._hotkey_display_name("Ctrl+P", platform="darwin"), "Ctrl+P")
+
+    def test_hotkey_config_value_preserves_cross_platform_default(self) -> None:
+        self.assertEqual(main._hotkey_config_value("Command+P", platform="darwin"), "Mod+P")
+        self.assertEqual(main._hotkey_config_value("Ctrl+P", platform="linux"), "Mod+P")
+        self.assertEqual(main._hotkey_config_value("Ctrl+P", platform="darwin"), "Ctrl+P")
 
     def test_behavior_preview_lines_describe_current_controls(self) -> None:
         preview = main._behavior_preview_lines(
@@ -615,7 +712,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(
             preview,
             [
-                "Mod+P pronounces the current selection",
+                f"{main._hotkey_display_name('Mod+P')} pronounces the current selection",
                 "Option/Alt + left-click plays audio",
                 "Quick menu disabled",
             ],

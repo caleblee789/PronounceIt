@@ -69,7 +69,10 @@ class WebAssetTests(unittest.TestCase):
         self.assertIn("document.addEventListener(\"pointermove\", rememberPointerRequestThrottled, true)", js)
         self.assertIn("document.addEventListener(\"focusin\", rememberPointerRequest, true)", js)
         self.assertIn("document.addEventListener(\"mousemove\", rememberPointerRequestThrottled, true)", js)
-        self.assertIn("pendingRequest = selectedText() || lastPointerRequest", js)
+        self.assertIn(
+            "pendingRequest = selectedText({ allowCollapsed: true }) || lastPointerRequest",
+            js,
+        )
 
     def test_theme_assets_define_presets_and_apply_theme_markers(self) -> None:
         js = (ROOT / "web" / "pronounceit.js").read_text(encoding="utf-8")
@@ -246,6 +249,278 @@ if (payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetE
 }
 if (!payload.contextText.includes("right bundle branch block")) {
   throw new Error(`missing phrase context: ${JSON.stringify(payload)}`);
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+    def test_partial_selection_expands_to_whole_context_tokens(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const source = "REM sleep improves memory.";
+const start = source.indexOf("REM") + 1;
+const end = source.indexOf("sleep") + "sle".length;
+const textNode = { nodeType: 3, textContent: source };
+const selectionRect = { left: 4, top: 5, right: 40, bottom: 15, width: 36, height: 10 };
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+    },
+    addEventListener() {},
+    getSelection() {
+      return {
+        rangeCount: 1,
+        toString() { return "EM sle"; },
+        getRangeAt() {
+          return {
+            startContainer: textNode,
+            endContainer: textNode,
+            startOffset: start,
+            endOffset: end,
+            getBoundingClientRect() { return selectionRect; },
+          };
+        },
+      };
+    },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint: null,
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+messages.length = 0;
+for (const callback of listeners.keydown || []) {
+  callback({
+    key: "p",
+    ctrlKey: true,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    preventDefault() {},
+  });
+}
+const lookup = messages.find((message) => message.startsWith("pronounceit:lookup:"));
+if (!lookup) {
+  throw new Error(`missing lookup message: ${JSON.stringify(messages)}`);
+}
+const payload = JSON.parse(lookup.replace("pronounceit:lookup:", ""));
+if (
+  payload.text !== "REM sleep" ||
+  payload.selectedText !== "EM sle" ||
+  payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "REM sleep"
+) {
+  throw new Error(`bad expanded selection payload: ${JSON.stringify(payload)}`);
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+    def test_hotkey_uses_caret_inside_word_without_highlight(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const source = "ECG shows right bundle branch block today.";
+const start = source.indexOf("bundle");
+const textNode = { nodeType: 3, textContent: source };
+let currentOffset = start;
+const selectionRect = { left: 18, top: 5, right: 18, bottom: 15, width: 0, height: 10 };
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+    },
+    addEventListener() {},
+    getSelection() {
+      return {
+        rangeCount: 1,
+        toString() { return ""; },
+        getRangeAt() {
+          return {
+            startContainer: textNode,
+            endContainer: textNode,
+            startOffset: currentOffset,
+            endOffset: currentOffset,
+            getBoundingClientRect() { return selectionRect; },
+          };
+        },
+      };
+    },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint: null,
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+for (const offset of [start, start + 2, start + "bundle".length]) {
+  currentOffset = offset;
+  messages.length = 0;
+  for (const callback of listeners.keydown || []) {
+    callback({
+      key: "p",
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+      shiftKey: false,
+      preventDefault() {},
+    });
+  }
+  const lookup = messages.find((message) => message.startsWith("pronounceit:lookup:"));
+  if (!lookup) {
+    throw new Error(`missing lookup message at offset ${offset}: ${JSON.stringify(messages)}`);
+  }
+  const payload = JSON.parse(lookup.replace("pronounceit:lookup:", ""));
+  if (
+    payload.text !== "bundle" ||
+    payload.selectedText !== "bundle" ||
+    payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "bundle" ||
+    !payload.contextText.includes("right bundle branch block")
+  ) {
+    throw new Error(`bad caret payload at offset ${offset}: ${JSON.stringify(payload)}`);
+  }
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+    def test_pointer_request_ignores_collapsed_caret_elsewhere(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const source = "ECG shows right bundle branch block today.";
+const caretStart = source.indexOf("right");
+const clickStart = source.indexOf("bundle");
+const textNode = { nodeType: 3, textContent: source };
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+      directClickModifier: "alt",
+    },
+    addEventListener() {},
+    getSelection() {
+      return {
+        rangeCount: 1,
+        toString() { return ""; },
+        getRangeAt() {
+          return {
+            startContainer: textNode,
+            endContainer: textNode,
+            startOffset: caretStart + 2,
+            endOffset: caretStart + 2,
+            getBoundingClientRect() {
+              return { left: 4, top: 5, right: 4, bottom: 15, width: 0, height: 10 };
+            },
+          };
+        },
+      };
+    },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint() {
+      return {
+        startContainer: textNode,
+        startOffset: clickStart + 2,
+        getBoundingClientRect() {
+          return { left: 30, top: 5, right: 38, bottom: 15, width: 8, height: 10 };
+        },
+      };
+    },
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+messages.length = 0;
+for (const callback of listeners.mouseup || []) {
+  callback({
+    altKey: true,
+    button: 0,
+    clientX: 34,
+    clientY: 10,
+    target: sandbox.document.body,
+    preventDefault() {},
+  });
+}
+const lookup = messages.find((message) => message.startsWith("pronounceit:audioLookup:"));
+if (!lookup) {
+  throw new Error(`missing audio lookup message: ${JSON.stringify(messages)}`);
+}
+const payload = JSON.parse(lookup.replace("pronounceit:audioLookup:", ""));
+if (
+  payload.text !== "bundle" ||
+  payload.selectedText !== "bundle" ||
+  payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "bundle"
+) {
+  throw new Error(`pointer should use clicked word, not collapsed caret: ${JSON.stringify(payload)}`);
 }
 """
         subprocess.run(
@@ -664,6 +939,249 @@ if (
             capture_output=True,
         )
 
+    def test_option_click_uses_pointerdown_request_when_later_events_have_no_caret(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const source = "ECG shows right bundle branch block today.";
+const start = source.indexOf("bundle");
+const textNode = { nodeType: 3, textContent: source };
+let caretCalls = 0;
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+      directClickModifier: "alt",
+    },
+    addEventListener() {},
+    getSelection() { return null; },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint() {
+      caretCalls += 1;
+      if (caretCalls > 1) {
+        return null;
+      }
+      return {
+        startContainer: textNode,
+        startOffset: start + 2,
+        getBoundingClientRect() {
+          return { left: 12, top: 14, right: 20, bottom: 24, width: 8, height: 10 };
+        },
+      };
+    },
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+messages.length = 0;
+const event = {
+  altKey: true,
+  button: 0,
+  clientX: 18,
+  clientY: 19,
+  target: sandbox.document.body,
+  preventDefault() {},
+};
+for (const type of ["pointerdown", "pointerup", "mouseup", "click"]) {
+  for (const callback of listeners[type] || []) {
+    callback(event);
+  }
+}
+const lookups = messages.filter((message) => message.startsWith("pronounceit:audioLookup:"));
+if (lookups.length !== 1) {
+  throw new Error(`expected one audio lookup, got ${JSON.stringify(messages)}`);
+}
+const payload = JSON.parse(lookups[0].replace("pronounceit:audioLookup:", ""));
+if (payload.text !== "bundle" || payload.contextText !== source) {
+  throw new Error(`bad pointerdown fallback payload: ${JSON.stringify(payload)}`);
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+    def test_option_click_falls_back_to_event_target_text_when_caret_is_unavailable(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const target = {
+  textContent: "bundle",
+  parentElement: null,
+  getBoundingClientRect() {
+    return { left: 0, top: 0, right: 60, bottom: 20, width: 60, height: 20 };
+  },
+};
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+      directClickModifier: "alt",
+    },
+    addEventListener() {},
+    getSelection() { return null; },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint() { return null; },
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+target.parentElement = sandbox.document.body;
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+messages.length = 0;
+for (const callback of listeners.mouseup || []) {
+  callback({
+    altKey: true,
+    button: 0,
+    clientX: 30,
+    clientY: 10,
+    target,
+    preventDefault() {},
+  });
+}
+const lookup = messages.find((message) => message.startsWith("pronounceit:audioLookup:"));
+if (!lookup) {
+  throw new Error(`missing audio lookup message: ${JSON.stringify(messages)}`);
+}
+const payload = JSON.parse(lookup.replace("pronounceit:audioLookup:", ""));
+if (
+  payload.text !== "bundle" ||
+  payload.contextText !== "bundle" ||
+  payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "bundle"
+) {
+  throw new Error(`bad element fallback payload: ${JSON.stringify(payload)}`);
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+    def test_option_click_uses_phrase_context_once_for_interstitial(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const parent = { textContent: "Does this patient have acute interstitial nephritis (AIN)?", parentElement: null };
+const span = { textContent: "interstitial", parentElement: parent };
+const textNode = { nodeType: 3, textContent: "interstitial", parentElement: span };
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+      directClickModifier: "alt",
+    },
+    addEventListener() {},
+    getSelection() { return null; },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint() {
+      return {
+        startContainer: textNode,
+        startOffset: 5,
+        getBoundingClientRect() {
+          return { left: 12, top: 14, right: 20, bottom: 24, width: 8, height: 10 };
+        },
+      };
+    },
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+parent.parentElement = sandbox.document.body;
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+messages.length = 0;
+const event = {
+  altKey: true,
+  button: 0,
+  clientX: 18,
+  clientY: 19,
+  target: span,
+  preventDefault() {},
+};
+for (const type of ["pointerdown", "pointerup", "mouseup", "click"]) {
+  for (const callback of listeners[type] || []) {
+    callback(event);
+  }
+}
+const lookups = messages.filter((message) => message.startsWith("pronounceit:audioLookup:"));
+if (lookups.length !== 1) {
+  throw new Error(`expected one audio lookup, got ${JSON.stringify(messages)}`);
+}
+const payload = JSON.parse(lookups[0].replace("pronounceit:audioLookup:", ""));
+if (
+  payload.text !== "interstitial" ||
+  payload.contextText !== parent.textContent ||
+  payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "interstitial" ||
+  !payload.contextText.includes("acute interstitial nephritis")
+) {
+  throw new Error(`bad interstitial payload: ${JSON.stringify(payload)}`);
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
     def test_word_extraction_handles_hyphenated_medical_terms(self) -> None:
         if not shutil.which("node"):
             self.skipTest("node is not available")
@@ -1008,8 +1526,12 @@ if (!elements.some((element) => element.textContent === "Save pronunciation")) {
   throw new Error("missing Save pronunciation action");
 }
 const supportButton = body.querySelector(".pronounceit-menu-support");
-if (!supportButton || supportButton.textContent !== "Support") {
-  throw new Error("missing Support action");
+if (!supportButton || supportButton.textContent !== "") {
+  throw new Error("missing icon-only Support action");
+}
+const coffeeIcon = body.querySelector(".pronounceit-coffee-icon");
+if (!coffeeIcon) {
+  throw new Error("missing coffee icon");
 }
 if (supportButton.title !== "If you're enjoying PronounceIt, consider buying me a coffee.") {
   throw new Error(`bad Support tooltip: ${supportButton.title}`);
@@ -1079,6 +1601,9 @@ if (body.querySelector(".pronounceit-menu")) {
         self.assertIn(".pronounceit-popup", css)
         self.assertIn(".pronounceit-menu", css)
         self.assertIn(".pronounceit-menu-support", css)
+        self.assertIn(".pronounceit-coffee-icon", css)
+        self.assertIn("background: #ffdd00", css)
+        self.assertIn("box-sizing: border-box", css)
         self.assertIn(".pronounceit-pronunciation.generated", css)
         self.assertIn("position: fixed", css)
         self.assertIn("z-index", css)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -87,42 +88,13 @@ def _install_config_action() -> None:
 def _install_tools_menu_actions() -> None:
     try:
         from aqt import mw
-        from aqt.qt import QAction, QMenu
+        from aqt.qt import QAction
     except Exception:
         return
 
-    pronounce_menu = QMenu("PronounceIt", mw)
-
-    pronounce_action = QAction("Pronounce Current Selection", mw)
-    pronounce_action.setShortcut(_config().hotkey.replace("Mod+", "Ctrl+"))
-    pronounce_action.triggered.connect(_pronounce_current_reviewer_selection)
-    pronounce_menu.addAction(pronounce_action)
-
-    manual_action = QAction("Pronounce Manually...", mw)
-    manual_action.triggered.connect(_pronounce_manually)
-    pronounce_menu.addAction(manual_action)
-
-    pronounce_menu.addSeparator()
-
-    saved_action = QAction("Saved Pronunciations...", mw)
-    saved_action.triggered.connect(_show_saved_pronunciations)
-    pronounce_menu.addAction(saved_action)
-
-    custom_action = QAction("Add or Update Custom Pronunciation...", mw)
-    custom_action.triggered.connect(_add_or_update_custom_pronunciation)
-    pronounce_menu.addAction(custom_action)
-
-    audit_action = QAction("Dictionary Audit...", mw)
-    audit_action.triggered.connect(_show_dictionary_audit)
-    pronounce_menu.addAction(audit_action)
-
-    pronounce_menu.addSeparator()
-
-    config_action = QAction("Configure Add-on...", mw)
+    config_action = QAction("PronounceIt Settings...", mw)
     config_action.triggered.connect(_show_config_dialog)
-    pronounce_menu.addAction(config_action)
-
-    mw.form.menuTools.addMenu(pronounce_menu)
+    mw.form.menuTools.addAction(config_action)
 
 
 def _lookup_start_choice(config: PronounceItConfig) -> str:
@@ -147,19 +119,66 @@ def _add_modifier_items(combo: Any) -> None:
         ("Shift", "shift"),
         ("Command/Meta", "meta"),
         ("Control/Ctrl", "ctrl"),
-        ("Mod (Ctrl or Command)", "mod"),
+        (_modifier_display_name("mod"), "mod"),
         ("Disabled", "disabled"),
     ]:
         combo.addItem(label, value)
 
 
-def _modifier_display_name(value: str) -> str:
+def _platform_mod_key_name(platform: str | None = None) -> str:
+    return "Command" if (platform or sys.platform).startswith("darwin") else "Ctrl"
+
+
+def _shortcut_parts(value: str) -> list[str]:
+    return [part.strip() for part in str(value or "").split("+") if part.strip()]
+
+
+def _hotkey_display_name(value: str, platform: str | None = None) -> str:
+    parts = _shortcut_parts(value or DEFAULT_CONFIG["hotkey"])
+    if not parts:
+        parts = _shortcut_parts(DEFAULT_CONFIG["hotkey"])
+    display_parts: list[str] = []
+    for part in parts:
+        normalized = part.casefold()
+        if normalized == "mod":
+            display_parts.append(_platform_mod_key_name(platform))
+        elif normalized in {"cmd", "command", "meta"}:
+            display_parts.append("Command")
+        elif normalized in {"ctrl", "control"}:
+            display_parts.append("Ctrl")
+        elif len(part) == 1:
+            display_parts.append(part.upper())
+        else:
+            display_parts.append(part)
+    return "+".join(display_parts)
+
+
+def _hotkey_config_value(value: str, platform: str | None = None) -> str:
+    parts = _shortcut_parts(value)
+    if not parts:
+        return str(DEFAULT_CONFIG["hotkey"])
+    platform_key = _platform_mod_key_name(platform).casefold()
+    config_parts: list[str] = []
+    for part in parts:
+        normalized = part.casefold()
+        if normalized == platform_key:
+            config_parts.append("Mod")
+        elif platform_key == "command" and normalized == "cmd":
+            config_parts.append("Mod")
+        elif platform_key == "ctrl" and normalized == "control":
+            config_parts.append("Mod")
+        else:
+            config_parts.append(part)
+    return "+".join(config_parts)
+
+
+def _modifier_display_name(value: str, platform: str | None = None) -> str:
     return {
         "alt": "Option/Alt",
         "shift": "Shift",
         "meta": "Command/Meta",
         "ctrl": "Control/Ctrl",
-        "mod": "Mod",
+        "mod": _platform_mod_key_name(platform),
         "disabled": "Disabled",
     }.get(value, "Option/Alt")
 
@@ -178,7 +197,7 @@ def _behavior_preview_lines(config: PronounceItConfig) -> list[str]:
         else f"{popup_modifier} + right-click opens the quick menu"
     )
     return [
-        f"{config.hotkey or DEFAULT_CONFIG['hotkey']} pronounces the current selection",
+        f"{_hotkey_display_name(config.hotkey)} pronounces the current selection",
         audio_line,
         popup_line,
     ]
@@ -193,13 +212,16 @@ def _show_config_dialog() -> None:
             QDialog,
             QDialogButtonBox,
             QFormLayout,
+            QFrame,
             QGroupBox,
             QHBoxLayout,
             QLabel,
             QLineEdit,
             QPushButton,
+            QScrollArea,
             QSpinBox,
             QVBoxLayout,
+            QWidget,
         )
         from aqt.utils import showInfo
     except Exception:
@@ -214,72 +236,118 @@ def _show_config_dialog() -> None:
     dialog = QDialog(mw)
     dialog.setWindowTitle("PronounceIt Options")
     dialog.setObjectName("pronounceitOptions")
-    dialog.setMinimumWidth(500)
+    dialog.setMinimumSize(540, 520)
     dialog.setStyleSheet(
         """
         QDialog#pronounceitOptions {
-            background: #f7f9fb;
+            background: #f6f8fb;
+            color: #172033;
+        }
+        QDialog#pronounceitOptions QWidget#pronounceitScrollWidget,
+        QDialog#pronounceitOptions QScrollArea#pronounceitScroll {
+            background: transparent;
+            border: none;
+        }
+        QDialog#pronounceitOptions QLabel {
+            color: #172033;
+            font-size: 13px;
+        }
+        QDialog#pronounceitOptions QLabel#pronounceitTitle {
+            color: #101828;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 1px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitIntro {
-            color: #334155;
-            font-size: 13px;
-            line-height: 18px;
+            color: #526273;
+            font-size: 14px;
+            line-height: 19px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitHelp {
-            color: #64748b;
+            color: #667789;
             font-size: 12px;
             line-height: 16px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitPreview {
-            background: #eef7f8;
-            border: 1px solid #c6dce3;
+            background: #edf8f4;
+            border: 1px solid #b9ddd1;
             border-radius: 8px;
-            color: #17324a;
-            font-size: 12px;
-            line-height: 17px;
-            padding: 10px 12px;
+            color: #12382f;
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 18px;
+            padding: 11px 13px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitSection {
-            color: #0f172a;
-            font-size: 12px;
-            font-weight: 650;
-            margin-top: 8px;
+            color: #142033;
+            font-size: 13px;
+            font-weight: 700;
+            margin-top: 12px;
         }
         QDialog#pronounceitOptions QGroupBox {
             background: #ffffff;
-            border: 1px solid #d7dee8;
+            border: 1px solid #dde5ef;
             border-radius: 8px;
-            font-weight: 650;
+            color: #142033;
+            font-size: 13px;
+            font-weight: 700;
             margin-top: 14px;
-            padding: 16px 12px 12px 12px;
+            padding: 18px 14px 14px 14px;
         }
         QDialog#pronounceitOptions QGroupBox::title {
-            color: #0f172a;
-            left: 12px;
-            padding: 0 4px;
+            color: #142033;
+            left: 14px;
+            padding: 0 5px;
             subcontrol-origin: margin;
+        }
+        QDialog#pronounceitOptions QCheckBox {
+            color: #172033;
+            font-size: 13px;
+            spacing: 8px;
         }
         QDialog#pronounceitOptions QLineEdit,
         QDialog#pronounceitOptions QComboBox,
         QDialog#pronounceitOptions QSpinBox {
-            border: 1px solid #c7d0dd;
+            border: 1px solid #cbd5e1;
             border-radius: 6px;
-            min-height: 28px;
-            padding: 3px 8px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 13px;
+            min-height: 30px;
+            padding: 4px 9px;
+        }
+        QDialog#pronounceitOptions QComboBox QAbstractItemView {
+            background: #ffffff;
+            color: #172033;
+            selection-background-color: #dff3ec;
+            selection-color: #0f2433;
         }
         QDialog#pronounceitOptions QLineEdit:focus,
         QDialog#pronounceitOptions QComboBox:focus,
         QDialog#pronounceitOptions QSpinBox:focus {
-            border-color: #1f6f8b;
+            border-color: #237a68;
         }
         QDialog#pronounceitOptions QPushButton {
-            border: 1px solid #c7d0dd;
+            border: 1px solid #cbd5e1;
             border-radius: 6px;
+            background: #ffffff;
+            color: #172033;
+            font-size: 13px;
+            font-weight: 600;
             min-height: 30px;
-            padding: 5px 10px;
+            padding: 5px 12px;
         }
         QDialog#pronounceitOptions QPushButton:hover {
-            background: #eef6f8;
+            background: #edf8f4;
+            color: #102033;
+        }
+        QDialog#pronounceitOptions QPushButton:checked {
+            background: #e0f2ee;
+            border-color: #95cfc1;
+            color: #12382f;
+        }
+        QDialog#pronounceitOptions QPushButton#pronounceitSupport {
+            color: #237a68;
         }
         QDialog#pronounceitOptions QGroupBox#pronounceitAdvanced {
             background: #fbfcfe;
@@ -291,25 +359,49 @@ def _show_config_dialog() -> None:
     layout.setContentsMargins(18, 18, 18, 14)
     layout.setSpacing(10)
 
+    scroll_area = QScrollArea()
+    scroll_area.setObjectName("pronounceitScroll")
+    scroll_area.setWidgetResizable(True)
+    try:
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+    except AttributeError:
+        scroll_area.setFrameShape(QFrame.NoFrame)
+
+    scroll_widget = QWidget()
+    scroll_widget.setObjectName("pronounceitScrollWidget")
+    body_layout = QVBoxLayout(scroll_widget)
+    body_layout.setContentsMargins(0, 0, 0, 4)
+    body_layout.setSpacing(10)
+
+    title = QLabel("PronounceIt Settings")
+    title.setObjectName("pronounceitTitle")
+    body_layout.addWidget(title)
+
     intro = QLabel(
-        "Choose how PronounceIt appears while reviewing cards. "
-        "Less common controls are under Advanced."
+        "Choose how PronounceIt behaves while reviewing cards. Less common controls live in Advanced."
     )
     intro.setObjectName("pronounceitIntro")
     intro.setWordWrap(True)
-    layout.addWidget(intro)
+    body_layout.addWidget(intro)
 
     preview = QLabel()
     preview.setObjectName("pronounceitPreview")
     preview.setWordWrap(True)
-    layout.addWidget(preview)
+    body_layout.addWidget(preview)
+
+    def polish_form(form) -> None:
+        form.setHorizontalSpacing(18)
+        form.setVerticalSpacing(10)
+        try:
+            form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        except AttributeError:
+            form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
 
     def make_form_group(title: str):
         group = QGroupBox(title)
         form = QFormLayout(group)
-        form.setContentsMargins(10, 8, 10, 10)
-        form.setHorizontalSpacing(16)
-        form.setVerticalSpacing(9)
+        form.setContentsMargins(10, 10, 10, 10)
+        polish_form(form)
         return group, form
 
     def add_help(form, text: str) -> None:
@@ -333,10 +425,10 @@ def _show_config_dialog() -> None:
     enabled.setChecked(config.enabled)
     review_form.addRow(enabled)
 
-    hotkey = QLineEdit(config.hotkey)
-    hotkey.setPlaceholderText("Mod+P")
+    hotkey = QLineEdit(_hotkey_display_name(config.hotkey))
+    hotkey.setPlaceholderText(_hotkey_display_name(DEFAULT_CONFIG["hotkey"]))
     hotkey.setToolTip(
-        "Use Anki shortcut syntax. Mod maps to Ctrl on Windows/Linux and Cmd on macOS."
+        "Default: Command+P on macOS, Ctrl+P on Windows/Linux."
     )
     review_form.addRow("Keyboard shortcut", hotkey)
 
@@ -356,10 +448,69 @@ def _show_config_dialog() -> None:
         "Default: Option/Alt-left-click plays audio only; Option/Alt-right-click opens the quick menu.",
     )
 
-    layout.addWidget(review_box)
+    body_layout.addWidget(review_box)
 
-    audio_box, audio_form = make_form_group("Audio")
+    appearance_box, appearance_form = make_form_group("Appearance")
+    theme = QComboBox()
+    theme.addItem("System", "system")
+    theme.addItem("Clinical Light", "clinical_light")
+    theme.addItem("Slate", "slate")
+    theme.addItem("High Contrast", "high_contrast")
+    theme_index = theme.findData(config.theme)
+    theme.setCurrentIndex(max(0, theme_index))
+    appearance_form.addRow("Theme", theme)
+    body_layout.addWidget(appearance_box)
 
+    advanced_toggle = QPushButton("Show advanced settings")
+    advanced_toggle.setCheckable(True)
+    reset_button = QPushButton("Reset to defaults")
+    support_button = QPushButton("Support")
+    support_button.setObjectName("pronounceitSupport")
+    support_button.setToolTip(SUPPORT_TOOLTIP)
+    support_button.setAccessibleName(SUPPORT_TOOLTIP)
+    toggle_row = QHBoxLayout()
+    toggle_row.setSpacing(8)
+    toggle_row.addWidget(advanced_toggle)
+    toggle_row.addWidget(reset_button)
+    toggle_row.addStretch(1)
+    toggle_row.addWidget(support_button)
+    body_layout.addLayout(toggle_row)
+
+    advanced_box = QGroupBox("Advanced")
+    advanced_box.setObjectName("pronounceitAdvanced")
+    advanced_layout = QVBoxLayout(advanced_box)
+    advanced_layout.setContentsMargins(10, 10, 10, 12)
+    advanced_layout.setSpacing(10)
+    advanced_box.setVisible(False)
+
+    add_section(advanced_layout, "Study flow")
+    study_form = QFormLayout()
+    polish_form(study_form)
+    allow_question = QCheckBox("Allow lookups before answer is shown")
+    allow_question.setChecked(config.allow_on_question_side)
+    allow_question.setToolTip("Disabled by default so pronunciation help stays answer-side during review.")
+    study_form.addRow(allow_question)
+    add_help(
+        study_form,
+        "Use this only if pronunciation help before reveal will not interfere with your study flow.",
+    )
+    advanced_layout.addLayout(study_form)
+
+    add_section(advanced_layout, "Popup")
+    popup_form = QFormLayout()
+    polish_form(popup_form)
+    auto_close = QCheckBox("Close popup when the card changes")
+    auto_close.setChecked(config.auto_close_on_card_change)
+    popup_form.addRow(auto_close)
+
+    show_save = QCheckBox("Show Save pronunciation in the quick menu")
+    show_save.setChecked(config.show_save_button)
+    popup_form.addRow(show_save)
+    advanced_layout.addLayout(popup_form)
+
+    add_section(advanced_layout, "Audio")
+    audio_form = QFormLayout()
+    polish_form(audio_form)
     backend = QComboBox()
     backend.addItem("Use local audio, then system voice if needed", "local_audio_then_tts")
     backend.addItem("Use local audio only", "local_audio")
@@ -374,71 +525,11 @@ def _show_config_dialog() -> None:
         audio_form,
         "Recommended: use curated local clips first, generate a local clip when needed, then fall back to the system voice.",
     )
-
-    layout.addWidget(audio_box)
-
-    appearance_box, appearance_form = make_form_group("Appearance")
-    theme = QComboBox()
-    theme.addItem("System", "system")
-    theme.addItem("Clinical Light", "clinical_light")
-    theme.addItem("Slate", "slate")
-    theme.addItem("High Contrast", "high_contrast")
-    theme_index = theme.findData(config.theme)
-    theme.setCurrentIndex(max(0, theme_index))
-    appearance_form.addRow("Theme", theme)
-    layout.addWidget(appearance_box)
-
-    advanced_toggle = QPushButton("Show advanced settings")
-    advanced_toggle.setCheckable(True)
-    reset_button = QPushButton("Reset to defaults")
-    support_button = QPushButton("Coffee")
-    support_button.setToolTip(SUPPORT_TOOLTIP)
-    toggle_row = QHBoxLayout()
-    toggle_row.setSpacing(8)
-    toggle_row.addWidget(advanced_toggle)
-    toggle_row.addWidget(reset_button)
-    toggle_row.addStretch(1)
-    toggle_row.addWidget(support_button)
-    layout.addLayout(toggle_row)
-
-    advanced_box = QGroupBox("Advanced")
-    advanced_box.setObjectName("pronounceitAdvanced")
-    advanced_layout = QVBoxLayout(advanced_box)
-    advanced_layout.setContentsMargins(10, 8, 10, 10)
-    advanced_layout.setSpacing(10)
-    advanced_box.setVisible(False)
-
-    add_section(advanced_layout, "Study flow")
-    study_form = QFormLayout()
-    study_form.setHorizontalSpacing(16)
-    study_form.setVerticalSpacing(9)
-    allow_question = QCheckBox("Allow lookups before answer is shown")
-    allow_question.setChecked(config.allow_on_question_side)
-    allow_question.setToolTip("Disabled by default so pronunciation help stays answer-side during review.")
-    study_form.addRow(allow_question)
-    add_help(
-        study_form,
-        "Use this only if pronunciation help before reveal will not interfere with your study flow.",
-    )
-    advanced_layout.addLayout(study_form)
-
-    add_section(advanced_layout, "Popup")
-    popup_form = QFormLayout()
-    popup_form.setHorizontalSpacing(16)
-    popup_form.setVerticalSpacing(9)
-    auto_close = QCheckBox("Close popup when the card changes")
-    auto_close.setChecked(config.auto_close_on_card_change)
-    popup_form.addRow(auto_close)
-
-    show_save = QCheckBox("Show Save pronunciation in the quick menu")
-    show_save.setChecked(config.show_save_button)
-    popup_form.addRow(show_save)
-    advanced_layout.addLayout(popup_form)
+    advanced_layout.addLayout(audio_form)
 
     add_section(advanced_layout, "Fallback voice")
     voice_form = QFormLayout()
-    voice_form.setHorizontalSpacing(16)
-    voice_form.setVerticalSpacing(9)
+    polish_form(voice_form)
     voice = QLineEdit(config.tts_voice)
     voice.setPlaceholderText("System default")
     voice.setToolTip("Optional system voice name for generated and fallback speech.")
@@ -458,6 +549,24 @@ def _show_config_dialog() -> None:
     voice_form.addRow("Volume", volume)
     advanced_layout.addLayout(voice_form)
 
+    add_section(advanced_layout, "Tools")
+    tool_items = [
+        ("Pronounce Selection", _pronounce_current_reviewer_selection),
+        ("Pronounce Manually", _pronounce_manually),
+        ("Saved List", _show_saved_pronunciations),
+        ("Custom Pronunciation", _add_or_update_custom_pronunciation),
+        ("Dictionary Audit", _show_dictionary_audit),
+    ]
+    for row_items in (tool_items[:3], tool_items[3:]):
+        tools_row = QHBoxLayout()
+        tools_row.setSpacing(8)
+        for label, callback in row_items:
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, handler=callback: handler())
+            tools_row.addWidget(button)
+        tools_row.addStretch(1)
+        advanced_layout.addLayout(tools_row)
+
     add_section(advanced_layout, "Files")
     button_row = QHBoxLayout()
     button_row.setSpacing(8)
@@ -471,11 +580,17 @@ def _show_config_dialog() -> None:
         button.clicked.connect(lambda _checked=False, path_factory=target: _open_path(path_factory()))
         button_row.addWidget(button)
     advanced_layout.addLayout(button_row)
-    layout.addWidget(advanced_box)
+    body_layout.addWidget(advanced_box)
+
+    body_layout.addStretch(1)
+    scroll_area.setWidget(scroll_widget)
+    layout.addWidget(scroll_area, 1)
 
     def set_advanced_visible(visible: bool) -> None:
         advanced_box.setVisible(visible)
         advanced_toggle.setText("Hide advanced settings" if visible else "Show advanced settings")
+        target_height = dialog.maximumHeight() if visible else min(dialog.maximumHeight(), 560)
+        dialog.resize(max(dialog.width(), 620), target_height)
 
     advanced_toggle.toggled.connect(set_advanced_visible)
 
@@ -483,7 +598,7 @@ def _show_config_dialog() -> None:
         return PronounceItConfig.from_mapping(
             {
                 **config.as_config_mapping(),
-                "hotkey": hotkey.text().strip() or DEFAULT_CONFIG["hotkey"],
+                "hotkey": _hotkey_config_value(hotkey.text().strip()),
                 "direct_click_modifier": direct_click.currentData()
                 or DEFAULT_CONFIG["direct_click_modifier"],
                 "popup_click_modifier": popup_click.currentData()
@@ -497,7 +612,7 @@ def _show_config_dialog() -> None:
     def reset_to_defaults(*_args) -> None:
         defaults = PronounceItConfig.from_mapping(DEFAULT_CONFIG)
         enabled.setChecked(defaults.enabled)
-        hotkey.setText(defaults.hotkey)
+        hotkey.setText(_hotkey_display_name(defaults.hotkey))
         set_combo_data(direct_click, defaults.direct_click_modifier)
         set_combo_data(popup_click, defaults.popup_click_modifier)
         set_combo_data(backend, defaults.audio_backend)
@@ -524,10 +639,19 @@ def _show_config_dialog() -> None:
     buttons = QDialogButtonBox(button_flags)
     layout.addWidget(buttons)
 
+    try:
+        screen = dialog.screen()
+        available_height = screen.availableGeometry().height() if screen else 760
+    except Exception:
+        available_height = 760
+    max_dialog_height = max(520, min(720, available_height - 80))
+    dialog.setMaximumHeight(max_dialog_height)
+    dialog.resize(620, min(620, max_dialog_height))
+
     def save() -> None:
         next_config = {
             "enabled": enabled.isChecked(),
-            "hotkey": hotkey.text().strip() or DEFAULT_CONFIG["hotkey"],
+            "hotkey": _hotkey_config_value(hotkey.text().strip()),
             "direct_click_modifier": direct_click.currentData() or DEFAULT_CONFIG["direct_click_modifier"],
             "popup_click_modifier": popup_click.currentData() or DEFAULT_CONFIG["popup_click_modifier"],
             "tts_voice": voice.text().strip(),
@@ -1093,9 +1217,10 @@ def _lookup_payload(term: str) -> dict[str, Any]:
 
 
 def _lookup_payload_from_request(payload: dict[str, Any]) -> dict[str, Any]:
-    selected_text = display_term(str(payload.get("text", "")))
+    selected_text = display_term(str(payload.get("selectedText") or payload.get("text", "")))
+    lookup_text = display_term(str(payload.get("text", "")))
     context_text = str(payload.get("contextText") or "")
-    if _dictionary and selected_text and context_text:
+    if _dictionary and lookup_text and context_text:
         try:
             start = int(payload.get("contextOffsetStart", 0))
             end = int(payload.get("contextOffsetEnd", start))
@@ -1107,7 +1232,17 @@ def _lookup_payload_from_request(payload: dict[str, Any]) -> dict[str, Any]:
             result = _enrich_lookup_payload(_dictionary.lookup(context_match))
             result["requestedText"] = selected_text
             return result
-    return _lookup_payload(selected_text)
+        context_fallback = _dictionary.context_fallback_term(context_text, start, end)
+        if context_fallback and (
+            context_fallback != lookup_text or selected_text != context_fallback
+        ):
+            result = _lookup_payload(context_fallback)
+            result["requestedText"] = selected_text
+            return result
+    result = _lookup_payload(lookup_text or selected_text)
+    if selected_text and lookup_text and selected_text != lookup_text:
+        result["requestedText"] = selected_text
+    return result
 
 
 def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:

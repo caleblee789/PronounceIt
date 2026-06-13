@@ -20,6 +20,11 @@ class DictionaryTests(unittest.TestCase):
         entries = {}
         items = [
             {
+                "term": "bundle",
+                "pronunciation": "BUN-dul",
+                "syllables": "bun-dle",
+            },
+            {
                 "term": "bundle branch block",
                 "pronunciation": "BUN-dul branch block",
                 "syllables": "bun-dle branch block",
@@ -122,6 +127,17 @@ class DictionaryTests(unittest.TestCase):
             "acute lymphoblastic leukemia",
         )
 
+    def test_best_context_match_prefers_phrase_over_exact_word(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "ECG shows right bundle branch block today."
+        start = context.index("bundle")
+
+        self.assertTrue(dictionary.lookup("bundle")["found"])
+        self.assertEqual(
+            dictionary.best_context_match(context, start, start + len("bundle")),
+            "right bundle branch block",
+        )
+
     def test_best_context_match_falls_back_when_no_phrase_matches(self) -> None:
         dictionary = self.make_dictionary()
         context = "ECG shows unrelated branch wording today."
@@ -131,10 +147,15 @@ class DictionaryTests(unittest.TestCase):
 
     def test_best_context_match_does_not_cross_hard_punctuation(self) -> None:
         dictionary = self.make_dictionary()
-        context = "ECG shows right bundle. branch block today."
-        start = context.index("branch")
+        for punctuation in [".", ";", ":", "?", "[", "]", "\n"]:
+            with self.subTest(punctuation=punctuation):
+                context = f"ECG shows right bundle{punctuation} branch block today."
+                start = context.index("branch")
 
-        self.assertEqual(dictionary.best_context_match(context, start, start + len("branch")), "")
+                self.assertEqual(
+                    dictionary.best_context_match(context, start, start + len("branch")),
+                    "",
+                )
 
     def test_best_context_match_uses_aliases_plurals_and_overrides(self) -> None:
         dictionary = self.make_dictionary()
@@ -165,6 +186,22 @@ class DictionaryTests(unittest.TestCase):
             dictionary.best_context_match(context, start, start + len("Parkinson")),
             "Wolff\u2011Parkinson\u2011White",
         )
+
+    def test_context_fallback_expands_partial_selection_to_whole_tokens(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "REM sleep improves memory."
+        start = context.index("REM") + 1
+        end = context.index("sleep") + len("sle")
+
+        self.assertEqual(dictionary.context_fallback_term(context, start, end), "REM sleep")
+
+    def test_context_fallback_does_not_cross_hard_punctuation(self) -> None:
+        dictionary = self.make_dictionary()
+        context = "REM. sleep improves memory."
+        start = context.index("REM") + 1
+        end = context.index("sleep") + len("sle")
+
+        self.assertEqual(dictionary.context_fallback_term(context, start, end), "")
 
     def test_dictionary_has_release_sized_seed_list(self) -> None:
         dictionary = PronunciationDictionary.bundled()

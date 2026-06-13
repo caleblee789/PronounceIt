@@ -23,6 +23,9 @@
   let pendingRequest = null;
   let lastPointerRequest = null;
   let lastPointerCaptureAt = 0;
+  let directClickRequest = null;
+  let lastDirectClickKey = "";
+  let lastDirectClickAt = 0;
   let menuEl = null;
   let popupEl = null;
 
@@ -33,28 +36,47 @@
     pycmd(MESSAGE_PREFIX + action + ":" + JSON.stringify(payload || {}));
   }
 
-  function selectedText() {
+  function selectedText(options) {
+    const allowCollapsed = Boolean(options && options.allowCollapsed);
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
       return null;
     }
-    const text = selection.toString().trim();
-    if (!text) {
+    const rawText = selection.toString();
+    const selected = rawText.trim();
+    const range = selection.getRangeAt(0);
+    if (!selected) {
+      return allowCollapsed ? requestFromCollapsedRange(range) : null;
+    }
+    const rect = range.getBoundingClientRect();
+    const expanded = expandedSelectionFromRange(range);
+    const text = expanded && expanded.text ? expanded.text : selected;
+    return requestFromTextContext(
+      text,
+      selected,
+      rect,
+      expanded && expanded.context ? expanded.context : contextFromSelectionRange(range, text)
+    );
+  }
+
+  function requestFromCollapsedRange(range) {
+    if (!range || !range.startContainer || range.startContainer.nodeType !== Node.TEXT_NODE) {
       return null;
     }
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    return Object.assign({
-      text: text,
-      rect: {
-        left: rect.left,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        width: rect.width,
-        height: rect.height,
-      },
-    }, contextFromSelectionRange(range, text));
+    const nodeText = range.startContainer.textContent || "";
+    const span = extractTermSpanAtOffset(nodeText, range.startOffset);
+    if (!span) {
+      return null;
+    }
+    const rect = typeof range.getBoundingClientRect === "function"
+      ? range.getBoundingClientRect()
+      : null;
+    return requestFromTextContext(
+      span.text,
+      span.text,
+      rect,
+      contextFromTextNode(range.startContainer, span.start, span.end)
+    );
   }
 
   function wordAtPoint(x, y) {
@@ -73,17 +95,88 @@
     }
 
     const rect = range.getBoundingClientRect();
-    return Object.assign({
-      text: span.text,
-      rect: {
-        left: rect.left || x,
-        top: rect.top || y,
-        right: rect.right || x,
-        bottom: rect.bottom || y,
-        width: rect.width || 1,
-        height: rect.height || 1,
-      },
-    }, contextFromTextNode(range.startContainer, span.start, span.end));
+    return requestFromTextContext(
+      span.text,
+      span.text,
+      rect,
+      contextFromTextNode(range.startContainer, span.start, span.end),
+      x,
+      y
+    );
+  }
+
+  function requestFromElementPoint(element, x, y) {
+    if (!element || element === document.body || !Number.isFinite(x) || !Number.isFinite(y)) {
+      return null;
+    }
+    const textNodes = textNodesUnder(element);
+    for (const node of textNodes) {
+      const parent = node.parentElement;
+      if (!parent || typeof parent.getBoundingClientRect !== "function") {
+        continue;
+      }
+      const rect = parent.getBoundingClientRect();
+      if (!pointInRect(x, y, rect)) {
+        continue;
+      }
+      const text = node.textContent || "";
+      const offset = nearestTextOffset(text, x, rect);
+      const span = extractTermSpanAtOffset(text, offset);
+      if (!span) {
+        continue;
+      }
+      return requestFromTextContext(
+        span.text,
+        span.text,
+        rect,
+        contextFromTextNode(node, span.start, span.end),
+        x,
+        y
+      );
+    }
+
+    if (typeof element.getBoundingClientRect !== "function") {
+      return null;
+    }
+    const rect = element.getBoundingClientRect();
+    if (!pointInRect(x, y, rect)) {
+      return null;
+    }
+    const text = String(element.textContent || "").replace(/\u00a0/g, " ");
+    const offset = nearestTextOffset(text, x, rect);
+    const span = extractTermSpanAtOffset(text, offset);
+    if (!span) {
+      return null;
+    }
+    return requestFromTextContext(
+      span.text,
+      span.text,
+      rect,
+      contextFromText(text, span.start, span.end),
+      x,
+      y
+    );
+  }
+
+  function textNodesUnder(element) {
+    const nodes = [];
+    if (!element) {
+      return nodes;
+    }
+    if (element.nodeType === Node.TEXT_NODE) {
+      nodes.push(element);
+      return nodes;
+    }
+    if (element.childNodes && element.childNodes.length) {
+      for (const child of element.childNodes) {
+        nodes.push.apply(nodes, textNodesUnder(child));
+      }
+    }
+    return nodes;
+  }
+
+  function pointInRect(x, y, rect) {
+    return Boolean(rect && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
   }
 
   function termFromElement(element) {
@@ -115,17 +208,48 @@
   }
 
   function requestFromTextAndRect(text, rect) {
+    return requestFromTextContext(
+      text,
+      text,
+      rect,
+      contextFromText(text, 0, String(text || "").length),
+      0,
+      0
+    );
+  }
+
+  function requestFromTextContext(text, selected, rect, context, fallbackX, fallbackY) {
+    const normalizedText = String(text || "").trim();
+    const normalizedSelected = String(selected || normalizedText).trim();
+    if (!normalizedText || !/[A-Za-z]/.test(normalizedText)) {
+      return null;
+    }
     return Object.assign({
-      text: text,
-      rect: {
-        left: rect.left || 0,
-        top: rect.top || 0,
-        right: rect.right || rect.left || 0,
-        bottom: rect.bottom || rect.top || 0,
-        width: rect.width || 1,
-        height: rect.height || 1,
-      },
-    }, contextFromText(text, 0, String(text || "").length));
+      text: normalizedText,
+      selectedText: normalizedSelected || normalizedText,
+      rect: rectPayload(rect, fallbackX, fallbackY),
+    }, context || {});
+  }
+
+  function rectPayload(rect, fallbackX, fallbackY) {
+    const x = Number.isFinite(fallbackX) ? fallbackX : 0;
+    const y = Number.isFinite(fallbackY) ? fallbackY : 0;
+    const left = Number(rect && rect.left);
+    const top = Number(rect && rect.top);
+    const right = Number(rect && rect.right);
+    const bottom = Number(rect && rect.bottom);
+    const width = Number(rect && rect.width);
+    const height = Number(rect && rect.height);
+    const safeLeft = Number.isFinite(left) ? left : x;
+    const safeTop = Number.isFinite(top) ? top : y;
+    return {
+      left: safeLeft,
+      top: safeTop,
+      right: Number.isFinite(right) ? right : safeLeft,
+      bottom: Number.isFinite(bottom) ? bottom : safeTop,
+      width: Number.isFinite(width) && width > 0 ? width : 1,
+      height: Number.isFinite(height) && height > 0 ? height : 1,
+    };
   }
 
   function stripClozeMarkup(text) {
@@ -153,6 +277,50 @@
       start: safeOffset - leftLength,
       end: safeOffset - leftLength + word.length,
     };
+  }
+
+  function expandedSelectionFromRange(range) {
+    if (
+      !range ||
+      !range.startContainer ||
+      range.startContainer !== range.endContainer ||
+      range.startContainer.nodeType !== Node.TEXT_NODE
+    ) {
+      return null;
+    }
+    const nodeText = range.startContainer.textContent || "";
+    const expanded = expandOffsetsToTokenBoundaries(nodeText, range.startOffset, range.endOffset);
+    if (!expanded || expanded.start === expanded.end) {
+      return null;
+    }
+    const text = nodeText.slice(expanded.start, expanded.end).trim();
+    if (!text || !/[A-Za-z]/.test(text)) {
+      return null;
+    }
+    return {
+      text: text,
+      context: contextFromTextNode(range.startContainer, expanded.start, expanded.end),
+    };
+  }
+
+  function expandOffsetsToTokenBoundaries(text, start, end) {
+    const source = String(text || "");
+    if (!source) {
+      return null;
+    }
+    let safeStart = Math.max(0, Math.min(Number(start) || 0, source.length));
+    let safeEnd = Math.max(safeStart, Math.min(Number(end) || safeStart, source.length));
+    while (safeStart > 0 && isTokenChar(source.charAt(safeStart - 1))) {
+      safeStart -= 1;
+    }
+    while (safeEnd < source.length && isTokenChar(source.charAt(safeEnd))) {
+      safeEnd += 1;
+    }
+    return { start: safeStart, end: safeEnd };
+  }
+
+  function isTokenChar(char) {
+    return /[A-Za-z0-9'\u2010-\u2015-]/.test(char || "");
   }
 
   function contextFromSelectionRange(range, selected) {
@@ -274,7 +442,7 @@
     if (!canPronounce()) {
       return;
     }
-    const request = pendingRequest || selectedText() || lastPointerRequest;
+    const request = pendingRequest || selectedText({ allowCollapsed: true }) || lastPointerRequest;
     if (!request) {
       return;
     }
@@ -294,11 +462,25 @@
     const request =
       selectedText() ||
       wordAtPoint(event.clientX, event.clientY) ||
+      requestFromElementPoint(event.target, event.clientX, event.clientY) ||
       termFromElement(event.target);
     if (request) {
       lastPointerRequest = request;
     }
     return request;
+  }
+
+  function rememberDirectClickRequest(event) {
+    if (
+      !canPronounce() ||
+      !isPrimaryClick(event) ||
+      !modifierMatches(event, config.directClickModifier)
+    ) {
+      directClickRequest = null;
+      return null;
+    }
+    directClickRequest = rememberPointerRequest(event);
+    return directClickRequest;
   }
 
   function rememberPointerRequestThrottled(event) {
@@ -314,7 +496,7 @@
     if (!canPronounce()) {
       return;
     }
-    pendingRequest = selectedText() || lastPointerRequest;
+    pendingRequest = selectedText({ allowCollapsed: true }) || lastPointerRequest;
     requestPronunciation();
   }
 
@@ -391,6 +573,10 @@
     header.textContent = payload.term || payload.requestedText || "";
     menuEl.appendChild(header);
 
+    const actionGroup = document.createElement("div");
+    actionGroup.className = "pronounceit-menu-actions";
+    menuEl.appendChild(actionGroup);
+
     const play = document.createElement("button");
     play.type = "button";
     play.className = "pronounceit-menu-command pronounceit-menu-primary";
@@ -400,7 +586,7 @@
       event.stopPropagation();
       playFromMenu(payload);
     });
-    menuEl.appendChild(play);
+    actionGroup.appendChild(play);
 
     if (config.showSaveButton && !payload.alreadySaved) {
       const save = document.createElement("button");
@@ -412,16 +598,17 @@
         event.stopPropagation();
         saveFromMenu(payload);
       });
-      menuEl.appendChild(save);
+      actionGroup.appendChild(save);
     }
 
     const support = document.createElement("button");
     support.type = "button";
-    support.className = "pronounceit-menu-command pronounceit-menu-support";
-    support.textContent = "Support";
+    support.className = "pronounceit-menu-support";
+    support.textContent = "";
     support.title = SUPPORT_TOOLTIP;
     support.setAttribute("aria-label", SUPPORT_TOOLTIP);
     support.setAttribute("role", "menuitem");
+    support.appendChild(coffeeIcon());
     support.addEventListener("click", function (event) {
       event.stopPropagation();
       send("support", {});
@@ -431,6 +618,21 @@
 
     document.body.appendChild(menuEl);
     placeElement(menuEl, Number(payload.menuX || 24), Number(payload.menuY || 24));
+  }
+
+  function coffeeIcon() {
+    const icon = document.createElement("span");
+    icon.className = "pronounceit-coffee-icon";
+
+    const lid = document.createElement("span");
+    lid.className = "pronounceit-coffee-lid";
+    icon.appendChild(lid);
+
+    const cup = document.createElement("span");
+    cup.className = "pronounceit-coffee-cup";
+    icon.appendChild(cup);
+
+    return icon;
   }
 
   function hideMenu() {
@@ -625,13 +827,29 @@
     ) {
       return;
     }
-    pendingRequest = selectedText() || rememberPointerRequest(event) || lastPointerRequest;
-    if (!pendingRequest) {
+    const request = selectedText() || directClickRequest || rememberPointerRequest(event) || lastPointerRequest;
+    if (!request) {
       return;
     }
+    const key = directClickDedupKey(request);
+    const now = Date.now();
+    if (key === lastDirectClickKey && now - lastDirectClickAt < 350) {
+      return;
+    }
+    lastDirectClickKey = key;
+    lastDirectClickAt = now;
     event.preventDefault();
-    requestAudioOnly(pendingRequest);
-    pendingRequest = null;
+    requestAudioOnly(request);
+    directClickRequest = null;
+  }
+
+  function directClickDedupKey(request) {
+    return [
+      request.text || "",
+      request.contextText || "",
+      request.contextOffsetStart || 0,
+      request.contextOffsetEnd || 0,
+    ].join("|");
   }
 
   document.addEventListener("keydown", function (event) {
@@ -660,7 +878,7 @@
     if (!canPronounce() || !hotkeyMatches(event)) {
       return;
     }
-    pendingRequest = selectedText() || lastPointerRequest;
+    pendingRequest = selectedText({ allowCollapsed: true }) || lastPointerRequest;
     if (!pendingRequest) {
       return;
     }
@@ -683,11 +901,15 @@
   }, true);
 
   document.addEventListener("click", rememberPointerRequest, true);
+  document.addEventListener("click", pronounceDirectClick, true);
   document.addEventListener("mousedown", rememberPointerRequest, true);
+  document.addEventListener("mousedown", rememberDirectClickRequest, true);
   document.addEventListener("mouseup", rememberPointerRequest, true);
   document.addEventListener("mouseup", pronounceDirectClick, true);
   document.addEventListener("pointerdown", rememberPointerRequest, true);
+  document.addEventListener("pointerdown", rememberDirectClickRequest, true);
   document.addEventListener("pointerup", rememberPointerRequest, true);
+  document.addEventListener("pointerup", pronounceDirectClick, true);
   document.addEventListener("pointermove", rememberPointerRequestThrottled, true);
   document.addEventListener("mousemove", rememberPointerRequestThrottled, true);
   document.addEventListener("focusin", rememberPointerRequest, true);

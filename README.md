@@ -36,7 +36,7 @@ PronounceIt is answer-side by default so pronunciation help does not spoil a car
 Saved words are available from:
 
 ```text
-Tools > PronounceIt > Saved Pronunciations...
+Tools > PronounceIt Settings... > Advanced > Saved List
 ```
 
 The saved list lets you:
@@ -50,21 +50,18 @@ Saved pronunciations are stored locally in `user_files/saved_pronunciations.json
 
 ## Tools Menu
 
-PronounceIt adds a `Tools > PronounceIt` submenu:
+PronounceIt adds one Tools menu item:
 
-- `Pronounce Current Selection`: pronounce selected reviewer text.
-- `Pronounce Manually...`: type a word or term that is hard to select.
-- `Saved Pronunciations...`: review saved words.
-- `Add or Update Custom Pronunciation...`: add a local correction.
-- `Dictionary Audit...`: run the bundled pronunciation quality audit.
-- `Configure Add-on...`: open settings.
+- `PronounceIt Settings...`: open settings and Advanced tools.
+
+Advanced tools include selected-text pronunciation, manual lookup, saved words, custom pronunciation corrections, dictionary audit, local file shortcuts, and support.
 
 ## Settings
 
 Open settings from:
 
 ```text
-Tools > PronounceIt > Configure Add-on...
+Tools > PronounceIt Settings...
 ```
 
 Common settings include:
@@ -72,14 +69,13 @@ Common settings include:
 - Keyboard shortcut: defaults to `Mod+P`, which means Ctrl on Windows/Linux and Cmd on macOS.
 - Left-click audio modifier: defaults to Option/Alt.
 - Right-click quick-menu modifier: defaults to Option/Alt.
-- Audio behavior: defaults to local audio first, with system voice only as a fallback.
 - Theme: `system`, `clinical_light`, `slate`, or `high_contrast`.
 
-Advanced settings include pre-answer lookup, popup auto-close, quick-menu Save visibility, fallback voice/speed/volume, and shortcuts to local PronounceIt files.
+Advanced settings include audio behavior, pre-answer lookup, popup auto-close, quick-menu Save visibility, fallback voice/speed/volume, utility actions, and shortcuts to local PronounceIt files.
 
 ## Custom Pronunciations
 
-Use `Tools > PronounceIt > Add or Update Custom Pronunciation...` for local corrections.
+Use `Tools > PronounceIt Settings... > Advanced > Custom Pronunciation` for local corrections.
 
 PronounceIt stores custom corrections in:
 
