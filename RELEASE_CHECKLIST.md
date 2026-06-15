@@ -25,12 +25,12 @@ Manual Anki smoke test:
 6. Option/Alt-right-click the term and confirm the popup opens, autoplays audio, and shows the term, pronunciation, syllables, Play button, and save button.
 7. Select the term and press `Ctrl+P` or `Cmd+P`, then confirm the popup still works for keyboard lookup.
 8. Click Play and confirm the spoken audio follows the phonetic guide.
-9. Open Tools > PronounceIt > Configure Add-on and confirm the Review, Audio, Appearance, and Advanced groups render cleanly.
+9. Open Tools > PronounceIt Settings... and confirm the Review, Audio, Appearance, and Advanced groups render cleanly.
 10. Change the reviewer theme through each preset and confirm the popup remains readable.
-11. Hover or click a marked AMBOSS term, then use Tools > PronounceIt: Pronounce Current Selection and confirm the PronounceIt popup appears.
-12. Use Tools > PronounceIt: Pronounce Manually and enter `agranulocytosis`.
-13. Use Tools > PronounceIt: Add or Update Custom Pronunciation on a test term and confirm it is saved to `user_files/custom_pronunciations.json`.
-14. Save the term, then open Tools > PronounceIt: Saved Pronunciations.
+11. Hover or click a marked AMBOSS term, then use Tools > PronounceIt Settings... > Advanced > Current Selection and confirm the PronounceIt popup appears.
+12. Use Tools > PronounceIt Settings... > Advanced > Manual Lookup and enter `agranulocytosis`.
+13. Use Tools > PronounceIt Settings... > Advanced > Custom Pronunciation on a test term and confirm it is saved to `user_files/custom_pronunciations.json`.
+14. Save the term, then open Tools > PronounceIt Settings... > Advanced > Saved List.
 15. Pronounce a non-dictionary test word and confirm a cached clip appears in `user_files/generated_audio/` before any live TTS fallback is needed.
 16. Open Tools > PronounceIt: Dictionary Audit and confirm it reports PASS.
 

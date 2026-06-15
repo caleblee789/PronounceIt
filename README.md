@@ -158,6 +158,8 @@ Release focus:
 - Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
 - Refreshes README and config wording around the quick menu and saved-word workflow.
 
+See `RELEASE_NOTES.md` for the PR and release summary.
+
 ### Corpus Maintenance
 
 PronounceIt favors readable medical-student pronunciations over formal IPA. Stress is marked with capital letters, for example:
