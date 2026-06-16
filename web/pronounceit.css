@@ -223,21 +223,49 @@
   content: ">";
 }
 
+.pronounceit-menu-status {
+  color: var(--pronounceit-status);
+  font-size: 12px;
+  line-height: 16px;
+  margin-top: 10px;
+  padding: 0 2px;
+}
+
+.pronounceit-menu-status[data-empty="true"] {
+  display: none;
+}
+
 .pronounceit-popup {
-  width: min(348px, calc(100vw - 20px));
-  padding: 16px;
+  width: min(360px, calc(100vw - 20px));
+  padding: 0;
   background: var(--pronounceit-bg);
   border: 1px solid var(--pronounceit-border);
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: 0 18px 44px var(--pronounceit-shadow);
+  overflow: hidden;
   text-align: left;
+}
+
+.pronounceit-card {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
+.pronounceit-card-header {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
 }
 
 .pronounceit-term {
   color: var(--pronounceit-text);
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 22px;
+  font-size: 24px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 30px;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
@@ -247,53 +275,64 @@
   border-radius: 999px;
   color: var(--pronounceit-muted);
   display: inline-block;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 13px;
+  margin-top: 4px;
+  padding: 4px 8px;
+}
+
+.pronounceit-pronunciation-block {
+  background: var(--pronounceit-surface);
+  border: 1px solid var(--pronounceit-border);
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.pronounceit-pronunciation-label {
+  color: var(--pronounceit-muted);
   font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0;
   line-height: 14px;
-  margin-top: 8px;
-  padding: 3px 8px;
-  text-transform: uppercase;
 }
 
 .pronounceit-pronunciation {
   color: var(--pronounceit-accent-strong);
-  font-size: 15px;
-  font-weight: 650;
-  line-height: 20px;
-  margin-top: 9px;
+  font-size: 22px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 28px;
   overflow-wrap: anywhere;
 }
 
 .pronounceit-pronunciation.generated {
   color: var(--pronounceit-accent);
-  font-weight: 600;
-}
-
-.pronounceit-syllables {
-  color: var(--pronounceit-muted);
-  font-size: 12px;
-  line-height: 18px;
-  margin-top: 7px;
-  overflow-wrap: anywhere;
+  font-weight: 700;
 }
 
 .pronounceit-actions {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 0;
 }
 
 .pronounceit-actions button {
   border: 1px solid var(--pronounceit-border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 700;
+  letter-spacing: 0;
   line-height: 18px;
-  min-height: 38px;
-  padding: 8px 14px;
+  min-height: 36px;
+  padding: 8px 13px;
   white-space: nowrap;
 }
 
@@ -301,13 +340,15 @@
   background: var(--pronounceit-accent);
   border-color: var(--pronounceit-accent);
   color: var(--pronounceit-accent-text);
-  min-width: 74px;
+  min-width: 0;
 }
 
-.pronounceit-actions button:hover,
-.pronounceit-actions button:focus {
-  filter: brightness(0.96);
-  outline: 2px solid transparent;
+.pronounceit-play-button {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+}
+
+.pronounceit-actions button:hover {
+  filter: brightness(0.98);
 }
 
 .pronounceit-icon-button:hover,
@@ -315,10 +356,49 @@
   background: var(--pronounceit-accent-strong);
 }
 
+.pronounceit-actions button:active {
+  transform: translateY(1px);
+}
+
+.pronounceit-actions button:focus {
+  outline: 2px solid var(--pronounceit-accent-strong);
+  outline-offset: 3px;
+}
+
+.pronounceit-actions button:disabled {
+  cursor: default;
+  filter: grayscale(0.1);
+  opacity: 0.62;
+}
+
 .pronounceit-status {
   color: var(--pronounceit-status);
   font-size: 12px;
   line-height: 16px;
-  min-height: 16px;
-  margin-top: 9px;
+  margin: 0 22px 14px;
+}
+
+.pronounceit-status[data-empty="true"] {
+  display: none;
+}
+
+@media (max-width: 420px) {
+  .pronounceit-card {
+    padding: 20px;
+  }
+
+  .pronounceit-card-header {
+    align-items: start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .pronounceit-actions button {
+    width: 100%;
+  }
+
+  .pronounceit-status {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
 }

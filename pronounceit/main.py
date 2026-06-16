@@ -1420,6 +1420,7 @@ def _handle_menu_lookup(context: Any, payload: dict[str, Any]) -> None:
     result["menuX"] = payload.get("menuX")
     result["menuY"] = payload.get("menuY")
     result["config"] = _js_config_payload()
+    result["autoPlay"] = True
     _eval(context, f"window.PronounceIt && window.PronounceIt.showMenu({json.dumps(result)});")
 
 

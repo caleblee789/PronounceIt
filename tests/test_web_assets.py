@@ -530,6 +530,102 @@ if (
             capture_output=True,
         )
 
+    def test_option_click_ignores_stale_selection_elsewhere(self) -> None:
+        if not shutil.which("node"):
+            self.skipTest("node is not available")
+
+        script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const code = fs.readFileSync(process.argv[1], "utf8");
+const listeners = {};
+const messages = [];
+const source = "ECG shows right bundle branch block today.";
+const selectedStart = source.indexOf("right");
+const clickStart = source.indexOf("bundle");
+const textNode = { nodeType: 3, textContent: source };
+const sandbox = {
+  pycmd(message) { messages.push(message); },
+  Node: { TEXT_NODE: 3 },
+  NodeFilter: { SHOW_TEXT: 4 },
+  window: {
+    PronounceItConfig: {
+      enabled: true,
+      allowOnQuestionSide: true,
+      directClickModifier: "alt",
+    },
+    addEventListener() {},
+    getSelection() {
+      return {
+        rangeCount: 1,
+        toString() { return "right"; },
+        getRangeAt() {
+          return {
+            startContainer: textNode,
+            endContainer: textNode,
+            startOffset: selectedStart,
+            endOffset: selectedStart + "right".length,
+            getBoundingClientRect() {
+              return { left: 4, top: 5, right: 18, bottom: 15, width: 14, height: 10 };
+            },
+          };
+        },
+      };
+    },
+  },
+  document: {
+    body: {},
+    addEventListener(type, callback) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(callback);
+    },
+    caretRangeFromPoint() {
+      return {
+        startContainer: textNode,
+        startOffset: clickStart + 2,
+        getBoundingClientRect() {
+          return { left: 30, top: 5, right: 38, bottom: 15, width: 8, height: 10 };
+        },
+      };
+    },
+    caretPositionFromPoint: null,
+    createRange() { return { setStart() {}, collapse() {} }; },
+    createTreeWalker() { return { nextNode() { return null; } }; },
+  },
+};
+vm.createContext(sandbox);
+vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
+messages.length = 0;
+for (const callback of listeners.mouseup || []) {
+  callback({
+    altKey: true,
+    button: 0,
+    clientX: 34,
+    clientY: 10,
+    target: sandbox.document.body,
+    preventDefault() {},
+  });
+}
+const lookup = messages.find((message) => message.startsWith("pronounceit:audioLookup:"));
+if (!lookup) {
+  throw new Error(`missing audio lookup message: ${JSON.stringify(messages)}`);
+}
+const payload = JSON.parse(lookup.replace("pronounceit:audioLookup:", ""));
+if (
+  payload.text !== "bundle" ||
+  payload.selectedText !== "bundle" ||
+  payload.contextText.slice(payload.contextOffsetStart, payload.contextOffsetEnd) !== "bundle"
+) {
+  throw new Error(`pointer should use clicked word, not stale selection: ${JSON.stringify(payload)}`);
+}
+"""
+        subprocess.run(
+            ["node", "-e", script, str(ROOT / "web" / "pronounceit.js")],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
     def test_pointer_request_includes_text_node_context(self) -> None:
         if not shutil.which("node"):
             self.skipTest("node is not available")
@@ -1385,15 +1481,35 @@ vm.runInContext(code, sandbox, { filename: "pronounceit.js" });
 messages.length = 0;
 sandbox.window.PronounceIt.show({
   term: "clozapine",
+  pronunciation: "KLOH-zuh-peen",
+  syllables: "kloh-zuh-peen",
   speechText: "kloh zuh peen",
   audioFile: "audio/clozapine.aiff",
   found: true,
   rect: { left: 12, bottom: 24 },
   autoPlay: true,
 });
+const term = body.querySelector(".pronounceit-term");
+if (!term || term.tag !== "h2" || term.textContent !== "clozapine") {
+  throw new Error(`expected heading term, got ${term && term.tag}:${term && term.textContent}`);
+}
 const source = body.querySelector(".pronounceit-source");
 if (!source || source.textContent !== "Curated") {
   throw new Error(`expected curated source label, got ${source && source.textContent}`);
+}
+const pronunciation = body.querySelector(".pronounceit-pronunciation");
+if (!pronunciation || pronunciation.textContent !== "KLOH-zuh-peen") {
+  throw new Error(`expected pronunciation text, got ${pronunciation && pronunciation.textContent}`);
+}
+if (body.querySelector(".pronounceit-syllables")) {
+  throw new Error("popup should not render a separate syllables line");
+}
+const playButton = body.querySelector(".pronounceit-play-button");
+if (!playButton || playButton.textContent !== "Play pronunciation") {
+  throw new Error(`expected compact play label, got ${playButton && playButton.textContent}`);
+}
+if (!playButton || playButton["aria-label"] !== "Play pronunciation of clozapine") {
+  throw new Error(`expected dynamic aria label, got ${playButton && playButton["aria-label"]}`);
 }
 const status = body.querySelector(".pronounceit-status");
 if (!status || status.textContent !== "Playing...") {
@@ -1547,6 +1663,52 @@ sandbox.window.PronounceIt.showMenu({
   speechText: "kloh zuh peen",
   audioFile: "audio/clozapine.aiff",
   found: true,
+  autoPlay: true,
+  menuX: 12,
+  menuY: 24,
+});
+const autoplaySpeak = messages.find((message) => message.startsWith("pronounceit:speak:"));
+if (!autoplaySpeak) {
+  throw new Error(`missing autoplay speak message: ${JSON.stringify(messages)}`);
+}
+const menuStatus = body.querySelector(".pronounceit-menu-status");
+if (!menuStatus || menuStatus.textContent !== "Playing...") {
+  throw new Error(`expected menu playing status, got ${menuStatus && menuStatus.textContent}`);
+}
+if (body.querySelector(".pronounceit-popup")) {
+  throw new Error("quick menu autoplay should not open the popup");
+}
+sandbox.window.PronounceIt.spoken({ ok: false, reason: "local audio unavailable" });
+if (menuStatus.textContent !== "Could not play audio.") {
+  throw new Error(`expected menu failure status, got ${menuStatus.textContent}`);
+}
+messages.length = 0;
+sandbox.window.PronounceIt.showMenu({
+  term: "clozapine",
+  speechText: "kloh zuh peen",
+  audioFile: "audio/clozapine.aiff",
+  found: true,
+  menuX: 12,
+  menuY: 24,
+});
+const playAction = body.querySelector(".pronounceit-menu-primary");
+if (!playAction || !playAction.listeners.click) {
+  throw new Error("missing quick-menu Play action");
+}
+playAction.listeners.click({ stopPropagation() {} });
+const clickSpeak = messages.find((message) => message.startsWith("pronounceit:speak:"));
+if (!clickSpeak) {
+  throw new Error(`missing click speak message: ${JSON.stringify(messages)}`);
+}
+if (body.querySelector(".pronounceit-popup")) {
+  throw new Error("quick menu Play action should not open the popup");
+}
+messages.length = 0;
+sandbox.window.PronounceIt.showMenu({
+  term: "clozapine",
+  speechText: "kloh zuh peen",
+  audioFile: "audio/clozapine.aiff",
+  found: true,
   menuX: 12,
   menuY: 24,
 });
@@ -1601,10 +1763,15 @@ if (body.querySelector(".pronounceit-menu")) {
         self.assertIn(".pronounceit-popup", css)
         self.assertIn(".pronounceit-menu", css)
         self.assertIn(".pronounceit-menu-support", css)
+        self.assertIn(".pronounceit-menu-status", css)
         self.assertIn(".pronounceit-coffee-icon", css)
         self.assertIn("background: #ffdd00", css)
         self.assertIn("box-sizing: border-box", css)
+        self.assertIn(".pronounceit-card-header", css)
+        self.assertIn(".pronounceit-pronunciation-block", css)
         self.assertIn(".pronounceit-pronunciation.generated", css)
+        self.assertIn(".pronounceit-play-button", css)
+        self.assertIn("outline-offset", css)
         self.assertIn("position: fixed", css)
         self.assertIn("z-index", css)
 

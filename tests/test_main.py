@@ -231,6 +231,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn('"term": "right bundle branch block"', script)
         self.assertIn('"menuX": 30', script)
         self.assertIn('"menuY": 40', script)
+        self.assertIn('"autoPlay": true', script)
 
     def test_support_message_opens_support_url(self) -> None:
         reviewer = FakeReviewer()
