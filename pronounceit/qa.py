@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .audio import aiff_has_audio, audio_file_has_content
 from .dictionary import DATA_FILE, PronunciationDictionary
 
 
@@ -23,11 +24,14 @@ class PronunciationAudit:
     missing_syllables: list[str]
     missing_speech_text: list[str]
     missing_audio_files: list[str]
+    excluded_audio_placeholders: int
+    excluded_audio_placeholder_examples: list[str]
     unsafe_speech_text: list[str]
     missing_stress_marker: list[str]
     source_lexicon_terms: int
     missing_source_lexicon_terms: list[str]
     source_lexicon_pronunciation_mismatches: list[str]
+    quality_tiers: dict[str, int]
 
     @property
     def passed(self) -> bool:
@@ -55,11 +59,14 @@ class PronunciationAudit:
             "missingSyllables": self.missing_syllables,
             "missingSpeechText": self.missing_speech_text,
             "missingAudioFiles": self.missing_audio_files,
+            "excludedAudioPlaceholders": self.excluded_audio_placeholders,
+            "excludedAudioPlaceholderExamples": self.excluded_audio_placeholder_examples,
             "unsafeSpeechText": self.unsafe_speech_text,
             "missingStressMarker": self.missing_stress_marker,
             "sourceLexiconTerms": self.source_lexicon_terms,
             "missingSourceLexiconTerms": self.missing_source_lexicon_terms,
             "sourceLexiconPronunciationMismatches": self.source_lexicon_pronunciation_mismatches,
+            "qualityTiers": self.quality_tiers,
         }
 
 
@@ -112,22 +119,26 @@ def audit_pronunciations(
     missing_syllables: list[str] = []
     missing_speech_text: list[str] = []
     missing_audio_files: list[str] = []
+    invalid_audio_files = sorted(
+        str(path.relative_to(root))
+        for path in (root / "audio").glob("*.aiff")
+        if not aiff_has_audio(path)
+    ) if (root / "audio").exists() else []
     unsafe_speech_text: list[str] = []
     missing_stress_marker: list[str] = []
+    quality_tiers: dict[str, int] = {}
 
     for item in entries:
         term = item.get("term", "")
         payload = dictionary.lookup(term)
+        quality_tier = str(payload.get("qualityTier") or "fallback")
+        quality_tiers[quality_tier] = quality_tiers.get(quality_tier, 0) + 1
         if not payload.get("pronunciation"):
             missing_pronunciation.append(term)
         if not payload.get("syllables"):
             missing_syllables.append(term)
         if not payload.get("speechText"):
             missing_speech_text.append(term)
-        audio_file = str(payload.get("audioFile", ""))
-        audio_path = root / audio_file
-        if not audio_file or not audio_path.exists() or audio_path.stat().st_size == 0:
-            missing_audio_files.append(term)
         speech_text = str(payload.get("speechText", ""))
         if (
             "-" in speech_text
@@ -141,6 +152,13 @@ def audit_pronunciations(
         if not any(character.isupper() for character in str(payload.get("pronunciation", ""))):
             missing_stress_marker.append(term)
 
+    for term in checklist:
+        payload = dictionary.lookup(term)
+        audio_file = str(payload.get("audioFile", ""))
+        audio_path = root / audio_file
+        if not audio_file or not audio_file_has_content(audio_path):
+            missing_audio_files.append(term)
+
     return PronunciationAudit(
         dictionary_terms=dictionary.count(),
         checklist_terms=len(checklist),
@@ -149,9 +167,12 @@ def audit_pronunciations(
         missing_syllables=missing_syllables,
         missing_speech_text=missing_speech_text,
         missing_audio_files=missing_audio_files,
+        excluded_audio_placeholders=len(invalid_audio_files),
+        excluded_audio_placeholder_examples=invalid_audio_files[:10],
         unsafe_speech_text=unsafe_speech_text,
         missing_stress_marker=missing_stress_marker,
         source_lexicon_terms=len(source_lexicon),
         missing_source_lexicon_terms=missing_source_lexicon_terms,
         source_lexicon_pronunciation_mismatches=source_lexicon_pronunciation_mismatches,
+        quality_tiers=quality_tiers,
     )

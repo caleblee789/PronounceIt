@@ -37,3 +37,13 @@ jobs:
         run: python3 -m compileall __init__.py pronounceit scripts tests
         env:
           PYTHONPYCACHEPREFIX: /tmp/pronounceit_pycache
+
+      - name: Build and validate add-on archive
+        run: python3 scripts/build_ankiaddon.py
+
+      - name: Upload candidate add-on
+        uses: actions/upload-artifact@v4
+        with:
+          name: pronounceit-ankiaddon
+          path: dist/pronounceit.ankiaddon
+          if-no-files-found: error

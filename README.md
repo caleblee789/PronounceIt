@@ -4,11 +4,11 @@ PronounceIt is an Anki desktop add-on for medical students who want quick pronun
 
 Use it after revealing an answer:
 
-- Option/Alt-left-click a term to play pronunciation audio immediately.
-- Option/Alt-right-click a term to open a quick menu with Play and Save pronunciation actions.
-- Select text and press `Ctrl+P` on Windows/Linux or `Cmd+P` on macOS.
+- Right-click a term to play immediately and open pronunciation details.
+- Hold Option/Alt while clicking or selecting text, or press it after selecting, to play audio without opening details.
+- Shift + right-click to open Anki's context menu and the native `PronounceIt` submenu.
 
-PronounceIt includes a large bundled medical pronunciation library, so common anatomy, pathology, pharmacology, and clinical terms can play without depending on raw system text-to-speech.
+PronounceIt includes a 95,902-term medical pronunciation guide library, 155 bundled high-yield clips, and an optional comprehensive neural audio pack. The Azure-native synthesis method is approved against a checksum-bound 1,092-clip pilot; this is method approval, not a claim that every generated clip was individually reviewed.
 
 ## Install
 
@@ -18,16 +18,17 @@ Install the built Anki add-on package:
 dist/pronounceit.ankiaddon
 ```
 
+The locally built archive is available at the path above. The comprehensive pack is published separately and is never embedded in the add-on archive.
+
 In Anki, open the package through `Tools > Add-ons > Install from file...`, then restart Anki.
 
 ## How To Use
 
 1. Start reviewing cards in Anki.
 2. Reveal the answer.
-3. Option/Alt-left-click a medical term to hear it immediately.
-4. Option/Alt-right-click a term to open the quick menu.
-5. Choose `Play pronunciation` to open the popup and replay the audio.
-6. Choose `Save pronunciation` for words that are hard to remember.
+3. Right-click a medical term to hear it immediately and view pronunciation details.
+4. Alternatively, hold Option/Alt while clicking or selecting text, or press it after selecting.
+5. Use Shift + right-click when you need Anki's context menu or the native `PronounceIt` submenu.
 
 PronounceIt is answer-side by default so pronunciation help does not spoil a card before you reveal it.
 
@@ -36,7 +37,7 @@ PronounceIt is answer-side by default so pronunciation help does not spoil a car
 Saved words are available from:
 
 ```text
-Tools > PronounceIt > Saved Pronunciations...
+Tools > PronounceIt Settings... > Advanced > Saved List
 ```
 
 The saved list lets you:
@@ -47,39 +48,42 @@ The saved list lets you:
 - Remove words you no longer need to practice.
 
 Saved pronunciations are stored locally in `user_files/saved_pronunciations.json` and are preserved during add-on upgrades.
+Updates are written atomically, with the previous valid file retained as a `.bak` backup. If the JSON is damaged, PronounceIt leaves it unchanged and reports the problem in the UI.
 
 ## Tools Menu
 
-PronounceIt adds a `Tools > PronounceIt` submenu:
+PronounceIt adds three Tools menu items:
 
-- `Pronounce Current Selection`: pronounce selected reviewer text.
-- `Pronounce Manually...`: type a word or term that is hard to select.
-- `Saved Pronunciations...`: review saved words.
-- `Add or Update Custom Pronunciation...`: add a local correction.
-- `Dictionary Audit...`: run the bundled pronunciation quality audit.
-- `Configure Add-on...`: open settings.
+- `Pronounce Word or Selection`: play selected text or the last word under the pointer.
+- `PronounceIt Settings...`: open settings and Advanced tools.
+- `PronounceIt Audio Diagnostics...`: inspect recent playback attempts, backend failures, and data-loading warnings.
+
+Advanced tools include selected-text pronunciation, manual lookup, saved words, custom pronunciation corrections, dictionary audit, audio diagnostics, local file shortcuts, and support.
 
 ## Settings
 
 Open settings from:
 
 ```text
-Tools > PronounceIt > Configure Add-on...
+Tools > PronounceIt Settings...
 ```
 
 Common settings include:
 
-- Keyboard shortcut: defaults to `Mod+P`, which means Ctrl on Windows/Linux and Cmd on macOS.
-- Left-click audio modifier: defaults to Option/Alt.
-- Right-click quick-menu modifier: defaults to Option/Alt.
-- Audio behavior: defaults to local audio first, with system voice only as a fallback.
+- Activation modifier: defaults to Option/Alt and can be changed or disabled.
+- Default: Right-click, or hold Option/Alt while selecting text (or press it after selecting), to play audio. Shift + right-click opens Anki’s context menu.
+- Native PronounceIt actions remain available inside the Shift + right-click menu.
 - Theme: `system`, `clinical_light`, `slate`, or `high_contrast`.
 
-Advanced settings include pre-answer lookup, popup auto-close, quick-menu Save visibility, fallback voice/speed/volume, and shortcuts to local PronounceIt files.
+Advanced settings include audio behavior, pre-answer lookup, popup auto-close, native-menu Save visibility, fallback voice/speed/volume, utility actions, and shortcuts to local PronounceIt files.
+
+### Comprehensive Audio Pack
+
+Open `Tools > PronounceIt Settings... > Advanced > Audio` and choose `Download` to install the separately versioned comprehensive pack. Downloads never start without this explicit action. Downloading continues in the background after Settings closes, so Anki remains available for normal review; reopening Settings reconnects to live progress and pause/resume controls. Pack shards and extracted cache files live under `user_files/`, survive add-on upgrades, and are checksum-validated before use.
 
 ## Custom Pronunciations
 
-Use `Tools > PronounceIt > Add or Update Custom Pronunciation...` for local corrections.
+Use `Tools > PronounceIt Settings... > Advanced > Custom Pronunciation` for local corrections.
 
 PronounceIt stores custom corrections in:
 
@@ -104,7 +108,7 @@ The sections below are for local development, release checks, and pronunciation 
 - `pronounceit/`: Python add-on code.
 - `web/`: reviewer JavaScript and CSS assets.
 - `data/medical_pronunciations.json`: bundled pronunciation corpus.
-- `audio/`: bundled AIFF audio clips.
+- `audio/`: bundled high-yield AIFF or MP3 audio clips.
 - `user_files/`: Anki-preserved local user data.
 - `scripts/`: build, audit, import, generation, and corpus maintenance scripts.
 - `tests/`: unit tests.
@@ -116,7 +120,7 @@ The sections below are for local development, release checks, and pronunciation 
 2. Go to `Tools > Add-ons > View Files`.
 3. Copy or symlink this repository folder into `addons21/pronounceit`.
 4. Restart Anki.
-5. Review a card, reveal the answer, and test Option/Alt-left-click plus Option/Alt-right-click.
+5. Review a card, reveal the answer, and test right-click playback, Option/Alt selection gestures, and the Shift + right-click menu.
 
 ### Build
 
@@ -145,6 +149,10 @@ unzip -l dist/pronounceit.ankiaddon
 
 See `RELEASE_CHECKLIST.md` for the full release gate and manual Anki smoke test.
 
+GitHub deployment is intentionally staged: publish the immutable `audio-pack-v2`
+release only after isolated Anki validation, test the anonymous live download, and
+then publish the `v1.1.0` add-on release. AnkiWeb publication is deferred.
+
 ## Release Notes
 
 Prepared release tag:
@@ -155,12 +163,15 @@ v1.1.0
 
 Release focus:
 
-- Adds a lightweight Support action in the quick menu and settings dialog.
-- Keeps answer-side Option/Alt-left-click audio fast and turns Option/Alt-right-click into a focused quick menu.
-- Moves Save pronunciation into the quick menu, with immediate Saved/Already saved feedback.
+- Makes plain right-click play immediately with pronunciation details and Save.
+- Adds one customizable modifier for click, drag-selection, and selected-text playback.
+- Keeps Anki's context menu and native PronounceIt actions available through Shift + right-click.
+- Replaces the multi-key shortcut with one customizable activation modifier and a discoverable Tools action.
 - Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.
 - Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
-- Refreshes README and config wording around the quick menu and saved-word workflow.
+- Refreshes README and config wording around the native-menu and saved-word workflow.
+
+See `RELEASE_NOTES.md` for the PR and release summary.
 
 ### Corpus Maintenance
 
@@ -184,14 +195,36 @@ python3 scripts/generate_wordlist_pronunciations.py \
   --wordlist-file /path/to/wordlist.txt \
   --allow-generated \
   --merge
-python3 scripts/generate_bundled_audio.py
 python3 scripts/audit_pronunciations.py
 ```
 
-After changing `data/medical_pronunciations.json`, regenerate bundled clips:
+Estimate the neural generation job without credentials:
 
 ```bash
-python3 scripts/generate_bundled_audio.py --force
+python3 scripts/generate_neural_audio.py --dry-run
 ```
+
+Generate the pilot, record the checksum-bound owner approval, and then generate the full corpus. Uncorrected terms use Azure's native pronunciation; only explicit corrections use SAPI phonemes:
+
+```bash
+export AZURE_SPEECH_KEY=...
+export AZURE_SPEECH_REGION=...
+python3 scripts/generate_neural_audio.py --scope high-yield --workers 4
+python3 scripts/generate_neural_audio.py --scope curated --workers 4
+python3 scripts/generate_neural_audio.py --scope generated-sample --workers 4
+python3 scripts/review_audio.py approve-method \
+  --reviewer owner \
+  --statement "The Azure-native pronunciations sound high quality."
+python3 scripts/review_audio.py status
+
+# Reuses pilot clips whose SSML sidecar hash still matches.
+python3 scripts/generate_neural_audio.py --scope all --workers 4
+python3 scripts/build_audio_pack.py \
+  --pack-version 2 \
+  --base-url https://github.com/caleblee789/PronounceIt/releases/download/audio-pack-v2 \
+  --install-high-yield
+```
+
+Azure credentials are read only by the generation script and are never placed in the add-on or audio pack. Any clip is regenerated automatically when its SSML sidecar hash changes.
 
 See `PRONUNCIATION_QA.md` for pronunciation acceptance criteria.

@@ -1,0 +1,47 @@
+name: Release add-on
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run complete test suite
+        run: python3 -m unittest discover -s tests
+
+      - name: Build and validate add-on
+        run: python3 scripts/build_ankiaddon.py
+
+      - name: Refuse to overwrite an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          dist/pronounceit.ankiaddon
+          --repo "$GITHUB_REPOSITORY"
+          --title "PronounceIt $GITHUB_REF_NAME"
+          --generate-notes
+          --verify-tag

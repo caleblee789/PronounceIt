@@ -14,18 +14,33 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pronounceit.dictionary import DATA_FILE, default_audio_file, pronunciation_to_speech_text
+from pronounceit.audio import aiff_has_audio
+from pronounceit.dictionary import PronunciationDictionary, normalize_term
+from pronounceit.qa import load_checklist
 
 
 AUDIO_DIR = ROOT / "audio"
 
 
-def load_audio_jobs(data_file: Path = DATA_FILE) -> list[tuple[str, str, Path]]:
+def load_audio_jobs(
+    data_file: Path = DATA_FILE,
+    high_yield_only: bool = False,
+) -> list[tuple[str, str, Path]]:
     raw = json.loads(data_file.read_text(encoding="utf-8"))
+    required_terms: set[str] | None = None
+    if high_yield_only:
+        dictionary = PronunciationDictionary.bundled(data_file=data_file)
+        required_terms = {
+            normalize_term(str(dictionary.lookup(term).get("term") or term))
+            for term in load_checklist()
+        }
     jobs: list[tuple[str, str, Path]] = []
     seen_paths: set[Path] = set()
     for item in raw.get("terms", []):
         term = str(item.get("term") or "").strip()
         if not term:
+            continue
+        if required_terms is not None and normalize_term(term) not in required_terms:
             continue
         speech_text = str(item.get("speechText") or "").strip()
         if not speech_text:
@@ -42,7 +57,11 @@ def load_audio_jobs(data_file: Path = DATA_FILE) -> list[tuple[str, str, Path]]:
     return jobs
 
 
-def generate_audio(force: bool = False, jobs: int = 1) -> dict[str, int]:
+def generate_audio(
+    force: bool = False,
+    jobs: int = 1,
+    high_yield_only: bool = False,
+) -> dict[str, int]:
     say = shutil.which("say")
     if not say:
         raise SystemExit("The macOS 'say' command is required to generate bundled audio.")
@@ -52,10 +71,16 @@ def generate_audio(force: bool = False, jobs: int = 1) -> dict[str, int]:
     results: list[tuple[str, str]] = []
 
     if jobs == 1:
-        results = [generate_one_audio_job(job, force) for job in load_audio_jobs()]
+        results = [
+            generate_one_audio_job(job, force)
+            for job in load_audio_jobs(high_yield_only=high_yield_only)
+        ]
     else:
         with ThreadPoolExecutor(max_workers=jobs) as executor:
-            futures = [executor.submit(generate_one_audio_job, job, force) for job in load_audio_jobs()]
+            futures = [
+                executor.submit(generate_one_audio_job, job, force)
+                for job in load_audio_jobs(high_yield_only=high_yield_only)
+            ]
             for future in as_completed(futures):
                 results.append(future.result())
 
@@ -80,13 +105,14 @@ def generate_one_audio_job(job: tuple[str, str, Path], force: bool = False) -> t
         text=True,
         capture_output=True,
     )
-    if result.returncode != 0 or not output_path.exists() or output_path.stat().st_size == 0:
+    if result.returncode != 0 or not aiff_has_audio(output_path):
         return ("failed", term)
     return ("generated", term)
 
 
 def main() -> None:
     force = "--force" in sys.argv
+    high_yield_only = "--high-yield" in sys.argv
     jobs = 1
     if "--jobs" in sys.argv:
         index = sys.argv.index("--jobs")
@@ -97,7 +123,7 @@ def main() -> None:
     elif "--parallel" in sys.argv:
         jobs = min(8, os.cpu_count() or 1)
 
-    result = generate_audio(force=force, jobs=jobs)
+    result = generate_audio(force=force, jobs=jobs, high_yield_only=high_yield_only)
     print(
         f"Bundled audio ready: generated={result['generated']} "
         f"skipped={result['skipped']} total={result['total']}"
