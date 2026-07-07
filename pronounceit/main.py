@@ -5,23 +5,33 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .audio import audio_file_has_content
+from .audio_pack import AudioPackError, AudioPackManager
+from .audio_pack_download import AudioPackDownloadController
 from .config import DEFAULT_CONFIG, PronounceItConfig
 from .dictionary import PronunciationDictionary, display_term
 from .qa import audit_pronunciations
-from .storage import CustomPronunciations, SavedPronunciations, format_saved_entries, saved_entry_key
+from .storage import (
+    CustomPronunciations,
+    SavedPronunciations,
+    StorageError,
+    format_saved_entries,
+    saved_entry_key,
+)
 from .tts import (
+    AudioPackEngine,
     CommandTtsEngine,
     CompositeTtsEngine,
     GeneratedAudioFileEngine,
     LocalAudioFileEngine,
     QtTextToSpeechEngine,
+    TtsResult,
     TtsSettings,
 )
 
 
 MESSAGE_PREFIX = "pronounceit:"
-WEB_JS_FILE = Path("web") / "pronounceit.js"
-WEB_CSS_FILE = Path("web") / "pronounceit.css"
+MAX_MESSAGE_LENGTH = 65_536
 SUPPORT_URL = "https://buymeacoffee.com/caleblee78f"
 SUPPORT_TOOLTIP = "If you're enjoying PronounceIt, consider buying me a coffee."
 
@@ -30,9 +40,13 @@ _addon_root: Path | None = None
 _dictionary: PronunciationDictionary | None = None
 _saved: SavedPronunciations | None = None
 _custom: CustomPronunciations | None = None
+_audio_pack: AudioPackManager | None = None
+_audio_pack_download: AudioPackDownloadController | None = None
 _reviewer_answer_visible = False
 _tts = CompositeTtsEngine()
 _playback_diagnostics: list[dict[str, Any]] = []
+_runtime_diagnostics: list[str] = []
+_hooks_installed = False
 
 _LOOKUP_START_SHORTCUT_MENU = "shortcut_context_menu"
 _LOOKUP_START_SHORTCUT_ONLY = "shortcut_only"
@@ -40,12 +54,17 @@ _LOOKUP_START_OPTION_SELECT = "option_select"
 
 
 def initialize(addon_module: str) -> None:
-    global _addon_module, _addon_root, _dictionary, _saved, _custom, _tts
+    global _addon_module, _addon_root, _dictionary, _saved, _custom
+    global _audio_pack, _audio_pack_download, _tts, _hooks_installed
     _addon_module = addon_module
     _addon_root = Path(__file__).resolve().parent.parent
+    cache_bytes = _config().audio_pack_cache_mb * 1024 * 1024
+    _audio_pack = AudioPackManager(_addon_root, cache_bytes=cache_bytes)
+    _audio_pack_download = AudioPackDownloadController(_audio_pack)
     _tts = CompositeTtsEngine(
         [
             LocalAudioFileEngine(_addon_root),
+            AudioPackEngine(_addon_root, _audio_pack),
             GeneratedAudioFileEngine(_addon_root),
             QtTextToSpeechEngine(),
             CommandTtsEngine(),
@@ -60,10 +79,23 @@ def initialize(addon_module: str) -> None:
     except Exception:
         return
 
+    _audio_pack_download = AudioPackDownloadController(
+        _audio_pack,
+        dispatch=lambda callback: mw.taskman.run_on_main(callback),
+        notifier=_notify_audio_pack,
+    )
+
+    if _hooks_installed:
+        return
+
     mw.addonManager.setWebExports(addon_module, r"web/.*(css|js)")
     gui_hooks.webview_will_set_content.append(_on_webview_will_set_content)
     gui_hooks.webview_did_receive_js_message.append(_on_js_message)
-    if hasattr(gui_hooks, "webview_will_show_context_menu"):
+    if hasattr(gui_hooks, "reviewer_will_show_context_menu"):
+        gui_hooks.reviewer_will_show_context_menu.append(
+            _on_reviewer_will_show_context_menu
+        )
+    elif hasattr(gui_hooks, "webview_will_show_context_menu"):
         gui_hooks.webview_will_show_context_menu.append(_on_webview_will_show_context_menu)
     if hasattr(gui_hooks, "reviewer_did_show_question"):
         gui_hooks.reviewer_did_show_question.append(_on_reviewer_show_question)
@@ -71,6 +103,18 @@ def initialize(addon_module: str) -> None:
         gui_hooks.reviewer_did_show_answer.append(_on_reviewer_show_answer)
     _install_config_action()
     _install_tools_menu_actions()
+    _hooks_installed = True
+
+
+def _notify_audio_pack(message: str, error: bool = False) -> None:
+    if error:
+        _record_runtime_diagnostic(message)
+    try:
+        from aqt.utils import tooltip
+
+        tooltip(message, period=6000)
+    except Exception:
+        return
 
 
 def _install_config_action() -> None:
@@ -92,9 +136,21 @@ def _install_tools_menu_actions() -> None:
     except Exception:
         return
 
+    pronounce_action = QAction("Pronounce Word or Selection", mw)
+    if hasattr(pronounce_action, "setObjectName"):
+        pronounce_action.setObjectName("pronounceitPronounceAction")
+    if hasattr(pronounce_action, "setToolTip"):
+        pronounce_action.setToolTip("Pronounce selected text or the word under the pointer")
+    pronounce_action.triggered.connect(_pronounce_current_reviewer_selection)
+    mw.form.menuTools.addAction(pronounce_action)
+
     config_action = QAction("PronounceIt Settings...", mw)
     config_action.triggered.connect(_show_config_dialog)
     mw.form.menuTools.addAction(config_action)
+
+    diagnostics_action = QAction("PronounceIt Audio Diagnostics...", mw)
+    diagnostics_action.triggered.connect(_show_audio_diagnostics)
+    mw.form.menuTools.addAction(diagnostics_action)
 
 
 def _lookup_start_choice(config: PronounceItConfig) -> str:
@@ -113,15 +169,22 @@ def _lookup_start_config(choice: str) -> dict[str, Any]:
     return {"activation_mode": "context_menu", "show_context_menu": True}
 
 
-def _add_modifier_items(combo: Any) -> None:
-    for label, value in [
-        ("Option/Alt", "alt"),
+def _add_activation_modifier_items(combo: Any, platform: str | None = None) -> None:
+    is_mac = (platform or sys.platform).startswith("darwin")
+    items = [
+        ("Option", "alt"),
         ("Shift", "shift"),
-        ("Command/Meta", "meta"),
-        ("Control/Ctrl", "ctrl"),
-        (_modifier_display_name("mod"), "mod"),
+        ("Command", "meta"),
+        ("Control", "ctrl"),
         ("Disabled", "disabled"),
-    ]:
+    ] if is_mac else [
+        ("Alt", "alt"),
+        ("Shift", "shift"),
+        ("Ctrl", "ctrl"),
+        ("Meta", "meta"),
+        ("Disabled", "disabled"),
+    ]
+    for label, value in items:
         combo.addItem(label, value)
 
 
@@ -129,77 +192,40 @@ def _platform_mod_key_name(platform: str | None = None) -> str:
     return "Command" if (platform or sys.platform).startswith("darwin") else "Ctrl"
 
 
-def _shortcut_parts(value: str) -> list[str]:
-    return [part.strip() for part in str(value or "").split("+") if part.strip()]
-
-
-def _hotkey_display_name(value: str, platform: str | None = None) -> str:
-    parts = _shortcut_parts(value or DEFAULT_CONFIG["hotkey"])
-    if not parts:
-        parts = _shortcut_parts(DEFAULT_CONFIG["hotkey"])
-    display_parts: list[str] = []
-    for part in parts:
-        normalized = part.casefold()
-        if normalized == "mod":
-            display_parts.append(_platform_mod_key_name(platform))
-        elif normalized in {"cmd", "command", "meta"}:
-            display_parts.append("Command")
-        elif normalized in {"ctrl", "control"}:
-            display_parts.append("Ctrl")
-        elif len(part) == 1:
-            display_parts.append(part.upper())
-        else:
-            display_parts.append(part)
-    return "+".join(display_parts)
-
-
-def _hotkey_config_value(value: str, platform: str | None = None) -> str:
-    parts = _shortcut_parts(value)
-    if not parts:
-        return str(DEFAULT_CONFIG["hotkey"])
-    platform_key = _platform_mod_key_name(platform).casefold()
-    config_parts: list[str] = []
-    for part in parts:
-        normalized = part.casefold()
-        if normalized == platform_key:
-            config_parts.append("Mod")
-        elif platform_key == "command" and normalized == "cmd":
-            config_parts.append("Mod")
-        elif platform_key == "ctrl" and normalized == "control":
-            config_parts.append("Mod")
-        else:
-            config_parts.append(part)
-    return "+".join(config_parts)
-
-
 def _modifier_display_name(value: str, platform: str | None = None) -> str:
+    is_mac = (platform or sys.platform).startswith("darwin")
     return {
-        "alt": "Option/Alt",
+        "alt": "Option" if is_mac else "Alt",
         "shift": "Shift",
-        "meta": "Command/Meta",
-        "ctrl": "Control/Ctrl",
+        "meta": "Command" if is_mac else "Meta",
+        "ctrl": "Control" if is_mac else "Ctrl",
         "mod": _platform_mod_key_name(platform),
         "disabled": "Disabled",
-    }.get(value, "Option/Alt")
+    }.get(value, "Option" if is_mac else "Alt")
+
+
+def _activation_modifier_ui_value(value: str, platform: str | None = None) -> str:
+    if value == "mod":
+        return "meta" if (platform or sys.platform).startswith("darwin") else "ctrl"
+    return value
 
 
 def _behavior_preview_lines(config: PronounceItConfig) -> list[str]:
     audio_modifier = _modifier_display_name(config.direct_click_modifier)
-    popup_modifier = _modifier_display_name(config.popup_click_modifier)
-    audio_line = (
-        "Audio-only lookup disabled"
+    activation_line = (
+        "Modifier activation disabled"
         if config.direct_click_modifier == "disabled"
-        else f"{audio_modifier} + left-click plays audio"
-    )
-    popup_line = (
-        "Quick menu disabled"
-        if config.popup_click_modifier == "disabled"
-        else f"{popup_modifier} + right-click opens the quick menu"
+        else (
+            f"Hold {audio_modifier} while clicking or dragging, "
+            f"or tap {audio_modifier} after selecting"
+        )
     )
     return [
-        f"{_hotkey_display_name(config.hotkey)} pronounces the current selection",
-        audio_line,
-        popup_line,
+        activation_line,
+        "Right-click plays and opens pronunciation details",
+        "Shift + right-click opens Anki's menu with PronounceIt actions"
+        if config.show_native_context_menu
+        else "Shift + right-click opens Anki's menu",
     ]
 
 
@@ -213,6 +239,7 @@ def _show_config_dialog() -> None:
             QDialogButtonBox,
             QFormLayout,
             QFrame,
+            QGridLayout,
             QGroupBox,
             QHBoxLayout,
             QLabel,
@@ -220,6 +247,8 @@ def _show_config_dialog() -> None:
             QPushButton,
             QScrollArea,
             QSpinBox,
+            QTimer,
+            Qt,
             QVBoxLayout,
             QWidget,
         )
@@ -240,8 +269,8 @@ def _show_config_dialog() -> None:
     dialog.setStyleSheet(
         """
         QDialog#pronounceitOptions {
-            background: #f6f8fb;
-            color: #172033;
+            background: palette(window);
+            color: palette(window-text);
         }
         QDialog#pronounceitOptions QWidget#pronounceitScrollWidget,
         QDialog#pronounceitOptions QScrollArea#pronounceitScroll {
@@ -249,109 +278,93 @@ def _show_config_dialog() -> None:
             border: none;
         }
         QDialog#pronounceitOptions QLabel {
-            color: #172033;
+            color: palette(window-text);
             font-size: 13px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitTitle {
-            color: #101828;
             font-size: 20px;
             font-weight: 700;
             margin-bottom: 1px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitIntro {
-            color: #526273;
             font-size: 14px;
-            line-height: 19px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitHelp {
-            color: #667789;
             font-size: 12px;
-            line-height: 16px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitPreview {
-            background: #edf8f4;
-            border: 1px solid #b9ddd1;
+            background: palette(alternate-base);
+            border: 1px solid palette(mid);
             border-radius: 8px;
-            color: #12382f;
             font-size: 13px;
             font-weight: 600;
-            line-height: 18px;
             padding: 11px 13px;
         }
         QDialog#pronounceitOptions QLabel#pronounceitSection {
-            color: #142033;
             font-size: 13px;
             font-weight: 700;
             margin-top: 12px;
         }
         QDialog#pronounceitOptions QGroupBox {
-            background: #ffffff;
-            border: 1px solid #dde5ef;
+            background: palette(base);
+            border: 1px solid palette(mid);
             border-radius: 8px;
-            color: #142033;
             font-size: 13px;
             font-weight: 700;
             margin-top: 14px;
             padding: 18px 14px 14px 14px;
         }
         QDialog#pronounceitOptions QGroupBox::title {
-            color: #142033;
             left: 14px;
             padding: 0 5px;
             subcontrol-origin: margin;
         }
         QDialog#pronounceitOptions QCheckBox {
-            color: #172033;
             font-size: 13px;
             spacing: 8px;
         }
         QDialog#pronounceitOptions QLineEdit,
+        QDialog#pronounceitOptions QKeySequenceEdit,
         QDialog#pronounceitOptions QComboBox,
         QDialog#pronounceitOptions QSpinBox {
-            border: 1px solid #cbd5e1;
+            border: 1px solid palette(mid);
             border-radius: 6px;
-            background: #ffffff;
-            color: #172033;
+            background: palette(base);
+            color: palette(text);
             font-size: 13px;
             min-height: 30px;
             padding: 4px 9px;
         }
         QDialog#pronounceitOptions QComboBox QAbstractItemView {
-            background: #ffffff;
-            color: #172033;
-            selection-background-color: #dff3ec;
-            selection-color: #0f2433;
+            background: palette(base);
+            color: palette(text);
+            selection-background-color: palette(highlight);
+            selection-color: palette(highlighted-text);
         }
         QDialog#pronounceitOptions QLineEdit:focus,
+        QDialog#pronounceitOptions QKeySequenceEdit:focus,
         QDialog#pronounceitOptions QComboBox:focus,
         QDialog#pronounceitOptions QSpinBox:focus {
-            border-color: #237a68;
+            border-color: palette(highlight);
         }
         QDialog#pronounceitOptions QPushButton {
-            border: 1px solid #cbd5e1;
+            border: 1px solid palette(mid);
             border-radius: 6px;
-            background: #ffffff;
-            color: #172033;
+            background: palette(button);
+            color: palette(button-text);
             font-size: 13px;
             font-weight: 600;
             min-height: 30px;
             padding: 5px 12px;
         }
         QDialog#pronounceitOptions QPushButton:hover {
-            background: #edf8f4;
-            color: #102033;
+            background: palette(alternate-base);
         }
         QDialog#pronounceitOptions QPushButton:checked {
-            background: #e0f2ee;
-            border-color: #95cfc1;
-            color: #12382f;
-        }
-        QDialog#pronounceitOptions QPushButton#pronounceitSupport {
-            color: #237a68;
+            border-color: palette(highlight);
         }
         QDialog#pronounceitOptions QGroupBox#pronounceitAdvanced {
-            background: #fbfcfe;
-            border-color: #e2e8f0;
+            background: palette(base);
         }
         """
     )
@@ -366,6 +379,10 @@ def _show_config_dialog() -> None:
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
     except AttributeError:
         scroll_area.setFrameShape(QFrame.NoFrame)
+    try:
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    except AttributeError:
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     scroll_widget = QWidget()
     scroll_widget.setObjectName("pronounceitScrollWidget")
@@ -425,27 +442,24 @@ def _show_config_dialog() -> None:
     enabled.setChecked(config.enabled)
     review_form.addRow(enabled)
 
-    hotkey = QLineEdit(_hotkey_display_name(config.hotkey))
-    hotkey.setPlaceholderText(_hotkey_display_name(DEFAULT_CONFIG["hotkey"]))
-    hotkey.setToolTip(
-        "Default: Command+P on macOS, Ctrl+P on Windows/Linux."
+    activation_modifier = QComboBox()
+    _add_activation_modifier_items(activation_modifier)
+    activation_modifier.setAccessibleName("Pronunciation activation modifier")
+    activation_modifier.setToolTip(
+        "Hold this key while clicking or dragging, or tap it after selecting text."
     )
-    review_form.addRow("Keyboard shortcut", hotkey)
+    set_combo_data(
+        activation_modifier,
+        _activation_modifier_ui_value(config.direct_click_modifier),
+    )
+    review_form.addRow("Activation modifier", activation_modifier)
 
-    direct_click = QComboBox()
-    _add_modifier_items(direct_click)
-    direct_click.setToolTip("Modifier for audio-only pronunciation while reviewing.")
-    set_combo_data(direct_click, config.direct_click_modifier)
-    review_form.addRow("Play audio with modifier + left-click", direct_click)
-
-    popup_click = QComboBox()
-    _add_modifier_items(popup_click)
-    popup_click.setToolTip("Modifier for opening the pronunciation quick menu while reviewing.")
-    set_combo_data(popup_click, config.popup_click_modifier)
-    review_form.addRow("Open quick menu with modifier + right-click", popup_click)
+    show_native_menu = QCheckBox("Add PronounceIt actions to Anki's right-click menu")
+    show_native_menu.setChecked(config.show_native_context_menu)
+    review_form.addRow(show_native_menu)
     add_help(
         review_form,
-        "Default: Option/Alt-left-click plays audio only; Option/Alt-right-click opens the quick menu.",
+        "Default: Right-click, or hold Option/Alt while selecting text (or press it after selecting), to play audio. Shift + right-click opens Anki’s context menu.",
     )
 
     body_layout.addWidget(review_box)
@@ -503,7 +517,7 @@ def _show_config_dialog() -> None:
     auto_close.setChecked(config.auto_close_on_card_change)
     popup_form.addRow(auto_close)
 
-    show_save = QCheckBox("Show Save pronunciation in the quick menu")
+    show_save = QCheckBox("Show Save pronunciation in details and context menu")
     show_save.setChecked(config.show_save_button)
     popup_form.addRow(show_save)
     advanced_layout.addLayout(popup_form)
@@ -525,7 +539,102 @@ def _show_config_dialog() -> None:
         audio_form,
         "Recommended: use curated local clips first, generate a local clip when needed, then fall back to the system voice.",
     )
+
+    pack_status = QLabel()
+    pack_status.setWordWrap(True)
+    audio_form.addRow("Comprehensive pack", pack_status)
+    pack_buttons = QHBoxLayout()
+    pack_download = QPushButton("Download")
+    pack_pause = QPushButton("Pause")
+    pack_verify = QPushButton("Verify")
+    pack_remove = QPushButton("Remove")
+    pack_pause.setEnabled(False)
+    for pack_button in (pack_download, pack_pause, pack_verify, pack_remove):
+        pack_buttons.addWidget(pack_button)
+    audio_form.addRow("", pack_buttons)
+    add_help(
+        audio_form,
+        "The optional pack is downloaded only when you choose Download and is preserved in user_files during updates.",
+    )
     advanced_layout.addLayout(audio_form)
+
+    def audio_pack_manager() -> AudioPackManager:
+        global _audio_pack
+        if _audio_pack is None:
+            _audio_pack = AudioPackManager(
+                _addon_dir(),
+                cache_bytes=config.audio_pack_cache_mb * 1024 * 1024,
+            )
+        return _audio_pack
+
+    def audio_pack_controller() -> AudioPackDownloadController:
+        global _audio_pack_download
+        if _audio_pack_download is None:
+            _audio_pack_download = AudioPackDownloadController(audio_pack_manager())
+        return _audio_pack_download
+
+    def format_pack_bytes(value: int) -> str:
+        return f"{value / (1024 * 1024):.1f} MiB"
+
+    def refresh_pack_status() -> None:
+        state = audio_pack_controller().refresh()
+        if state.running:
+            done = int(state.done_bytes)
+            total = int(state.total_bytes)
+            suffix = (
+                f" ({format_pack_bytes(done)} / {format_pack_bytes(total)})"
+                if total
+                else ""
+            )
+            pack_status.setText(f"{state.message}{suffix}")
+            pack_pause.setText("Resume" if state.paused else "Pause")
+            pack_pause.setEnabled(state.phase in {"downloading", "paused"})
+            pack_download.setEnabled(False)
+            pack_verify.setEnabled(False)
+            pack_remove.setEnabled(False)
+            return
+        message = state.message
+        if state.error:
+            message += f"\n{state.error}"
+        pack_status.setText(message)
+        pack_download.setText("Update" if state.installed else "Download")
+        pack_download.setEnabled(True)
+        pack_verify.setEnabled(state.total_shards > 0)
+        pack_remove.setEnabled(state.total_shards > 0 or state.installed)
+        pack_pause.setText("Pause")
+        pack_pause.setEnabled(False)
+
+    def start_pack_download(*_args) -> None:
+        audio_pack_controller().start()
+        refresh_pack_status()
+
+    def toggle_pack_pause(*_args) -> None:
+        controller = audio_pack_controller()
+        if controller.snapshot().paused:
+            controller.resume()
+        else:
+            controller.pause()
+        refresh_pack_status()
+
+    def verify_pack(*_args) -> None:
+        audio_pack_controller().start_verify()
+        refresh_pack_status()
+
+    def remove_pack(*_args) -> None:
+        try:
+            audio_pack_controller().remove()
+        except AudioPackError as exc:
+            showInfo(f"Could not remove the audio pack.\n\n{exc}", title="PronounceIt")
+        refresh_pack_status()
+
+    pack_download.clicked.connect(start_pack_download)
+    pack_pause.clicked.connect(toggle_pack_pause)
+    pack_verify.clicked.connect(verify_pack)
+    pack_remove.clicked.connect(remove_pack)
+    pack_timer = QTimer(dialog)
+    pack_timer.timeout.connect(refresh_pack_status)
+    pack_timer.start(250)
+    refresh_pack_status()
 
     add_section(advanced_layout, "Fallback voice")
     voice_form = QFormLayout()
@@ -556,30 +665,29 @@ def _show_config_dialog() -> None:
         ("Saved List", _show_saved_pronunciations),
         ("Custom Pronunciation", _add_or_update_custom_pronunciation),
         ("Dictionary Audit", _show_dictionary_audit),
+        ("Audio Diagnostics", _show_audio_diagnostics),
     ]
-    for row_items in (tool_items[:3], tool_items[3:]):
-        tools_row = QHBoxLayout()
-        tools_row.setSpacing(8)
-        for label, callback in row_items:
-            button = QPushButton(label)
-            button.clicked.connect(lambda _checked=False, handler=callback: handler())
-            tools_row.addWidget(button)
-        tools_row.addStretch(1)
-        advanced_layout.addLayout(tools_row)
+    tools_grid = QGridLayout()
+    tools_grid.setSpacing(8)
+    for index, (label, callback) in enumerate(tool_items):
+        button = QPushButton(label)
+        button.clicked.connect(lambda _checked=False, handler=callback: handler())
+        tools_grid.addWidget(button, index // 2, index % 2)
+    advanced_layout.addLayout(tools_grid)
 
     add_section(advanced_layout, "Files")
-    button_row = QHBoxLayout()
-    button_row.setSpacing(8)
-    for label, target in [
+    files_grid = QGridLayout()
+    files_grid.setSpacing(8)
+    for index, (label, target) in enumerate([
         ("Saved List", _saved_pronunciations_path),
         ("Custom Pronunciations", _custom_pronunciations_path),
         ("Generated Audio", _generated_audio_dir),
         ("Add-on Folder", _addon_dir),
-    ]:
+    ]):
         button = QPushButton(label)
         button.clicked.connect(lambda _checked=False, path_factory=target: _open_path(path_factory()))
-        button_row.addWidget(button)
-    advanced_layout.addLayout(button_row)
+        files_grid.addWidget(button, index // 2, index % 2)
+    advanced_layout.addLayout(files_grid)
     body_layout.addWidget(advanced_box)
 
     body_layout.addStretch(1)
@@ -591,6 +699,8 @@ def _show_config_dialog() -> None:
         advanced_toggle.setText("Hide advanced settings" if visible else "Show advanced settings")
         target_height = dialog.maximumHeight() if visible else min(dialog.maximumHeight(), 560)
         dialog.resize(max(dialog.width(), 620), target_height)
+        if visible:
+            QTimer.singleShot(0, lambda: scroll_area.ensureWidgetVisible(advanced_box, 0, 12))
 
     advanced_toggle.toggled.connect(set_advanced_visible)
 
@@ -598,11 +708,9 @@ def _show_config_dialog() -> None:
         return PronounceItConfig.from_mapping(
             {
                 **config.as_config_mapping(),
-                "hotkey": _hotkey_config_value(hotkey.text().strip()),
-                "direct_click_modifier": direct_click.currentData()
+                "direct_click_modifier": activation_modifier.currentData()
                 or DEFAULT_CONFIG["direct_click_modifier"],
-                "popup_click_modifier": popup_click.currentData()
-                or DEFAULT_CONFIG["popup_click_modifier"],
+                "show_native_context_menu": show_native_menu.isChecked(),
             }
         )
 
@@ -612,9 +720,11 @@ def _show_config_dialog() -> None:
     def reset_to_defaults(*_args) -> None:
         defaults = PronounceItConfig.from_mapping(DEFAULT_CONFIG)
         enabled.setChecked(defaults.enabled)
-        hotkey.setText(_hotkey_display_name(defaults.hotkey))
-        set_combo_data(direct_click, defaults.direct_click_modifier)
-        set_combo_data(popup_click, defaults.popup_click_modifier)
+        set_combo_data(
+            activation_modifier,
+            _activation_modifier_ui_value(defaults.direct_click_modifier),
+        )
+        show_native_menu.setChecked(defaults.show_native_context_menu)
         set_combo_data(backend, defaults.audio_backend)
         set_combo_data(theme, defaults.theme)
         allow_question.setChecked(defaults.allow_on_question_side)
@@ -625,9 +735,8 @@ def _show_config_dialog() -> None:
         volume.setValue(defaults.tts_volume)
         update_preview()
 
-    hotkey.textChanged.connect(update_preview)
-    direct_click.currentIndexChanged.connect(update_preview)
-    popup_click.currentIndexChanged.connect(update_preview)
+    activation_modifier.currentIndexChanged.connect(update_preview)
+    show_native_menu.toggled.connect(update_preview)
     reset_button.clicked.connect(reset_to_defaults)
     support_button.clicked.connect(lambda _checked=False: _open_support_url())
     update_preview()
@@ -651,18 +760,21 @@ def _show_config_dialog() -> None:
     def save() -> None:
         next_config = {
             "enabled": enabled.isChecked(),
-            "hotkey": _hotkey_config_value(hotkey.text().strip()),
-            "direct_click_modifier": direct_click.currentData() or DEFAULT_CONFIG["direct_click_modifier"],
-            "popup_click_modifier": popup_click.currentData() or DEFAULT_CONFIG["popup_click_modifier"],
+            "hotkey": config.hotkey,
+            "direct_click_modifier": activation_modifier.currentData()
+            or DEFAULT_CONFIG["direct_click_modifier"],
+            "popup_click_modifier": config.popup_click_modifier,
+            "show_native_context_menu": show_native_menu.isChecked(),
             "tts_voice": voice.text().strip(),
             "tts_rate": rate.value(),
             "tts_volume": volume.value(),
             "audio_backend": backend.currentData() or DEFAULT_CONFIG["audio_backend"],
+            "audio_pack_cache_mb": config.audio_pack_cache_mb,
             "auto_close_on_card_change": auto_close.isChecked(),
             "allow_on_question_side": allow_question.isChecked(),
-            "activation_mode": "context_menu",
+            "activation_mode": config.activation_mode,
             "theme": theme.currentData() or DEFAULT_CONFIG["theme"],
-            "show_context_menu": False,
+            "show_context_menu": config.show_context_menu,
             "show_save_button": show_save.isChecked(),
             "unknown_term_message": config.unknown_term_message,
         }
@@ -737,7 +849,12 @@ def _show_saved_pronunciations() -> None:
     if not _saved:
         _show_text("PronounceIt Saved Pronunciations", "No saved pronunciations yet.")
         return
-    items = _saved.load()
+    try:
+        items = _saved.load()
+    except StorageError as exc:
+        _record_runtime_diagnostic(str(exc))
+        _show_text("PronounceIt Saved Pronunciations", _storage_error_text(exc))
+        return
     try:
         from aqt import mw
         from aqt.qt import (
@@ -771,7 +888,7 @@ def _show_saved_pronunciations() -> None:
     search.setPlaceholderText("Search saved words")
     layout.addWidget(search)
 
-    empty = QLabel("Saved words will appear here after you use Save pronunciation from the quick menu.")
+    empty = QLabel("Saved words will appear here after you use Save pronunciation from the details popup or PronounceIt context menu.")
     empty.setWordWrap(True)
     layout.addWidget(empty)
 
@@ -848,9 +965,17 @@ def _show_saved_pronunciations() -> None:
             return
         _handle_speak(
             {
-                "text": item.get("speechText") or item.get("term") or item.get("requestedText") or "",
+                "text": (
+                    item.get("speechText")
+                    if item.get("source") == "user-override" and item.get("speechText")
+                    else item.get("term") or item.get("requestedText") or ""
+                ),
                 "term": item.get("term") or item.get("requestedText") or "",
                 "audioFile": item.get("audioFile", ""),
+                "useTextOverride": item.get("source") == "user-override" and bool(item.get("speechText")),
+                "qualityTier": item.get("qualityTier", "fallback"),
+                "synthesisStrategy": item.get("synthesisStrategy", "azure-native"),
+                "audioReviewStatus": item.get("audioReviewStatus", "unreviewed"),
             }
         )
 
@@ -863,9 +988,13 @@ def _show_saved_pronunciations() -> None:
         item = selected_item()
         if not item or not _saved:
             return
-        if _saved.remove_entry(saved_entry_key(item)):
-            items[:] = _saved.load()
-            refresh()
+        try:
+            if _saved.remove_entry(saved_entry_key(item)):
+                items[:] = _saved.load()
+                refresh()
+        except StorageError as exc:
+            _record_runtime_diagnostic(str(exc))
+            _show_text("PronounceIt Saved Pronunciations", _storage_error_text(exc))
 
     search.textChanged.connect(refresh)
     table.itemSelectionChanged.connect(update_buttons)
@@ -977,10 +1106,13 @@ def _show_dictionary_audit() -> None:
         f"Missing pronunciations: {len(audit.missing_pronunciation)}",
         f"Missing syllables: {len(audit.missing_syllables)}",
         f"Missing TTS speech text: {len(audit.missing_speech_text)}",
-        f"Missing bundled audio files: {len(audit.missing_audio_files)}",
+        f"Missing high-yield bundled audio files: {len(audit.missing_audio_files)}",
+        f"Legacy zero-frame placeholders excluded from packages: {audit.excluded_audio_placeholders}",
         f"Unsafe TTS speech text: {len(audit.unsafe_speech_text)}",
         f"Missing stress markers: {len(audit.missing_stress_marker)}",
         f"Source lexicon pronunciation mismatches: {len(audit.source_lexicon_pronunciation_mismatches)}",
+        "Quality tiers: "
+        + ", ".join(f"{tier}={count}" for tier, count in sorted(audit.quality_tiers.items())),
     ]
     if not audit.passed:
         lines.extend(["", "Missing terms:", *audit.missing_terms])
@@ -1018,7 +1150,12 @@ def _add_or_update_custom_pronunciation() -> None:
         title="PronounceIt Custom Pronunciation",
         preserve_punctuation=True,
     )
-    record = _save_custom_pronunciation(term, pronunciation, syllables, speech_text)
+    try:
+        record = _save_custom_pronunciation(term, pronunciation, syllables, speech_text)
+    except StorageError as exc:
+        _record_runtime_diagnostic(str(exc))
+        _show_text("PronounceIt", _storage_error_text(exc))
+        return
     _show_text(
         "PronounceIt",
         "Custom pronunciation saved.\n\n"
@@ -1105,10 +1242,76 @@ def _show_manual_pronunciation(term: str) -> None:
     _show_text("PronounceIt", "\n".join(lines))
     _handle_speak(
         {
-            "text": payload.get("speechText") or term,
+            "text": payload.get("synthesisText") or term,
             "term": payload.get("term") or term,
             "audioFile": payload.get("audioFile", ""),
+            "useTextOverride": payload.get("source") == "user-override" and bool(payload.get("speechText")),
+            "qualityTier": payload.get("qualityTier", "fallback"),
+            "synthesisStrategy": payload.get("synthesisStrategy", "azure-native"),
+            "audioReviewStatus": payload.get("audioReviewStatus", "unreviewed"),
         }
+    )
+
+
+def _show_audio_diagnostics() -> None:
+    _show_text("PronounceIt Audio Diagnostics", _format_playback_diagnostics())
+
+
+def _format_playback_diagnostics() -> str:
+    if not _playback_diagnostics and not _runtime_diagnostics:
+        return "No pronunciation playback attempts have been recorded yet."
+
+    lines: list[str] = []
+    if _runtime_diagnostics:
+        lines.extend(["Runtime and data warnings", ""])
+        for index, issue in enumerate(reversed(_runtime_diagnostics), 1):
+            lines.append(f"{index}. {issue}")
+        lines.append("")
+    if _playback_diagnostics:
+        lines.extend(["Recent playback attempts", ""])
+    for index, item in enumerate(reversed(_playback_diagnostics), 1):
+        status = "OK" if item.get("ok") else "FAILED"
+        text = str(item.get("text") or item.get("term") or "(empty)")
+        lines.append(f"{index}. {status}: {text}")
+        term = str(item.get("term") or "")
+        if term and term != text:
+            lines.append(f"   Term: {term}")
+        backend = str(item.get("audioBackend") or "")
+        if backend:
+            lines.append(f"   Backend: {backend}")
+        audio_file = str(item.get("audioFile") or "")
+        if audio_file:
+            lines.append(f"   Audio file: {audio_file}")
+        quality_tier = str(item.get("qualityTier") or "")
+        if quality_tier:
+            lines.append(f"   Quality tier: {quality_tier}")
+        reason = str(item.get("reason") or "")
+        if reason:
+            lines.append(f"   Reason: {reason}")
+        attempts = [str(attempt) for attempt in item.get("attempts", []) if str(attempt)]
+        if attempts:
+            lines.append("   Attempts:")
+            for attempt in attempts:
+                lines.append(f"   - {attempt}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _record_runtime_diagnostic(message: str) -> None:
+    cleaned = " ".join(str(message or "").split())
+    if not cleaned:
+        return
+    if cleaned in _runtime_diagnostics:
+        _runtime_diagnostics.remove(cleaned)
+    _runtime_diagnostics.append(cleaned)
+    del _runtime_diagnostics[:-20]
+
+
+def _storage_error_text(error: StorageError) -> str:
+    return (
+        "PronounceIt could not safely read or update this file, so the existing data was left "
+        f"unchanged.\n\n{error.path}\n\n{error.reason}\n\n"
+        "Correct or restore the JSON file, then try again."
     )
 
 
@@ -1161,10 +1364,67 @@ def _reload_dictionary() -> None:
     _dictionary = PronunciationDictionary.bundled(
         user_file=_addon_root / "user_files" / "custom_pronunciations.json"
     )
+    for issue in _dictionary.load_issues:
+        _record_runtime_diagnostic(issue)
 
 
 def _on_webview_will_show_context_menu(webview: Any, menu: Any) -> None:
-    return
+    config = _config()
+    if not config.enabled or not config.show_native_context_menu:
+        return
+    try:
+        from aqt import mw
+
+        if getattr(mw, "state", "") != "review":
+            return
+    except Exception:
+        return
+    title = str(getattr(webview, "title", "") or "")
+    if title and title != "main webview":
+        return
+
+    try:
+        submenu = menu.addMenu("PronounceIt")
+    except Exception:
+        return
+    if submenu is None:
+        return
+
+    play = submenu.addAction("Play pronunciation")
+    play.triggered.connect(
+        lambda _checked=False: _eval_webview(
+            webview,
+            "window.PronounceIt && window.PronounceIt.playContextTarget();",
+        )
+    )
+    details = submenu.addAction("Show pronunciation details…")
+    details.triggered.connect(
+        lambda _checked=False: _eval_webview(
+            webview,
+            "window.PronounceIt && window.PronounceIt.showContextDetails();",
+        )
+    )
+    if config.show_save_button:
+        save = submenu.addAction("Save pronunciation")
+        save.triggered.connect(
+            lambda _checked=False: _eval_webview(
+                webview,
+                "window.PronounceIt && window.PronounceIt.saveContextTarget();",
+            )
+        )
+
+
+def _on_reviewer_will_show_context_menu(reviewer: Any, menu: Any) -> None:
+    webview = getattr(reviewer, "web", None)
+    if webview is not None:
+        _on_webview_will_show_context_menu(webview, menu)
+
+
+def _eval_webview(webview: Any, javascript: str) -> None:
+    try:
+        webview.eval(javascript)
+    except Exception:
+        return
 
 
 def _pronounce_current_reviewer_selection() -> None:
@@ -1174,6 +1434,8 @@ def _pronounce_current_reviewer_selection() -> None:
         return
     reviewer = getattr(mw, "reviewer", None)
     if not _pronunciation_allowed():
+        if reviewer is not None:
+            _send_pronunciation_blocked(reviewer, {})
         return
     webview = getattr(reviewer, "web", None)
     selected_text = _selected_text_from_webview(webview)
@@ -1199,7 +1461,11 @@ def _pronounce_text_from_reviewer(selected_text: str) -> None:
         return
     reviewer = getattr(mw, "reviewer", None)
     if reviewer is not None and _pronunciation_allowed():
-        _handle_lookup(reviewer, {"text": selected_text, "rect": {}, "autoPlay": True})
+        encoded = json.dumps(display_term(selected_text))
+        _eval(
+            reviewer,
+            f"window.PronounceIt && window.PronounceIt.playText({encoded});",
+        )
 
 
 def _lookup_payload(term: str) -> dict[str, Any]:
@@ -1254,6 +1520,10 @@ def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
         result["audioKind"] = "bundled"
         result["audioStatus"] = "Bundled audio ready"
         result["audioHelp"] = "Play uses the curated local audio file for this term."
+    elif found and _audio_pack is not None and _audio_pack.status().installed:
+        result["audioKind"] = "pack"
+        result["audioStatus"] = "Comprehensive audio ready"
+        result["audioHelp"] = "Play uses the installed fluent pronunciation pack."
     elif config.audio_backend == "system_tts":
         result["audioKind"] = "system"
         result["audioStatus"] = "Audio ready"
@@ -1288,7 +1558,7 @@ def _audio_file_is_available(audio_file: str) -> bool:
         except ValueError:
             continue
         try:
-            if resolved.is_file() and resolved.stat().st_size > 0:
+            if audio_file_has_content(resolved):
                 return True
         except OSError:
             continue
@@ -1300,6 +1570,9 @@ def _payload_is_saved(payload: dict[str, Any]) -> bool:
         return False
     try:
         return _saved.contains(payload)
+    except StorageError as exc:
+        _record_runtime_diagnostic(str(exc))
+        return False
     except Exception:
         return False
 
@@ -1321,32 +1594,17 @@ def _on_webview_will_set_content(web_content: Any, context: Any) -> None:
 
         package = mw.addonManager.addonFromModule(_addon_module)
     except Exception:
-        package = _addon_module
-    if hasattr(web_content, "body"):
-        web_content.body += _inline_reviewer_assets(config)
-    else:
+        package = _addon_module or "pronounceit"
+    if hasattr(web_content, "css") and hasattr(web_content, "js"):
         web_content.css.append(f"/_addons/{package}/web/pronounceit.css")
         web_content.js.append(f"/_addons/{package}/web/pronounceit.js")
-
-
-def _inline_reviewer_assets(config: PronounceItConfig) -> str:
-    payload = json.dumps(_js_config_payload(config))
-    css = _read_addon_asset(WEB_CSS_FILE)
-    js = _read_addon_asset(WEB_JS_FILE)
-    parts = [f"<script>window.PronounceItConfig = {payload};</script>"]
-    if css:
-        parts.append(f"<style>{css}</style>")
-    if js:
-        parts.append(f"<script>{js}</script>")
-    return "".join(parts)
-
-
-def _read_addon_asset(relative_path: Path) -> str:
-    root = _addon_root or Path(__file__).resolve().parent.parent
-    try:
-        return (root / relative_path).read_text(encoding="utf-8")
-    except Exception:
-        return ""
+    elif hasattr(web_content, "body"):
+        css_url = f"/_addons/{package}/web/pronounceit.css"
+        js_url = f"/_addons/{package}/web/pronounceit.js"
+        web_content.body += (
+            f'<link rel="stylesheet" href="{css_url}">'
+            f'<script src="{js_url}"></script>'
+        )
 
 
 def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tuple[bool, Any]:
@@ -1360,12 +1618,12 @@ def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tup
         _handle_lookup(context, payload)
     elif action == "audioLookup":
         _handle_audio_lookup(context, payload)
-    elif action == "menu":
-        _handle_menu_lookup(context, payload)
     elif action == "speak":
         _handle_speak(payload, context)
     elif action == "save":
         _handle_save(context, payload)
+    elif action == "saveLookup":
+        _handle_save_lookup(context, payload)
     elif action == "support":
         _open_support_url()
     elif action == "ready":
@@ -1374,6 +1632,8 @@ def _on_js_message(handled: tuple[bool, Any], message: str, context: Any) -> tup
 
 
 def _parse_message(message: str) -> tuple[str, dict[str, Any]]:
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return "", {}
     body = message[len(MESSAGE_PREFIX) :]
     if ":" not in body:
         return body, {}
@@ -1382,46 +1642,68 @@ def _parse_message(message: str) -> tuple[str, dict[str, Any]]:
         payload = json.loads(raw_payload)
     except json.JSONDecodeError:
         payload = {}
-    return action, payload
+    return action, payload if isinstance(payload, dict) else {}
+
+
+def _send_pronunciation_blocked(context: Any, payload: dict[str, Any]) -> None:
+    text = display_term(str(payload.get("selectedText") or payload.get("text") or ""))
+    reason = "Reveal the answer before using PronounceIt."
+    result = TtsResult(False, reason, ["pronunciation blocked before answer reveal"])
+    _record_playback_diagnostic(
+        text,
+        TtsSettings(audio_backend=_config().audio_backend, term=text),
+        result,
+    )
+    _send_spoken_result(context, result, text=text, term=text)
 
 
 def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
     if not _pronunciation_allowed():
         _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
+        _send_pronunciation_blocked(context, payload)
         return
     result = _lookup_payload_from_request(payload)
     result["rect"] = payload.get("rect", {})
     result["config"] = _js_config_payload()
     result["autoPlay"] = bool(payload.get("autoPlay"))
+    result["request"] = _playback_request_payload(payload)
     _eval(context, f"window.PronounceIt && window.PronounceIt.show({json.dumps(result)});")
 
 
 def _handle_audio_lookup(context: Any, payload: dict[str, Any]) -> None:
     if not _pronunciation_allowed():
         _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
+        _send_pronunciation_blocked(context, payload)
         return
     result = _lookup_payload_from_request(payload)
-    _handle_speak(
-        {
-            "text": result.get("speechText") or result.get("term") or result.get("requestedText") or "",
-            "term": result.get("term") or result.get("requestedText") or "",
-            "audioFile": result.get("audioFile", ""),
-        },
-        context,
+    _handle_speak(_playback_payload_from_lookup(result), context)
+
+
+def _playback_request_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "text",
+        "selectedText",
+        "contextText",
+        "contextOffsetStart",
+        "contextOffsetEnd",
+        "rect",
     )
+    return {key: payload[key] for key in keys if key in payload}
 
 
-def _handle_menu_lookup(context: Any, payload: dict[str, Any]) -> None:
-    if not _pronunciation_allowed():
-        _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
-        return
-    result = _lookup_payload_from_request(payload)
-    result["rect"] = payload.get("rect", {})
-    result["menuX"] = payload.get("menuX")
-    result["menuY"] = payload.get("menuY")
-    result["config"] = _js_config_payload()
-    result["autoPlay"] = True
-    _eval(context, f"window.PronounceIt && window.PronounceIt.showMenu({json.dumps(result)});")
+def _playback_payload_from_lookup(result: dict[str, Any]) -> dict[str, Any]:
+    audio_file = str(result.get("audioFile") or "")
+    if result.get("audioKind") != "bundled":
+        audio_file = ""
+    return {
+        "text": result.get("synthesisText") or result.get("term") or result.get("requestedText") or "",
+        "term": result.get("term") or result.get("requestedText") or "",
+        "audioFile": audio_file,
+        "useTextOverride": result.get("source") == "user-override" and bool(result.get("speechText")),
+        "qualityTier": result.get("qualityTier", "fallback"),
+        "synthesisStrategy": result.get("synthesisStrategy", "azure-native"),
+        "audioReviewStatus": result.get("audioReviewStatus", "unreviewed"),
+    }
 
 
 def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
@@ -1434,11 +1716,15 @@ def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
         audio_backend=config.audio_backend,
         audio_file=str(payload.get("audioFile") or ""),
         term=display_term(str(payload.get("term") or "")),
+        use_text_override=bool(payload.get("useTextOverride")),
+        quality_tier=str(payload.get("qualityTier") or ""),
+        synthesis_strategy=str(payload.get("synthesisStrategy") or "azure-native"),
+        audio_review_status=str(payload.get("audioReviewStatus") or "unreviewed"),
     )
     result = _tts.speak_result(text, settings)
     _record_playback_diagnostic(text, settings, result)
     if context is not None:
-        _send_spoken_result(context, result)
+        _send_spoken_result(context, result, text=text, term=settings.term)
     return result.ok
 
 
@@ -1449,6 +1735,9 @@ def _record_playback_diagnostic(text: str, settings: TtsSettings, result: Any) -
             "term": settings.term,
             "audioBackend": settings.audio_backend,
             "audioFile": settings.audio_file,
+            "qualityTier": settings.quality_tier,
+            "synthesisStrategy": settings.synthesis_strategy,
+            "audioReviewStatus": settings.audio_review_status,
             "ok": bool(getattr(result, "ok", False)),
             "reason": str(getattr(result, "reason", "")),
             "attempts": list(getattr(result, "attempts", [])),
@@ -1457,10 +1746,13 @@ def _record_playback_diagnostic(text: str, settings: TtsSettings, result: Any) -
     del _playback_diagnostics[:-20]
 
 
-def _send_spoken_result(context: Any, result: Any) -> None:
+def _send_spoken_result(context: Any, result: Any, text: str = "", term: str = "") -> None:
     payload = {
         "ok": bool(getattr(result, "ok", False)),
         "reason": str(getattr(result, "reason", "")),
+        "text": text,
+        "term": term,
+        "attempts": list(getattr(result, "attempts", [])),
     }
     _eval(context, f"window.PronounceIt && window.PronounceIt.spoken({json.dumps(payload)});")
 
@@ -1468,7 +1760,20 @@ def _send_spoken_result(context: Any, result: Any) -> None:
 def _handle_save(context: Any, payload: dict[str, Any]) -> None:
     if not _saved:
         return
-    result = _saved.save_entry(_payload_with_origin(context, payload))
+    try:
+        result = _saved.save_entry(_payload_with_origin(context, payload))
+    except StorageError as exc:
+        _record_runtime_diagnostic(str(exc))
+        js_payload = json.dumps(
+            {
+                "saved": False,
+                "duplicate": False,
+                "alreadySaved": False,
+                "error": _storage_error_text(exc),
+            }
+        )
+        _eval(context, f"window.PronounceIt && window.PronounceIt.saved({js_payload});")
+        return
     js_payload = json.dumps(
         {
             "saved": result.saved,
@@ -1478,6 +1783,13 @@ def _handle_save(context: Any, payload: dict[str, Any]) -> None:
         }
     )
     _eval(context, f"window.PronounceIt && window.PronounceIt.saved({js_payload});")
+
+
+def _handle_save_lookup(context: Any, payload: dict[str, Any]) -> None:
+    if not _pronunciation_allowed():
+        _send_pronunciation_blocked(context, payload)
+        return
+    _handle_save(context, _lookup_payload_from_request(payload))
 
 
 def _payload_with_origin(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1638,6 +1950,7 @@ def _reviewer_state_is_answer(reviewer: Any) -> bool:
 def _js_config_payload(config: PronounceItConfig | None = None) -> dict[str, Any]:
     payload = (config or _config()).as_js_payload()
     payload["answerVisible"] = _answer_visible()
+    payload["platformModifier"] = "meta" if sys.platform.startswith("darwin") else "ctrl"
     return payload
 
 

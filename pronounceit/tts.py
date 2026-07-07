@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Literal
 from typing import Any
 
+from .audio import audio_file_has_content
+from .audio_pack import AudioPackManager
+
 
 AudioBackend = Literal["system_tts", "local_audio", "local_audio_then_tts"]
 
@@ -20,6 +23,10 @@ class TtsSettings:
     audio_backend: AudioBackend = "system_tts"
     audio_file: str = ""
     term: str = ""
+    use_text_override: bool = False
+    quality_tier: str = ""
+    synthesis_strategy: str = "azure-native"
+    audio_review_status: str = "unreviewed"
 
 
 @dataclass(frozen=True)
@@ -27,6 +34,21 @@ class TtsResult:
     ok: bool
     reason: str = ""
     attempts: list[str] = field(default_factory=list)
+
+
+def _immediate_process_failure(process: Any, timeout: float = 0.15) -> str:
+    wait = getattr(process, "wait", None)
+    if not callable(wait):
+        return ""
+    try:
+        return_code = wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return ""
+    except Exception as exc:
+        return f"playback command status check failed: {exc}"
+    if not isinstance(return_code, int) or return_code == 0:
+        return ""
+    return f"playback command exited immediately with status {return_code}"
 
 
 class TtsEngine:
@@ -100,6 +122,9 @@ class CommandTtsEngine(TtsEngine):
             command = ["say"]
             if settings.voice:
                 command.extend(["-v", settings.voice])
+            if settings.rate:
+                words_per_minute = max(80, min(360, 180 + (settings.rate * 18)))
+                command.extend(["-r", str(words_per_minute)])
             command.append(text)
         elif system == "Windows" and shutil.which("powershell"):
             safe_text = text.replace("'", "''")
@@ -121,9 +146,12 @@ class CommandTtsEngine(TtsEngine):
         if not command:
             return TtsResult(False, "no system TTS command is available")
         try:
-            subprocess.Popen(command)
+            process = subprocess.Popen(command)
         except Exception as exc:
             return TtsResult(False, "system TTS command failed to start", [str(exc)])
+        failure = _immediate_process_failure(process)
+        if failure:
+            return TtsResult(False, "system TTS command failed to start", [failure])
         return TtsResult(True, "playing with system TTS command")
 
 
@@ -142,14 +170,34 @@ class LocalAudioFileEngine(TtsEngine):
         audio_path = self._resolve_audio_file(settings.audio_file)
         if audio_path is None:
             return TtsResult(False, "local audio unavailable")
+        return self.play_path(audio_path)
+
+    def play_path(self, audio_path: Path) -> TtsResult:
+        anki_result = self._play_with_anki(audio_path)
+        if anki_result is not None:
+            return anki_result
         command = self._playback_command(audio_path)
         if command is None:
             return TtsResult(False, "no local audio playback command is available")
         try:
-            subprocess.Popen(command)
+            process = subprocess.Popen(command)
         except Exception as exc:
             return TtsResult(False, "local audio playback failed to start", [str(exc)])
+        failure = _immediate_process_failure(process)
+        if failure:
+            return TtsResult(False, "local audio playback failed to start", [failure])
         return TtsResult(True, "playing local audio")
+
+    def _play_with_anki(self, audio_path: Path) -> TtsResult | None:
+        try:
+            from aqt.sound import av_player
+        except Exception:
+            return None
+        try:
+            av_player.play_file(str(audio_path))
+        except Exception as exc:
+            return TtsResult(False, "Anki audio playback failed", [str(exc)])
+        return TtsResult(True, "playing with Anki audio player")
 
     def _resolve_audio_file(self, audio_file: str) -> Path | None:
         if not audio_file:
@@ -166,7 +214,7 @@ class LocalAudioFileEngine(TtsEngine):
                 resolved = candidate.resolve(strict=True)
             except OSError:
                 continue
-            if _is_relative_to(resolved, self.addon_root):
+            if _is_relative_to(resolved, self.addon_root) and audio_file_has_content(resolved):
                 return resolved
         return None
 
@@ -212,11 +260,14 @@ class GeneratedAudioFileEngine(TtsEngine):
     def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
             return TtsResult(False, "generated audio disabled")
-        speech_text = " ".join(text.split())
+        source_text = text if settings.use_text_override else (settings.term or text)
+        speech_text = " ".join(source_text.split())
         if not speech_text:
             return TtsResult(False, "empty speech text")
         audio_path = self._cache_path(settings.term or speech_text)
-        if not audio_path.exists() and not self._generate_audio(speech_text, audio_path, settings):
+        if not audio_file_has_content(audio_path) and not self._generate_audio(
+            speech_text, audio_path, settings
+        ):
             return TtsResult(False, "generated audio unavailable")
         relative_path = audio_path.relative_to(self.addon_root).as_posix()
         result = self._player.speak_result(
@@ -228,6 +279,8 @@ class GeneratedAudioFileEngine(TtsEngine):
                 audio_backend=settings.audio_backend,
                 audio_file=relative_path,
                 term=settings.term,
+                use_text_override=settings.use_text_override,
+                quality_tier=settings.quality_tier,
             ),
         )
         if not result.ok:
@@ -252,9 +305,40 @@ class GeneratedAudioFileEngine(TtsEngine):
         command.extend(["-o", str(output_path), speech_text])
         try:
             result = subprocess.run(command, text=True, capture_output=True)
-            return result.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+            return result.returncode == 0 and audio_file_has_content(output_path)
         except Exception:
             return False
+
+
+class AudioPackEngine(TtsEngine):
+    name = "comprehensive-audio-pack"
+
+    def __init__(self, addon_root: Path, manager: AudioPackManager | None = None) -> None:
+        self.manager = manager or AudioPackManager(addon_root)
+        self._player = LocalAudioFileEngine(addon_root)
+
+    def speak(self, text: str, settings: TtsSettings) -> bool:
+        return self.speak_result(text, settings).ok
+
+    def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
+        if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
+            return TtsResult(False, "comprehensive audio pack disabled")
+        term = " ".join((settings.term or text).split())
+        if not term:
+            return TtsResult(False, "empty audio pack term")
+        audio_path = self.manager.resolve(term)
+        if audio_path is None:
+            return TtsResult(False, "comprehensive audio pack unavailable")
+        result = self._player.play_path(audio_path)
+        if not result.ok:
+            return TtsResult(False, result.reason, result.attempts)
+        details = [
+            *result.attempts,
+            f"pack-version: {audio_path.parent.name}",
+            f"asset: {audio_path.stem}",
+            "audio-review: passed",
+        ]
+        return TtsResult(True, "playing comprehensive audio pack", details)
 
 
 class CompositeTtsEngine(TtsEngine):

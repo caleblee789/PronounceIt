@@ -10,12 +10,14 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.allow_on_question_side)
         self.assertFalse(config.as_js_payload()["allowOnQuestionSide"])
         self.assertEqual(config.audio_backend, "local_audio_then_tts")
+        self.assertEqual(config.audio_pack_cache_mb, 250)
+        self.assertEqual(config.hotkey, "")
         self.assertEqual(config.activation_mode, "context_menu")
         self.assertEqual(config.as_js_payload()["activationMode"], "context_menu")
         self.assertEqual(config.direct_click_modifier, "alt")
         self.assertEqual(config.popup_click_modifier, "alt")
         self.assertEqual(config.as_js_payload()["directClickModifier"], "alt")
-        self.assertEqual(config.as_js_payload()["popupClickModifier"], "alt")
+        self.assertTrue(config.show_native_context_menu)
         self.assertEqual(config.theme, "system")
         self.assertEqual(config.as_js_payload()["theme"], "system")
 
@@ -96,6 +98,59 @@ class ConfigTests(unittest.TestCase):
             PronounceItConfig.from_mapping({"audio_backend": "bad"}).audio_backend,
             "local_audio_then_tts",
         )
+
+    def test_malformed_numeric_values_fall_back_and_valid_values_are_clamped(self) -> None:
+        malformed = PronounceItConfig.from_mapping(
+            {"tts_rate": "fast", "tts_volume": "loud"}
+        )
+        self.assertEqual(malformed.tts_rate, 0)
+        self.assertEqual(malformed.tts_volume, 100)
+
+        clamped = PronounceItConfig.from_mapping(
+            {"tts_rate": "99", "tts_volume": -4}
+        )
+        self.assertEqual(clamped.tts_rate, 10)
+        self.assertEqual(clamped.tts_volume, 0)
+        self.assertEqual(
+            PronounceItConfig.from_mapping({"audio_pack_cache_mb": 9999}).audio_pack_cache_mb,
+            2000,
+        )
+
+    def test_boolean_values_are_coerced_without_truthy_string_surprises(self) -> None:
+        config = PronounceItConfig.from_mapping(
+            {
+                "enabled": "false",
+                "auto_close_on_card_change": "0",
+                "allow_on_question_side": "yes",
+                "show_context_menu": 0,
+                "show_save_button": 1,
+            }
+        )
+
+        self.assertFalse(config.enabled)
+        self.assertFalse(config.auto_close_on_card_change)
+        self.assertTrue(config.allow_on_question_side)
+        self.assertFalse(config.show_context_menu)
+        self.assertTrue(config.show_save_button)
+
+        defaults = PronounceItConfig.from_mapping(
+            {"enabled": "maybe", "show_save_button": object()}
+        )
+        self.assertTrue(defaults.enabled)
+        self.assertTrue(defaults.show_save_button)
+
+    def test_legacy_hotkey_is_preserved_but_no_longer_defaulted(self) -> None:
+        self.assertEqual(
+            PronounceItConfig.from_mapping({"hotkey": "Mod+P"}).hotkey,
+            "Mod+P",
+        )
+        self.assertEqual(
+            PronounceItConfig.from_mapping({"hotkey": "Mod+Shift+P"}).hotkey,
+            "Mod+Shift+P",
+        )
+
+    def test_empty_hotkey_disables_shortcut(self) -> None:
+        self.assertEqual(PronounceItConfig.from_mapping({"hotkey": ""}).hotkey, "")
 
 
 if __name__ == "__main__":

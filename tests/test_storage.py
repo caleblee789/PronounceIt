@@ -1,7 +1,13 @@
 import json
+from unittest.mock import patch
 import unittest
 
-from pronounceit.storage import CustomPronunciations, SavedPronunciations, format_saved_entries
+from pronounceit.storage import (
+    CustomPronunciations,
+    SavedPronunciations,
+    StorageError,
+    format_saved_entries,
+)
 
 
 class StorageTests(unittest.TestCase):
@@ -95,6 +101,85 @@ class StorageTests(unittest.TestCase):
             data = json.loads((Path(tmp) / "user_files" / "custom_pronunciations.json").read_text())
             self.assertEqual(len(data["terms"]), 1)
             self.assertEqual(data["terms"][0]["speechText"], "local kloh zuh peen")
+
+    def test_corrupt_saved_json_is_not_overwritten(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "user_files" / "saved_pronunciations.json"
+            path.parent.mkdir()
+            original = '{"truncated":'
+            path.write_text(original, encoding="utf-8")
+            storage = SavedPronunciations(Path(tmp))
+
+            with self.assertRaises(StorageError):
+                storage.save_entry({"term": "clozapine"})
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+            self.assertFalse(path.with_suffix(".json.bak").exists())
+
+    def test_corrupt_custom_json_is_not_overwritten(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "user_files" / "custom_pronunciations.json"
+            path.parent.mkdir()
+            original = "not json"
+            path.write_text(original, encoding="utf-8")
+            storage = CustomPronunciations(Path(tmp))
+
+            with self.assertRaises(StorageError):
+                storage.upsert_entry("clozapine", "KLOH-zuh-peen", "clo-za-pine")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+    def test_mutations_preserve_malformed_and_unknown_records(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            saved_path = root / "user_files" / "saved_pronunciations.json"
+            saved_path.parent.mkdir()
+            saved_path.write_text(json.dumps(["keep-me", {"term": "clozapine"}]))
+            saved = SavedPronunciations(root)
+            saved.save_entry({"term": "Agranulocytosis"})
+            saved_raw = json.loads(saved_path.read_text())
+            self.assertIn("keep-me", saved_raw)
+            self.assertTrue(saved_path.with_suffix(".json.bak").exists())
+
+            custom_path = root / "user_files" / "custom_pronunciations.json"
+            custom_path.write_text(
+                json.dumps({"schema": 2, "terms": [17, {"term": "incomplete"}]})
+            )
+            custom = CustomPronunciations(root)
+            custom.upsert_entry("clozapine", "KLOH-zuh-peen", "clo-za-pine")
+            custom_raw = json.loads(custom_path.read_text())
+            self.assertEqual(custom_raw["schema"], 2)
+            self.assertIn(17, custom_raw["terms"])
+            self.assertIn({"term": "incomplete"}, custom_raw["terms"])
+
+    def test_failed_atomic_replace_leaves_original_and_backup(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            storage = SavedPronunciations(root)
+            storage.save_entry({"term": "clozapine"})
+            original = storage.path.read_text(encoding="utf-8")
+
+            with patch("pronounceit.storage.os.replace", side_effect=OSError("disk full")):
+                with self.assertRaises(StorageError):
+                    storage.save_entry({"term": "agranulocytosis"})
+
+            self.assertEqual(storage.path.read_text(encoding="utf-8"), original)
+            self.assertEqual(
+                storage.path.with_suffix(".json.bak").read_text(encoding="utf-8"),
+                original,
+            )
 
 
 if __name__ == "__main__":

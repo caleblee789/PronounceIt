@@ -5,3 +5,7 @@ __pycache__/
 user_files/custom_pronunciations.json
 user_files/saved_pronunciations.json
 user_files/generated_audio/*
+user_files/audio_cache/*
+user_files/audio_packs/*
+build/
+.venv-generation/

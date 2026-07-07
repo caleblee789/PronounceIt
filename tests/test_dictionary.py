@@ -64,6 +64,8 @@ class DictionaryTests(unittest.TestCase):
         self.assertEqual(normalize_term("  Agranulocytosis, "), "agranulocytosis")
         self.assertEqual(normalize_term("Crohn disease (CD)"), "crohn disease")
         self.assertEqual(normalize_term("Staphylococcus aureus [MSSA]"), "staphylococcus aureus")
+        self.assertEqual(normalize_term("chem(o)"), "chem(o)")
+        self.assertNotEqual(normalize_term("chem"), normalize_term("chem(o)"))
 
     def test_cloze_markup_is_stripped_before_lookup(self) -> None:
         dictionary = PronunciationDictionary.bundled()
@@ -263,19 +265,73 @@ class DictionaryTests(unittest.TestCase):
             self.assertEqual(payload["pronunciation"], "LOCAL-KLOH-zuh-peen")
             self.assertEqual(payload["speechText"], "custom audio kloh zuh peen")
 
-    def test_curated_entry_uses_phonetic_audio_text(self) -> None:
+    def test_malformed_user_entries_are_skipped_without_blocking_dictionary_load(self) -> None:
+        with TemporaryDirectory() as tmp:
+            user_file = Path(tmp) / "custom.json"
+            user_file.write_text(
+                json.dumps(
+                    {
+                        "terms": [
+                            {},
+                            17,
+                            {
+                                "term": "localterm",
+                                "pronunciation": "LOH-kul-term",
+                                "syllables": "lo-cal-term",
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            dictionary = PronunciationDictionary.bundled(user_file=user_file)
+
+            self.assertTrue(dictionary.lookup("localterm")["found"])
+            self.assertEqual(len(dictionary.load_issues), 2)
+
+    def test_corrupt_user_dictionary_does_not_block_bundled_dictionary(self) -> None:
+        with TemporaryDirectory() as tmp:
+            user_file = Path(tmp) / "custom.json"
+            user_file.write_text("not json", encoding="utf-8")
+
+            dictionary = PronunciationDictionary.bundled(user_file=user_file)
+
+            self.assertTrue(dictionary.lookup("agranulocytosis")["found"])
+            self.assertEqual(len(dictionary.load_issues), 1)
+
+    def test_verified_entry_uses_phonetic_guide_and_bundled_audio(self) -> None:
         dictionary = PronunciationDictionary.bundled()
         payload = dictionary.lookup("agranulocytosis")
         self.assertEqual(payload["speechText"], "uh gran yoo loh sy toh sis")
         self.assertNotEqual(payload["speechText"], "agranulocytosis")
-        self.assertEqual(payload["audioFile"], "audio/agranulocytosis.aiff")
+        self.assertEqual(payload["synthesisText"], "agranulocytosis")
+        self.assertEqual(payload["qualityTier"], "verified")
+        self.assertEqual(payload["audioFile"], "audio/agranulocytosis.mp3")
+
+    def test_generated_entries_disclose_generated_quality(self) -> None:
+        payload = PronunciationDictionary.bundled().lookup("aardwolf")
+
+        self.assertEqual(payload["qualityTier"], "generated")
+        self.assertEqual(payload["synthesisText"], "aardwolf")
+
+    def test_reviewed_multiword_sapi_segments_are_preserved(self) -> None:
+        with TemporaryDirectory() as tmp:
+            data_file = Path(tmp) / "dictionary.json"
+            data_file.write_text(
+                '{"terms":[{"term":"test phrase","pronunciation":"TEST FRAYZ",'
+                '"syllables":"test phrase","sapiSegments":['
+                '{"text":"test","sapi":"t eh 1 s t"},'
+                '{"text":"phrase","sapi":"f r ey 1 z"}]}]}',
+                encoding="utf-8",
+            )
+            payload = PronunciationDictionary.bundled(data_file=data_file).lookup("test phrase")
+            self.assertEqual(len(payload["sapiSegments"]), 2)
+            self.assertEqual(payload["sapiSegments"][1]["text"], "phrase")
 
     def test_default_audio_file_slugs_medical_terms(self) -> None:
         self.assertEqual(audio_slug("Wolff-Parkinson-White"), "wolff_parkinson_white")
-        self.assertEqual(
-            default_audio_file("piperacillin-tazobactam"),
-            "audio/piperacillin_tazobactam.aiff",
-        )
+        self.assertEqual(default_audio_file("piperacillin-tazobactam"), "")
 
     def test_high_yield_medical_anchors_are_present(self) -> None:
         dictionary = PronunciationDictionary.bundled()

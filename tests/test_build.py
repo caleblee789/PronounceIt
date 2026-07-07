@@ -11,9 +11,13 @@ class BuildScriptTests(unittest.TestCase):
     def test_should_include_rejects_python_cache_files(self) -> None:
         self.assertFalse(build_ankiaddon.should_include(Path("pronounceit/__pycache__/main.pyc")))
         self.assertFalse(build_ankiaddon.should_include(Path("pronounceit/main.pyc")))
+        self.assertFalse(build_ankiaddon.should_include(Path("web/.DS_Store")))
         self.assertFalse(build_ankiaddon.should_include(Path("user_files/generated_audio/example.aiff")))
         self.assertFalse(build_ankiaddon.should_include(Path("user_files/saved_pronunciations.json")))
         self.assertFalse(build_ankiaddon.should_include(Path("user_files/custom_pronunciations.json")))
+        self.assertFalse(build_ankiaddon.should_include(Path("user_files/saved_pronunciations.json.bak")))
+        self.assertFalse(build_ankiaddon.should_include(Path("user_files/audio/private.aiff")))
+        self.assertFalse(build_ankiaddon.should_include(Path("data/audio_review_ledger.json")))
         self.assertTrue(build_ankiaddon.should_include(Path("pronounceit/main.py")))
         self.assertTrue(build_ankiaddon.should_include(Path("user_files/custom_pronunciations.sample.json")))
         self.assertIn("audio", build_ankiaddon.INCLUDE_DIRS)
