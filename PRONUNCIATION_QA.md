@@ -31,14 +31,14 @@ Use explicit `sapiPhonemes` for reviewed synthesis corrections. Existing `speech
 1. Add the term to `data/medical_pronunciations.json`.
 2. Add high-yield terms to `data/high_yield_checklist.json`.
 3. Include aliases for abbreviations such as `GERD`, `TMJ`, or organism shorthand.
-4. If updating from the source lexicon, run `python3 scripts/import_source_lexicon.py`.
-5. Dry-run, generate, and package neural audio with `scripts/generate_neural_audio.py` and `scripts/build_audio_pack.py`.
+4. If updating from the source lexicon, run `python3 scripts/corpus/import_source_lexicon.py`.
+5. Dry-run, generate, and package neural audio with `scripts/audio/generate_neural_audio.py` and `scripts/audio/build_audio_pack.py`.
 6. Run:
 
 ```bash
-python3 scripts/audit_pronunciations.py
+python3 scripts/corpus/audit_pronunciations.py
 python3 -m unittest discover -s tests
-python3 scripts/build_ankiaddon.py
+python3 scripts/release/build_ankiaddon.py
 ```
 
 ## Acceptance Criteria
@@ -62,6 +62,6 @@ python3 scripts/build_ankiaddon.py
 
 ## Local Corrections
 
-Use Tools > PronounceIt: Add or Update Custom Pronunciation when a term needs a local correction before the bundled dictionary is updated. Custom entries are stored in `user_files/custom_pronunciations.json` and override bundled entries immediately after saving.
+Use Caleb M. Add-ons Settings > PronounceIt settings > Advanced > Pronunciation tools > Add custom pronunciation when a term needs a local correction before the bundled dictionary is updated. Custom entries are stored in `user_files/custom_pronunciations.json` and override bundled entries immediately after saving.
 
 Promote a custom correction into `data/medical_pronunciations.json` when it is broadly useful for medical students, especially if it appears in common AnKing, UWorld-style, Sketchy, Pathoma, or shelf-review cards.

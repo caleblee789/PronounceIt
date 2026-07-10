@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scripts.publish_audio_pack import release_files
+from scripts.release.publish_audio_pack import release_files
 
 
 class PublishAudioPackTests(unittest.TestCase):

@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from pronounceit.audio_pack import audio_asset_id
-from scripts.generate_neural_audio import _job_batches, build_jobs, generate
+from scripts.audio.generate_neural_audio import _job_batches, build_jobs, generate
 
 
 class NeuralAudioGenerationTests(unittest.TestCase):

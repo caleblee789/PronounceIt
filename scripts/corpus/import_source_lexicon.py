@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_FILE = ROOT / "data" / "medical_pronunciations.json"
 DEFAULT_LEXICON_FILE = ROOT / "data" / "medical_pronunciation_lexicon_for_codex.txt"
 

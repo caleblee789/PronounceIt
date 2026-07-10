@@ -6,7 +6,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scripts.serve_audio_pack import RangeRequestHandler
+from scripts.release.serve_audio_pack import RangeRequestHandler
 
 
 class RangeServerTests(unittest.TestCase):

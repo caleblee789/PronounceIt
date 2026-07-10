@@ -24,7 +24,7 @@ jobs:
         run: python3 -m unittest discover -s tests
 
       - name: Build and validate add-on
-        run: python3 scripts/build_ankiaddon.py
+        run: python3 scripts/release/build_ankiaddon.py
 
       - name: Refuse to overwrite an existing release
         env:

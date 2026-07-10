@@ -5,7 +5,7 @@ import zipfile
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -45,6 +45,11 @@ REQUIRED_ARCHIVE_FILES = {
     "pronounceit/dictionary.py",
     "pronounceit/tts.py",
     "pronounceit/qa.py",
+    "pronounceit/assets/buy_me_a_coffee.png",
+    "pronounceit/assets/spin_up_light.svg",
+    "pronounceit/assets/spin_down_light.svg",
+    "pronounceit/assets/spin_up_dark.svg",
+    "pronounceit/assets/spin_down_dark.svg",
     "web/pronounceit.js",
     "web/pronounceit.css",
     "data/medical_pronunciations.json",

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -29,7 +29,7 @@ from pronounceit.audio_review import (
 )
 from pronounceit.dictionary import DATA_FILE, PronunciationDictionary, audio_slug
 from pronounceit.qa import load_checklist
-from scripts.generate_neural_audio import build_pilot_binding
+from scripts.audio.generate_neural_audio import build_pilot_binding
 
 
 DEFAULT_AUDIO_DIR = ROOT / "build" / "neural_audio_v2"

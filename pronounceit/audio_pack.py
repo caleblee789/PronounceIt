@@ -40,7 +40,7 @@ class AudioPackStatus:
     total_shards: int = 0
     downloaded_bytes: int = 0
     total_bytes: int = 0
-    message: str = "Audio pack is not installed."
+    message: str = "Offline pronunciation pack is not installed."
 
 
 def audio_asset_id(term: str) -> str:
@@ -179,11 +179,11 @@ class AudioPackManager:
         total_bytes = sum(int(shard["size"]) for shard in manifest["shards"])
         installed = complete == total and compatible
         if not compatible:
-            message = "Installed audio pack does not match this dictionary version."
+            message = "Installed offline pronunciation pack does not match this dictionary version."
         elif installed:
-            message = f"Audio pack {manifest['packVersion']} is installed and ready."
+            message = f"Offline pronunciation pack {manifest['packVersion']} is installed and ready."
         else:
-            message = f"Audio pack download is incomplete ({complete}/{total} shards)."
+            message = f"Offline pronunciation pack download is incomplete ({complete}/{total} files)."
         return AudioPackStatus(
             installed=installed,
             compatible=compatible,
@@ -305,13 +305,37 @@ class AudioPackManager:
         return validate_manifest(raw)
 
     def _load_local_manifest(self) -> dict[str, Any] | None:
-        try:
-            state = json.loads(self.state_path.read_text(encoding="utf-8"))
-            version = str(state.get("packVersion") or "")
-            path = self.pack_root / version / "pack-manifest.json"
-            return validate_manifest(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, AttributeError, json.JSONDecodeError, AudioPackError):
-            return None
+        """Load an installed manifest, or a persisted partial-download manifest.
+
+        ``installed.json`` is deliberately written only after every shard has
+        passed validation.  The manifest is written before downloading shards,
+        though, and must remain discoverable after an Anki restart so the UI
+        can show progress and the downloader can resume from ``.part`` files.
+        """
+        version = self._local_state_version()
+        candidates: list[Path] = []
+        if version:
+            candidates.append(self.pack_root / version / "pack-manifest.json")
+        else:
+            try:
+                candidates.extend(
+                    sorted(
+                        self.pack_root.glob("*/pack-manifest.json"),
+                        key=lambda path: path.parent.name,
+                        reverse=True,
+                    )
+                )
+            except OSError:
+                return None
+
+        for path in candidates:
+            try:
+                manifest = validate_manifest(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError, AudioPackError):
+                continue
+            if str(manifest["packVersion"]) == path.parent.name:
+                return manifest
+        return None
 
     def _local_state_version(self) -> str:
         try:

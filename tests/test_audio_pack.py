@@ -152,9 +152,48 @@ class AudioPackTests(unittest.TestCase):
             (manager.pack_root / "experimental").mkdir()
             status = manager.status()
             self.assertFalse(status.installed)
-            self.assertEqual(status.message, "Audio pack is not installed.")
+            self.assertEqual(status.message, "Offline pronunciation pack is not installed.")
             manager.remove()
             self.assertFalse(manager.state_path.exists())
+
+    def test_partial_download_manifest_is_discovered_after_restart(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = root / "data"
+            data_dir.mkdir()
+            dictionary = data_dir / "medical_pronunciations.json"
+            dictionary.write_text('{"terms": []}\n', encoding="utf-8")
+            manager = AudioPackManager(root)
+            version_dir = manager.pack_root / "2-test"
+            version_dir.mkdir(parents=True)
+
+            shards = []
+            for shard_id in "0123456789abcdef":
+                shard_path = version_dir / f"shard-{shard_id}.zip"
+                if shard_id == "0":
+                    shard_path.write_bytes(b"complete shard")
+                shards.append(
+                    {
+                        "id": shard_id,
+                        "file": shard_path.name,
+                        "sha256": file_sha256(shard_path) if shard_path.exists() else "0" * 64,
+                        "size": shard_path.stat().st_size if shard_path.exists() else 1,
+                    }
+                )
+            manifest = {
+                "schemaVersion": 2,
+                "packVersion": "2-test",
+                "dictionarySha256": dictionary_sha256(dictionary),
+                "reviewLedgerSha256": "1" * 64,
+                "synthesisStrategyCounts": {"azure-native": 1, "manual-sapi": 0},
+                "shards": shards,
+            }
+            (version_dir / "pack-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+            status = manager.status()
+            self.assertFalse(status.installed)
+            self.assertEqual((status.downloaded_shards, status.total_shards), (1, 16))
+            self.assertEqual(status.message, "Offline pronunciation pack download is incomplete (1/16 files).")
 
 
 if __name__ == "__main__":

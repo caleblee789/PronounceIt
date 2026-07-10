@@ -7,11 +7,11 @@ import sys
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.build_audio_pack import DEFAULT_OUTPUT_DIR, verify_pack
+from scripts.audio.build_audio_pack import DEFAULT_OUTPUT_DIR, verify_pack
 
 
 DEFAULT_REPOSITORY = "caleblee789/PronounceIt"
