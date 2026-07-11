@@ -12,7 +12,13 @@ PronounceIt includes a 95,902-term medical pronunciation guide library, 155 bund
 
 ## Install
 
-Install PronounceIt from AnkiWeb through `Tools > Add-ons > Get Add-ons...`, or install the latest GitHub release manually:
+Install PronounceIt from [AnkiWeb](https://ankiweb.net/shared/info/1352407063) through `Tools > Add-ons > Get Add-ons...` with code:
+
+```text
+1352407063
+```
+
+Alternatively, install the latest GitHub release manually:
 
 ```text
 dist/pronounceit.ankiaddon
