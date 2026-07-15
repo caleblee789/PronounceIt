@@ -300,13 +300,13 @@ class DictionaryTests(unittest.TestCase):
             self.assertTrue(dictionary.lookup("agranulocytosis")["found"])
             self.assertEqual(len(dictionary.load_issues), 1)
 
-    def test_verified_entry_uses_phonetic_guide_and_bundled_audio(self) -> None:
+    def test_sol_entry_uses_phonetic_guide_and_bundled_audio(self) -> None:
         dictionary = PronunciationDictionary.bundled()
         payload = dictionary.lookup("agranulocytosis")
-        self.assertEqual(payload["speechText"], "uh gran yoo loh sy toh sis")
+        self.assertEqual(payload["speechText"], "ay gran yuh loh sy toh sis")
         self.assertNotEqual(payload["speechText"], "agranulocytosis")
         self.assertEqual(payload["synthesisText"], "agranulocytosis")
-        self.assertEqual(payload["qualityTier"], "verified")
+        self.assertEqual(payload["qualityTier"], "generated")
         self.assertEqual(payload["audioFile"], "audio/agranulocytosis.mp3")
 
     def test_generated_entries_disclose_generated_quality(self) -> None:

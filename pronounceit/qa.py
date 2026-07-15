@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .audio import aiff_has_audio, audio_file_has_content
-from .dictionary import DATA_FILE, PronunciationDictionary
+from .dictionary import DATA_FILE, PronunciationDictionary, normalize_term
 
 
 CHECKLIST_FILE = Path(__file__).resolve().parent.parent / "data" / "high_yield_checklist.json"
@@ -145,6 +145,7 @@ def audit_pronunciations(
             or any(character.isupper() for character in speech_text)
             or (
                 " or " in str(payload.get("pronunciation", "")).lower()
+                and " or " not in f" {normalize_term(term)} "
                 and " or " in f" {speech_text} "
             )
         ):

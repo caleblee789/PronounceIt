@@ -19,13 +19,13 @@ class PronunciationQaTests(unittest.TestCase):
         self.assertEqual(audit.source_lexicon_pronunciation_mismatches, [])
         self.assertEqual(audit.unsafe_speech_text, [])
         self.assertEqual(sum(audit.quality_tiers.values()), audit.dictionary_terms)
-        self.assertEqual(audit.quality_tiers["verified"], 155)
+        self.assertEqual(audit.quality_tiers, {"generated": 95902})
 
     def test_source_lexicon_is_substantial_and_parseable(self) -> None:
         entries = load_source_lexicon()
 
         self.assertEqual(len(entries), 462)
-        self.assertIn(("agranulocytosis", "uh-GRAN-yoo-loh-sy-TOH-sis"), entries)
+        self.assertIn(("agranulocytosis", "ay-gran-yuh-loh-sy-TOH-sis"), entries)
         self.assertIn(("thoracentesis", "thor-uh-sen-TEE-sis"), entries)
 
 
