@@ -166,18 +166,14 @@ that same verified archive to AnkiWeb.
 Latest release tag:
 
 ```text
-v1.2.0
+v1.2.1
 ```
 
 Release focus:
 
-- Restores plain right-click to Anki and opens PronounceIt’s quick pronunciation card with Control/Ctrl activation.
-- Adds one customizable modifier for click, drag-selection, and selected-text playback.
-- Adds a separate Control/Ctrl-default modifier for the quick pronunciation card.
-- Enables pronunciation before answer reveal by default.
-- Adds one-time offline-pack onboarding and permanently visible pack controls.
-- Replaces the old theme presets with Progressbar-style Light and Dark themes.
-- Replaces the multi-key shortcut with one customizable playback modifier and a discoverable Tools action.
+- Replaces all 95,902 legacy pronunciation respellings with the independently generated gpt-5.6-sol set.
+- Regenerates syllable and speech-text fields from the same Sol output.
+- Preserves the existing term order, aliases, and bundled-audio associations.
 - Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.
 - Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
 - Refreshes README and config wording around the quick pronunciation card and saved-word workflow.

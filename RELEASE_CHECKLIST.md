@@ -52,7 +52,7 @@ GitHub deployment gate:
 - Run `python3 scripts/release/publish_audio_pack.py` as a dry verification, then rerun with `--publish` only after `gh auth status` passes.
 - Publish `audio-pack-v2` as non-latest and verify all 18 remote assets.
 - Repeat the complete anonymous download from GitHub in the isolated profile.
-- Only then push tag `v1.2.0`; the release workflow builds and publishes `pronounceit.ankiaddon`.
+- Only then push the current version tag; the release workflow builds and publishes `pronounceit.ankiaddon`.
 - Do not create or update an AnkiWeb listing.
 
 Pronunciation release gate:

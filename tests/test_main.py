@@ -167,8 +167,8 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(reviewer.web.scripts), 1)
         script = reviewer.web.scripts[0]
         self.assertIn("window.PronounceIt.show", script)
-        self.assertIn("uh-GRAN-yoo-loh-sy-TOH-sis", script)
-        self.assertIn("uh gran yoo loh sy toh sis", script)
+        self.assertIn("ay-gran-yuh-loh-sy-TOH-sis", script)
+        self.assertIn("ay gran yuh loh sy toh sis", script)
 
     def test_lookup_message_uses_longest_context_phrase(self) -> None:
         reviewer = FakeReviewer()
@@ -315,7 +315,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(fake_tts.calls), 1)
         self.assertEqual(fake_tts.calls[0][0], "agranulocytosis")
         self.assertEqual(fake_tts.calls[0][1].term, "agranulocytosis")
-        self.assertEqual(fake_tts.calls[0][1].quality_tier, "verified")
+        self.assertEqual(fake_tts.calls[0][1].quality_tier, "generated")
         self.assertIn('"ok": true', reviewer.web.scripts[0])
         self.assertIn('"term": "agranulocytosis"', reviewer.web.scripts[0])
 
@@ -892,7 +892,7 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertTrue(payload["found"])
         self.assertEqual(payload["term"], "Glasgow Coma Scale")
-        self.assertEqual(payload["speechText"], "glaz goh koh muh skayl")
+        self.assertEqual(payload["speechText"], "glas goh koh muh skayl")
         self.assertEqual(payload["audioSource"], "azure")
         self.assertEqual(payload["audioSourceLabel"], "High Quality Downloaded Pack")
         self.assertFalse(payload["alreadySaved"])
@@ -1139,7 +1139,7 @@ class MainMessageTests(unittest.TestCase):
             main._handle_speak = original_handle_speak
 
         self.assertEqual(shown[0][1], "agranulocytosis")
-        self.assertEqual(shown[0][0]["pronunciation"], "uh-GRAN-yoo-loh-sy-TOH-sis")
+        self.assertEqual(shown[0][0]["pronunciation"], "ay-gran-yuh-loh-sy-TOH-sis")
         self.assertEqual(
             spoken,
             [
@@ -1148,7 +1148,7 @@ class MainMessageTests(unittest.TestCase):
                     "term": "agranulocytosis",
                     "audioFile": "audio/agranulocytosis.mp3",
                     "useTextOverride": False,
-                    "qualityTier": "verified",
+                    "qualityTier": "generated",
                     "synthesisStrategy": "azure-native",
                     "audioReviewStatus": "passed",
                 }
