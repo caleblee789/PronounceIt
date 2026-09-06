@@ -19,68 +19,68 @@ from .storage import StorageError, saved_entry_key
 from .theme import dialog_qss, web_theme_tokens
 
 
-def label(text: str = "", role: str = "") -> QLabel:
-    result = QLabel(text)
-    result.setTextFormat(Qt.TextFormat.PlainText)
-    result.setWordWrap(True)
-    result.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-    result.setProperty("role", role)
-    result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    return result
-
-
-def button(text: str, callback=None, role: str = "") -> QPushButton:
-    result = QPushButton(text)
-    result.setProperty("role", role)
-    result.setAutoDefault(False)
-    if callback:
-        result.clicked.connect(lambda _checked=False: callback())
-    return result
-
-
-def status(target: QLabel, text: str, error: bool = False) -> None:
-    target.setText(text)
-    target.setProperty("role", "error" if error else "success")
-    target.style().unpolish(target)
-    target.style().polish(target)
-    target.setVisible(bool(text))
+from .ui_components import (
+    SettingsCard, apply_fonts, button, column, disclosure, field, label, status, surface,
+)
 
 
 class Dialog(QDialog):
-    def __init__(self, title: str, parent=None, theme: str | None = None):
+    """A contained editor with a fixed header/footer and one content region."""
+    def __init__(self, title: str, parent=None, theme: str | None = None, scrollable: bool = True):
         super().__init__(parent or mw)
         self.setWindowTitle(title)
         self.setObjectName("pronounceitDialog")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.theme = theme or getattr(parent, "theme", None) or core._config().theme
         self.setStyleSheet(dialog_qss(self.theme, self.objectName()))
         self.outer = QVBoxLayout(self)
-        self.outer.setContentsMargins(16, 16, 16, 16)
-        self.outer.setSpacing(12)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        body = QWidget()
-        self.body = QVBoxLayout(body)
-        self.body.setContentsMargins(0, 0, 4, 0)
-        self.body.setSpacing(12)
-        self.body.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.scroll.setWidget(body)
-        self.outer.addWidget(self.scroll, 1)
-        self.footer = QHBoxLayout()
-        self.footer.setSpacing(8)
-        self.outer.addLayout(self.footer)
+        self.outer.setContentsMargins(0, 0, 0, 0)
+        self.outer.setSpacing(0)
+        header, header_layout = column("header")
+        header_layout.setContentsMargins(24, 16, 24, 16)
+        self.heading = label(title, "page_title")
+        header_layout.addWidget(self.heading)
+        self.outer.addWidget(header)
+        body_widget, self.body = column("canvas")
+        self.body.setContentsMargins(24, 20, 24, 20)
+        self.body.setSpacing(16)
+        if scrollable:
+            self.body.setAlignment(Qt.AlignmentFlag.AlignTop)
+            self.scroll = QScrollArea()
+            self.scroll.setWidgetResizable(True)
+            self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+            self.scroll.viewport().setProperty("role", "canvas")
+            self.scroll.setWidget(body_widget)
+            self.outer.addWidget(self.scroll, 1)
+        else:
+            self.scroll = None
+            self.outer.addWidget(body_widget, 1)
         self.message = label()
         self.message.hide()
         self.body.addWidget(self.message)
+        footer = surface("footer")
+        self.footer = QHBoxLayout(footer)
+        self.footer.setContentsMargins(24, 10, 24, 10)
+        self.footer.setSpacing(8)
+        self.outer.addWidget(footer)
+        self.notice_timer = QTimer(self)
+        self.notice_timer.setSingleShot(True)
+        self.notice_timer.timeout.connect(lambda: status(self.message, ""))
 
     def fit(self, width: int, height: int) -> None:
+        apply_fonts(self)
         screen = self.screen() or QApplication.primaryScreen()
         area = screen.availableGeometry()
-        max_width, max_height = max(280, area.width() - 48), max(180, area.height() - 80)
-        self.setMinimumSize(min(360, max_width), min(120, max_height))
+        max_width, max_height = max(280, area.width() - 48), max(180, area.height() - 48)
+        self.setMinimumSize(min(400, max_width), min(190, max_height))
         self.resize(min(width, max_width), min(height, max_height))
-        self.move(area.center() - self.rect().center())
+        parent = self.parentWidget()
+        center = parent.frameGeometry().center() if parent else area.center()
+        point = center - self.rect().center()
+        point.setX(max(area.left(), min(point.x(), area.right() - self.width())))
+        point.setY(max(area.top(), min(point.y(), area.bottom() - self.height())))
+        self.move(point)
 
     def close_button(self) -> None:
         self.footer.addStretch()
@@ -89,56 +89,13 @@ class Dialog(QDialog):
     def set_theme(self, theme: str) -> None:
         self.theme = theme
         self.setStyleSheet(dialog_qss(theme, self.objectName()))
+        apply_fonts(self)
 
-
-def disclosure(layout: QVBoxLayout, title: str, widget: QWidget) -> QPushButton:
-    toggle = button("▸ " + title, role="quiet")
-    toggle.setCheckable(True)
-    toggle.setProperty("disclosure", True)
-    toggle.setProperty("contentHeight", widget.sizeHint().height() + 8)
-    toggle.setStyleSheet("text-align: left")
-    widget.hide()
-    growth = {"height": 0}
-    def expand(opened):
-        widget.setVisible(opened)
-        toggle.setText(("▾ " if opened else "▸ ") + title)
-        window = widget.window()
-        if isinstance(window, QDialog):
-            if opened:
-                before = window.height()
-                limit = window.screen().availableGeometry().height() - 80
-                window.resize(window.width(), min(limit, before + widget.sizeHint().height() + 8))
-                growth["height"] = window.height() - before
-            else:
-                window.resize(window.width(), window.height() - growth["height"])
-    toggle.toggled.connect(expand)
-    layout.addWidget(toggle)
-    layout.addWidget(widget)
-    return toggle
-
-
-def column() -> tuple[QWidget, QVBoxLayout]:
-    w = QWidget()
-    layout = QVBoxLayout(w)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(8)
-    return w, layout
-
-
-def field(layout: QVBoxLayout, text: str, widget: QWidget, help_text: str = "") -> None:
-    layout.addWidget(label(text, "section"))
-    widget.setAccessibleName(text)
-    layout.addWidget(widget)
-    if help_text:
-        layout.addWidget(label(help_text, "secondary"))
-
-
-def section(layout: QVBoxLayout, text: str) -> None:
-    if layout.count():
-        line = QFrame()
-        line.setProperty("role", "separator")
-        layout.addWidget(line)
-    layout.addWidget(label(text, "section"))
+    def show_feedback(self, text: str, error: bool = False) -> None:
+        self.notice_timer.stop()
+        status(self.message, text, error)
+        if not error:
+            self.notice_timer.start(3500)
 
 
 def technical(layout: QVBoxLayout, text: str) -> None:
@@ -155,15 +112,20 @@ def technical(layout: QVBoxLayout, text: str) -> None:
 
 
 def feedback(text: str, parent=None, error: bool = False) -> None:
-    # A short, owned dialog avoids inheriting mismatched colors from Anki tooltips.
+    owner = parent or _settings
+    if owner is not None and owner.isVisible() and hasattr(owner, "show_feedback"):
+        owner.show_feedback(text, error)
+        return
+    # Background completion has no originating surface when Settings is closed.
     dialog = Dialog("PronounceIt", parent)
     dialog.body.addWidget(label(text, "error" if error else "success"))
     dialog.close_button()
-    dialog.fit(380, 130)
+    dialog.fit(440, 220)
     dialog.setModal(False)
     dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     dialog.show()
-    QTimer.singleShot(2500 if not error else 6000, dialog.close)
+    if not error:
+        QTimer.singleShot(3500, dialog.close)
     # Keep its Python wrapper alive until Qt destroys the window.
     _feedback.append(dialog)
     dialog.destroyed.connect(lambda: _feedback.remove(dialog) if dialog in _feedback else None)
@@ -177,14 +139,14 @@ def error_dialog(text: str, details: str, parent=None) -> None:
     dialog.body.addWidget(label(text, "error"))
     technical(dialog.body, details)
     dialog.close_button()
-    dialog.fit(460, 190)
+    dialog.fit(500, 300)
     dialog.exec()
 
 
 def play(payload: dict, target: QLabel) -> None:
     status(target, "Playing…")
     ok = core._handle_speak(core._playback_payload_from_lookup(payload))
-    status(target, "Played." if ok else "Could not play this pronunciation. Check your audio settings or open Troubleshoot audio.", not ok)
+    status(target, "Playback started." if ok else "Could not play this pronunciation. Check your audio settings or open Troubleshoot audio.", not ok)
 
 
 def save(payload: dict, target: QLabel, control: QPushButton) -> None:
@@ -203,12 +165,12 @@ def save(payload: dict, target: QLabel, control: QPushButton) -> None:
         status(target, "Could not save. Your existing pronunciations are unchanged. See Troubleshoot audio for details.", True)
 
 
-class Result(QWidget):
+class Result(SettingsCard):
     def __init__(self, payload: dict, parent=None):
-        super().__init__(parent)
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(8)
+        super().__init__("")
+        if parent is not None:
+            self.setParent(parent)
+        self.layout = self.body
         term = str(payload.get("term") or payload.get("requestedText") or "")
         self.layout.addWidget(label(term, "title"))
         pronunciation = str(payload.get("pronunciation") or "")
@@ -263,15 +225,15 @@ def show_search(term: str = "", payload: dict | None = None, parent=None) -> Non
         while results.count():
             results.takeAt(0).widget().deleteLater()
         results.addWidget(Result(initial if initial is not None else core._lookup_payload(value)))
-        if dialog.height() < 245:
-            dialog.resize(dialog.width(), min(245, dialog.screen().availableGeometry().height() - 80))
+        apply_fonts(dialog)
     search.clicked.connect(lambda: lookup())
     query.returnPressed.connect(lambda: lookup())
     dialog.close_button()
-    dialog.fit(500, 245 if term else 125)
+    dialog.fit(560, 360)
     if term:
         lookup(payload)
     else:
+        results.addWidget(label("Enter a word or medical term to see its pronunciation.", "secondary"))
         query.setFocus()
     dialog.exec()
 
@@ -295,7 +257,9 @@ def show_custom(parent=None) -> None:
         custom = current.get("custom")
         if not speech.isModified():
             speech.setText(str(current.get("speechText") or "") if current.get("useTextOverride") else "")
-        dialog.setWindowTitle("Edit custom pronunciation" if custom else "Add custom pronunciation")
+        title = "Edit custom pronunciation" if custom else "Add custom pronunciation"
+        dialog.setWindowTitle(title)
+        dialog.heading.setText(title)
         loaded["term"] = value
     term.editingFinished.connect(populate)
     def commit():
@@ -316,13 +280,13 @@ def show_custom(parent=None) -> None:
     dialog.footer.addStretch()
     dialog.footer.addWidget(button("Cancel", dialog.reject))
     dialog.footer.addWidget(button("Save", commit, "primary"))
-    dialog.fit(520, 260)
+    dialog.fit(560, 420)
     term.setFocus()
     dialog.exec()
 
 
 def show_saved(parent=None) -> None:
-    dialog = Dialog("Saved pronunciations", parent)
+    dialog = Dialog("Saved pronunciations", parent, scrollable=False)
     try:
         items = [core._current_saved_entry(item) for item in core._saved.load()] if core._saved else []
     except StorageError as exc:
@@ -347,7 +311,9 @@ def show_saved(parent=None) -> None:
     view.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
     model = QStandardItemModel(view)
     view.setModel(model)
-    dialog.body.addWidget(view)
+    view.setMinimumHeight(80)
+    view.setAccessibleName("Saved pronunciations")
+    dialog.body.addWidget(view, 1)
     guide = label("", "pronunciation")
     dialog.body.addWidget(guide)
     play_button = button("Play", role="primary")
@@ -393,7 +359,6 @@ def show_saved(parent=None) -> None:
         hint.setVisible(not visible and not needle)
         clear.setVisible(not visible and bool(needle))
         empty.setText(f'No matches for “{query.text().strip()}”.' if needle else "No saved pronunciations yet.")
-        view.setFixedHeight(min(260, max(64, len(visible) * 60)))
         if visible:
             row = next((i for i, item in enumerate(visible) if saved_entry_key(item) == previous), 0)
             view.setCurrentIndex(model.index(row, 0))
@@ -417,7 +382,7 @@ def show_saved(parent=None) -> None:
     remove.clicked.connect(remove_selected)
     query.textChanged.connect(refresh)
     refresh()
-    dialog.fit(620, min(490, 178 + len(items) * 60) if items else 190)
+    dialog.fit(720, 520)
     dialog.exec()
 
 
@@ -426,7 +391,7 @@ def show_report(title: str, summary: str, details: str, parent=None, error: bool
     dialog.body.addWidget(label(summary, "error" if error else "secondary"))
     technical(dialog.body, details)
     dialog.close_button()
-    dialog.fit(590, min(440, 160 + summary.count("\n") * 20))
+    dialog.fit(590, 440)
     dialog.exec()
 
 
@@ -437,7 +402,7 @@ def show_library(parent=None) -> None:
     detail = label("", "secondary")
     dialog.body.addWidget(detail)
     dialog.close_button()
-    dialog.fit(500, 200)
+    dialog.fit(540, 320)
     alive = {"value": True}
     dialog.finished.connect(lambda *_: alive.update(value=False))
     def finished(future):
@@ -473,13 +438,12 @@ def show_diagnostics(parent=None) -> None:
 
 
 def show_onboarding() -> None:
-    dialog = Dialog("Audio library")
-    dialog.body.addWidget(label("Download the audio library?", "title"))
+    dialog = Dialog("Download the audio library?")
     dialog.body.addWidget(label("Download all 95,902 audio pronunciations in one library (about 1.03 GiB). Written pronunciations are already included. The download runs in the background.", "secondary"))
     dialog.footer.addStretch()
     dialog.footer.addWidget(button("Not now", dialog.reject))
     dialog.footer.addWidget(button("Download library", dialog.accept, "primary"))
-    dialog.fit(500, 175)
+    dialog.fit(540, 260)
     accepted = dialog.exec() == QDialog.DialogCode.Accepted
     try:
         core._complete_audio_pack_onboarding(accepted)
@@ -488,306 +452,7 @@ def show_onboarding() -> None:
         feedback("Could not save your download choice. Try again in Audio settings.", error=True)
 
 
-class Settings(Dialog):
-    def __init__(self):
-        super().__init__("PronounceIt settings")
-        self.config = core._config()
-        self.controls: dict[str, Any] = {}
-        self.tabs = QTabWidget()
-        self.outer.removeWidget(self.scroll)
-        self.scroll.hide()
-        self.outer.insertWidget(0, self.tabs, 1)
-        self.review = self.page("Review")
-        self.audio = self.page("Audio")
-        self.tools = self.page("Tools")
-        self.footer.addWidget(button("Restore defaults", self.restore, "quiet"))
-        self.footer.addWidget(button("Support", core._open_support_url, "quiet"))
-        self.footer.addStretch()
-        self.footer.addWidget(button("Cancel", self.reject))
-        self.footer.addWidget(button("Save", self.commit, "primary"))
-        self.settings_message = label()
-        self.settings_message.hide()
-        self.outer.insertWidget(1, self.settings_message)
-        self.build_review()
-        self.build_audio()
-        self.build_tools()
-        self.load(self.config)
-        self.fit(660, 550)
-        self.tabs.currentChanged.connect(self.fit_tab)
-        self.finished.connect(lambda *_: core._send_reviewer_config())
-
-    def fit_tab(self, index):
-        page = self.tabs.widget(index).widget()
-        extra = sum(int(item.property("contentHeight") or 0) for item in page.findChildren(QPushButton) if item.property("disclosure") and item.isChecked())
-        height = (550, 450, 370)[index] + extra
-        self.resize(self.width(), min(height, self.screen().availableGeometry().height() - 80))
-
-    def page(self, name):
-        area = QScrollArea()
-        area.setWidgetResizable(True)
-        area.setFrameShape(QFrame.Shape.NoFrame)
-        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        widget, layout = column()
-        layout.setContentsMargins(2, 16, 8, 8)
-        layout.setSpacing(10)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        area.setWidget(widget)
-        self.tabs.addTab(area, name)
-        return layout
-
-    def check(self, layout, key, text):
-        check = QCheckBox(text)
-        self.controls[key] = check
-        layout.addWidget(check)
-        return check
-
-    def combo(self, layout, key, title, choices):
-        combo = QComboBox()
-        for text, value in choices:
-            combo.addItem(text, value)
-        self.controls[key] = combo
-        field(layout, title, combo)
-        return combo
-
-    def build_review(self):
-        self.check(self.review, "enabled", "Enable PronounceIt").toggled.connect(self.dependencies)
-        section(self.review, "Shortcuts")
-        self.shortcut_help = {}
-        for key, text in [("direct_click_modifier", "Play audio"), ("native_context_menu_modifier", "Open quick card")]:
-            combo = QComboBox()
-            core._add_activation_modifier_items(combo)
-            self.controls[key] = combo
-            row = QHBoxLayout()
-            row.addWidget(label(text), 1)
-            row.addWidget(combo)
-            self.review.addLayout(row)
-            help_label = label("", "secondary")
-            self.shortcut_help[key] = help_label
-            self.review.addWidget(help_label)
-            combo.currentIndexChanged.connect(self.dependencies)
-        how, hl = column()
-        hl.addWidget(label("Hold your chosen key while clicking or selecting a term, or select text first and tap the key. Plain right-click keeps Anki’s menu.", "secondary"))
-        disclosure(self.review, "How to use", how)
-        section(self.review, "Review behavior")
-        self.check(self.review, "show_native_context_menu", "Show quick card").toggled.connect(self.dependencies)
-        self.check(self.review, "allow_on_question_side", "Allow pronunciation before revealing the answer")
-        self.check(self.review, "auto_close_on_card_change", "Close quick card when changing cards")
-        self.check(self.review, "show_save_button", "Show Save button")
-        row = QHBoxLayout()
-        row.addWidget(label("Appearance"), 1)
-        theme = QComboBox()
-        theme.addItem("Light", "light")
-        theme.addItem("Dark", "dark")
-        self.controls["theme"] = theme
-        row.addWidget(theme)
-        self.review.addLayout(row)
-        theme.currentIndexChanged.connect(self.preview)
-
-    def build_audio(self):
-        mode = self.combo(self.audio, "audio_backend", "Play using", [("Audio, then computer voice", "local_audio_then_tts"), ("Audio only", "local_audio"), ("Computer voice only", "system_tts")])
-        self.audio.addWidget(label("Audio uses the downloaded library or your custom recordings. Written pronunciations are included with the add-on.", "secondary"))
-        mode.currentIndexChanged.connect(self.dependencies)
-        section(self.audio, "Audio library")
-        self.pack_status = label("", "section")
-        self.audio.addWidget(self.pack_status)
-        self.pack_help = label("", "secondary")
-        self.audio.addWidget(self.pack_help)
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.audio.addWidget(self.progress)
-        row = QHBoxLayout()
-        self.pack_buttons = {}
-        for action in ["Download library", "Pause", "Cancel download", "Check files", "Remove"]:
-            control = button(action, lambda a=action: self.pack_action(a), "primary" if action == "Download library" else "danger" if action == "Remove" else "")
-            self.pack_buttons[action] = control
-            row.addWidget(control)
-        row.addStretch()
-        self.audio.addLayout(row)
-        section(self.audio, "Computer voice")
-        row = QHBoxLayout()
-        row.addWidget(label("Volume"), 1)
-        volume = QSpinBox()
-        volume.setRange(0, 100)
-        volume.setSuffix("%")
-        self.controls["tts_volume"] = volume
-        row.addWidget(volume)
-        self.audio.addLayout(row)
-        voice_options, vl = column()
-        voice = QLineEdit()
-        voice.setPlaceholderText("Use computer default")
-        self.controls["tts_voice"] = voice
-        field(vl, "Voice name", voice)
-        # The existing scale is preserved. Show its neutral value without jargon.
-        class Speed(QSpinBox):
-            def textFromValue(self, value):
-                return "Normal" if value == 0 else str(value)
-            def valueFromText(self, text):
-                return 0 if text.strip().casefold() == "normal" else super().valueFromText(text)
-        rate = Speed()
-        rate.setRange(-10, 10)
-        self.controls["tts_rate"] = rate
-        field(vl, "Speaking speed", rate, "Some voices use their own speed and volume.")
-        disclosure(self.audio, "Voice options", voice_options)
-        self.pack_timer = QTimer(self)
-        self.pack_timer.timeout.connect(self.refresh_pack)
-        self.pack_timer.start(400)
-        self.finished.connect(self.pack_timer.stop)
-        self.refresh_pack()
-
-    def build_tools(self):
-        for heading, entries in [
-            ("Pronunciations", [("Search", lambda: show_search(parent=self)), ("Saved pronunciations", lambda: show_saved(self)), ("Add custom pronunciation", lambda: show_custom(self))]),
-            ("Help", [("Check library", lambda: show_library(self)), ("Troubleshoot audio", lambda: show_diagnostics(self))]),
-        ]:
-            section(self.tools, heading)
-            row = QHBoxLayout()
-            for title, callback in entries:
-                row.addWidget(button(title, callback))
-            row.addStretch()
-            self.tools.addLayout(row)
-        self.selection_button = button("Play selected text", core._pronounce_current_reviewer_selection, "quiet")
-        self.tools.addWidget(self.selection_button, 0, Qt.AlignmentFlag.AlignLeft)
-        self.selection_help = label("Select a term in the reviewer to use this action.", "secondary")
-        self.tools.addWidget(self.selection_help)
-        reviewer = getattr(mw, "reviewer", None)
-        selected = core._selected_text_from_webview(getattr(reviewer, "web", None)) if reviewer else ""
-        self.selection_button.setEnabled(bool(selected and mw.state == "review"))
-        self.selection_help.setVisible(not self.selection_button.isEnabled())
-        files, fl = column()
-        for title, target in [("Saved pronunciations file", core._saved_pronunciations_path), ("Custom pronunciations file", core._custom_pronunciations_path), ("Computer voice audio folder", core._generated_audio_dir), ("PronounceIt folder", core._addon_dir)]:
-            fl.addWidget(button(title, lambda t=target: core._open_path(t()), "quiet"), 0, Qt.AlignmentFlag.AlignLeft)
-        disclosure(self.tools, "Files", files)
-
-    def load(self, config):
-        for key, control in self.controls.items():
-            value = getattr(config, key)
-            if isinstance(control, QCheckBox):
-                control.setChecked(value)
-            elif isinstance(control, QComboBox):
-                control.setCurrentIndex(max(0, control.findData(core._activation_modifier_ui_value(value) if key in {"direct_click_modifier", "native_context_menu_modifier"} else value)))
-            elif isinstance(control, QSpinBox):
-                control.setValue(value)
-            else:
-                control.setText(value)
-        self.dependencies()
-        self.preview()
-
-    def dependencies(self):
-        if "theme" not in self.controls or "tts_voice" not in self.controls:
-            return
-        enabled = self.controls["enabled"].isChecked()
-        popup = enabled and self.controls["show_native_context_menu"].isChecked()
-        for key in ["direct_click_modifier", "show_native_context_menu", "allow_on_question_side"]:
-            self.controls[key].setEnabled(enabled)
-        for key in ["native_context_menu_modifier", "auto_close_on_card_change", "show_save_button"]:
-            self.controls[key].setEnabled(popup)
-        for key, help_label in self.shortcut_help.items():
-            combo = self.controls[key]
-            help_label.setText("Shortcut is off." if combo.currentData() == "disabled" else f"Select text, then tap {combo.currentText()}.")
-        voice = self.controls["audio_backend"].currentData() != "local_audio"
-        for key in ["tts_voice", "tts_rate", "tts_volume"]:
-            self.controls[key].setEnabled(voice)
-
-    def preview(self):
-        if "theme" not in self.controls:
-            return
-        self.set_theme(self.controls["theme"].currentData() or self.config.theme)
-        reviewer = getattr(mw, "reviewer", None)
-        if reviewer and getattr(reviewer, "web", None):
-            data = {"theme": self.theme, "themeTokens": web_theme_tokens(self.theme)}
-            core._eval(reviewer, "window.PronounceIt && window.PronounceIt.configure(" + json.dumps(data) + ");")
-
-    def restore(self):
-        defaults = {**DEFAULT_CONFIG, "theme": core._current_anki_theme(), "theme_initialized": True, "audio_pack_prompt_seen": self.config.audio_pack_prompt_seen}
-        self.load(PronounceItConfig.from_mapping(defaults))
-
-    def commit(self):
-        values = self.config.as_config_mapping()
-        for key, control in self.controls.items():
-            values[key] = control.isChecked() if isinstance(control, QCheckBox) else control.currentData() if isinstance(control, QComboBox) else control.value() if isinstance(control, QSpinBox) else control.text().strip()
-        values["theme_initialized"] = True
-        # Pack operations may have completed onboarding while this draft was open.
-        values["audio_pack_prompt_seen"] = core._config().audio_pack_prompt_seen
-        try:
-            core._write_config(values)
-        except Exception as exc:
-            core._record_runtime_diagnostic(str(exc))
-            status(self.settings_message, "Could not save settings. Please try again.", True)
-            return
-        self.accept()
-        feedback("Settings saved.")
-
-    def refresh_pack(self):
-        controller = core._audio_pack_download
-        if controller is None:
-            self.pack_status.setText("Library unavailable")
-            return
-        state = controller.refresh()
-        self.pack_state = state
-        view = core._pack_presentation(state)
-        self.pack_status.setText(view.status.replace("Verifying", "Checking files"))
-        self.progress.setVisible(view.progress_visible)
-        self.progress.setRange(0, 0 if view.progress_indeterminate else 100)
-        self.progress.setValue(view.progress_percent)
-        help_text = "Download the complete audio library (about 1.03 GiB)."
-        if state.phase == "paused":
-            help_text = "Resume whenever you’re ready. Downloaded files are kept."
-        elif state.phase == "verifying":
-            help_text = "Checking downloaded files. This may take a moment."
-        elif state.phase == "cancelling":
-            help_text = "Stopping the download. Downloaded files will be kept."
-        elif state.running:
-            help_text = "The download continues when you close settings."
-        elif state.phase == "failed":
-            help_text = "The download could not finish. Check your connection and available disk space, then try again."
-        elif state.phase == "cancelled":
-            help_text = "Resume to finish the download. Downloaded files are kept."
-        elif state.installed:
-            help_text = "Ready to use. The library stays installed when PronounceIt updates."
-        self.pack_help.setText(help_text)
-        for control in self.pack_buttons.values():
-            control.hide()
-        start = self.pack_buttons["Download library"]
-        if not state.running:
-            start.setText("Update" if state.installed else "Resume" if state.total_bytes or state.total_shards else "Retry" if state.phase == "failed" else "Download library")
-            start.show()
-            if state.installed or state.total_shards:
-                self.pack_buttons["Check files"].show()
-                self.pack_buttons["Remove"].show()
-        else:
-            if state.phase in {"downloading", "paused"}:
-                pause = self.pack_buttons["Pause"]
-                pause.setText("Resume" if state.paused else "Pause")
-                pause.show()
-            if state.phase in {"preparing", "downloading", "paused"}:
-                self.pack_buttons["Cancel download"].show()
-
-    def pack_action(self, action):
-        controller = core._audio_pack_download
-        if controller is None:
-            return
-        try:
-            if action == "Download library":
-                core._complete_audio_pack_onboarding(True)
-            elif action == "Pause":
-                controller.resume() if self.pack_state.paused else controller.pause()
-            elif action == "Cancel download":
-                controller.cancel()
-            elif action == "Check files":
-                controller.start_verify()
-            elif action == "Remove":
-                confirm = Dialog("Remove audio library?", self)
-                confirm.body.addWidget(label("This removes the downloaded audio library. Your saved words and custom pronunciations stay available."))
-                confirm.footer.addStretch()
-                confirm.footer.addWidget(button("Keep library", confirm.reject))
-                confirm.footer.addWidget(button("Remove library", confirm.accept, "danger"))
-                confirm.fit(460, 190)
-                if confirm.exec() == QDialog.DialogCode.Accepted:
-                    controller.remove()
-        except Exception as exc:
-            core._record_runtime_diagnostic(str(exc))
-            status(self.settings_message, "Could not complete this action. Open Troubleshoot audio for details.", True)
-        self.refresh_pack()
+from .settings import Settings
 
 
 _settings: Settings | None = None

@@ -1,6 +1,6 @@
 # PronounceIt Configuration
 
-The settings dialog has Review, Audio, and Tools tabs. The bundled `config.json` supplies defaults; Anki’s add-on manager persists user settings.
+The settings workspace has Review, Audio, Tools, and About & support sections. The bundled `config.json` supplies defaults; Anki’s add-on manager persists user settings. **Save changes** applies the draft without closing settings, **Discard changes** restores saved values, and closing an unsaved draft offers a choice to keep editing, discard, or save and close. Restoring defaults changes the draft while preserving downloaded audio and saved words.
 
 ## Review
 
@@ -20,7 +20,7 @@ The settings dialog has Review, Audio, and Tools tabs. The bundled `config.json`
 
 ## Audio library
 
-- The Audio tab shows pack status and only the actions relevant to its current state: Download/Update, Pause/Resume, Cancel download, Check files, and Remove.
+- The Audio section shows library status and only the actions relevant to its current state: Download/Update, Pause/Resume, Cancel download, Check files, and Remove. File checks and removal are under **Manage library**.
 - `audio_pack_prompt_seen`: internal one-time onboarding state. Reset to defaults does not clear it.
 - `audio_pack_cache_mb`: maximum extracted pack cache size. Defaults to `250` and is clamped to 50–2000 MiB. Downloaded ZIP shards are preserved separately and are not counted against this cache.
 

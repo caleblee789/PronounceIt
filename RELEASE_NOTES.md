@@ -2,6 +2,11 @@
 
 This development update simplifies PronounceIt to audio pronunciations and written pronunciations for all 95,902 terms. The complete audio library remains one separate download, using the existing v1.3.0 audio unchanged.
 
+- Rebuilds settings around Review, Audio, Tools, and About & support, with a sidebar, grouped cards, responsive layouts, and consistent Light/Dark colors adapted from the owner's Home Screen Dashboard.
+- Keeps navigation and save actions visible, previews appearance changes, saves without closing, and offers explicit discard and unsaved-close choices.
+- Adds compact audio progress, computer voice sliders, expandable maintenance and advanced voice controls, and clear local status messages.
+- Gives search, saved pronunciations, custom editors, and other dialogs consistent sizing and styling; saved lists expand with the window.
+- Includes the image-based Buy Me a Coffee button in the settings footer and support links in About & support.
 - Removes high-yield groups, term quality tiers, and the 155-clip bundled subset from the runtime and package.
 - Stores compact audio and written inventories; preserves attribution and source-review evidence separately.
 - Retains compatibility with already downloaded v1.3.0 audio through an exact manifest and inventory binding.
@@ -13,7 +18,7 @@ This development update simplifies PronounceIt to audio pronunciations and writt
 - Reports settings write failures instead of claiming success and permits enabling reviewer integration without a webview reload.
 - Preserves deterministic packaging, includes both audio and written-guide source notices, excludes private data, and replaces an existing build only after validation succeeds.
 
-Validation is limited to automated checks and package inspection until the native smoke test in `RELEASE_CHECKLIST.md` is performed. Anki was not launched for this review. No new release tag or public add-on package is published by this source merge.
+The existing 183-test suite passed before the final documentation and packaging update. Initial native review covered the dark Review settings page and support button; further testing was stopped at the owner's request. Broader native acceptance remains incomplete. No new release tag or public add-on package is published by this source merge.
 
 # PronounceIt v1.3.0
 

@@ -17,7 +17,7 @@ Search and quick cards show the written pronunciation. **Play** uses the audio l
 
 ## Install
 
-Build this checkout and install `dist/pronounceit.ankiaddon` through **Tools > Add-ons > Install from file...**, then restart Anki when you are ready to test it. This development update has not been published. The earlier [v1.3.0 release](https://github.com/caleblee789/PronounceIt/releases/download/v1.3.0/pronounceit.ankiaddon) and [AnkiWeb listing](https://ankiweb.net/shared/info/1352407063) are separate distribution channels.
+Build this checkout and install `dist/pronounceit.ankiaddon` through **Tools > Add-ons > Install from file...**, then restart Anki to load the update. Install over the existing PronounceIt add-on so its settings and `user_files/` directory are retained. This development update has not been published. The earlier [v1.3.0 release](https://github.com/caleblee789/PronounceIt/releases/download/v1.3.0/pronounceit.ankiaddon) and [AnkiWeb listing](https://ankiweb.net/shared/info/1352407063) are separate distribution channels.
 
 Open **Caleb M. Add-ons Settings > PronounceIt settings > Audio > Download library** to get every audio pronunciation. The download runs in the background. Its 16 transport files are managed automatically as one library; there are no packs or categories to choose between.
 
@@ -25,13 +25,18 @@ The existing full v1.3.0 audio download remains compatible. Updating this add-on
 
 ## Settings
 
-| Tab | Controls |
-| --- | --- |
-| **Review** | Enable PronounceIt, choose playback and quick-card keys, allow pronunciation before revealing an answer, show Save, and choose Light or Dark appearance. |
-| **Audio** | Choose playback mode, manage the complete audio library, and set computer voice, speed, and volume where supported. |
-| **Tools** | Search, saved pronunciations, custom corrections, library checks, audio troubleshooting, and local file shortcuts. |
+Open **Caleb M. Add-ons Settings > PronounceIt settings**. The sidebar organizes settings into four sections, with related controls grouped into cards. The layout adapts to the available window width, and navigation and save controls stay visible while you scroll.
 
-Pronunciation before revealing an answer is enabled by default. Turn it off on the Review tab if hearing a term would reveal the answer. Appearance changes preview immediately; **Save** keeps settings and **Cancel** discards the draft. A failed settings save leaves the draft open.
+| Section | Controls |
+| --- | --- |
+| **Review** | Enable PronounceIt, choose playback and quick-card keys, allow pronunciation before revealing an answer, control quick-card behavior, and choose Light or Dark appearance. |
+| **Audio** | Choose playback mode, manage the complete audio library, and adjust computer voice volume and speed with sliders. Advanced voice options are expandable. |
+| **Tools** | Search, saved pronunciations, custom corrections, pronunciation-data checks, and audio troubleshooting. |
+| **About & support** | Support the creator, open local files, and restore default settings. |
+
+Pronunciation before revealing an answer is enabled by default. Turn it off in Review if hearing a term would reveal the answer.
+
+Appearance changes preview immediately across settings and pronunciation cards. **Save changes** applies your draft and keeps the window open; it is enabled only when something has changed. **Discard changes** restores the saved settings and appearance. Closing with unsaved changes offers **Keep editing**, **Discard changes**, or **Save and close**. A failed save keeps your draft available and shows an error in the window.
 
 Playback modes are **Audio, then computer voice**, **Audio only**, and **Computer voice only**. Audio uses a custom recording when provided, then the downloaded library. Audio-only mode disables Play when no suitable recording is available. Computer voice availability depends on your operating system; changing the text read aloud, voice, or speed selects a new speech-cache entry.
 
@@ -39,9 +44,9 @@ The first-run prompt offers the audio library once. Settings provides Download, 
 
 ## Saved terms and custom corrections
 
-Use **Tools > Saved pronunciations** to search saved words, play them, open the original card or note in Browse when available, or remove a word.
+In settings, use **Tools > Saved pronunciations > Open saved** to search saved words, play them, open the original card or note in Browse when available, or remove a word. The list expands with the window, and empty lists and unmatched searches have distinct guidance.
 
-Use **Tools > Add custom pronunciation** to enter a term and its written pronunciation. A canonical term’s correction also applies to its aliases. **Additional options > Text read aloud** supplies an explicit computer-speech correction; leave it blank to retain normal audio. An explicit speech correction takes precedence over recordings and requires a mode that allows computer voice. Saving a pronunciation preserves its speech override for later playback.
+Use **Tools > Custom pronunciation > Add custom** to enter a term and its written pronunciation. A canonical term’s correction also applies to its aliases. **Additional options > Text read aloud** supplies an explicit computer-speech correction; leave it blank to retain normal audio. An explicit speech correction takes precedence over recordings and requires a mode that allows computer voice. Saving a pronunciation preserves its speech override for later playback.
 
 User data lives in the add-on’s `user_files/` directory:
 
@@ -51,6 +56,12 @@ User data lives in the add-on’s `user_files/` directory:
 - `audio_packs/`, `audio_cache/`, and `generated_audio/`: the downloaded library and playback caches.
 
 These files survive add-on upgrades. They are local to the Anki installation and shared by profiles using the same add-ons directory; they are not synced through AnkiWeb. Saved/custom JSON updates are atomic and retain a `.bak` backup. Damaged JSON is left unchanged and reported through the interface. Existing custom entries and saved terms remain compatible, including legacy speech overrides and optional `syllables` fields.
+
+## Support
+
+The **Buy Me a Coffee** button stays in the settings footer, with another support link in **About & support**.
+
+<a href="https://buymeacoffee.com/caleblee78f"><img src="pronounceit/assets/buy_me_a_coffee.png" alt="Buy Me a Coffee" width="140"></a>
 
 ## Development
 
@@ -65,7 +76,7 @@ The runtime has two inventories:
 | `quality/pronunciation_sources/` | Original audio contract and written-source evidence, outside the runtime package. |
 | `quality/legacy_bundled_audio/` | Preserved evidence and clips from the retired bundled subset. |
 
-`pronounceit/` contains lookup, playback, downloads, storage, and Qt dialogs; `web/` contains reviewer JavaScript and CSS. Current Kokoro generation tools live in `scripts/audio/`, written-source tools in `scripts/corpus/`, and packaging utilities in `scripts/release/`. Retired Azure generation tools remain in Git history.
+`pronounceit/` contains lookup, playback, downloads, storage, and Qt dialogs; `web/` contains reviewer JavaScript and CSS. Settings live in `pronounceit/settings.py`, shared dialog components in `pronounceit/ui_components.py`, and the common Light/Dark palette in `pronounceit/theme.py`. The settings design adapts the owner's Home Screen Dashboard components with permission; PronounceIt remains independent and does not require that add-on. Current Kokoro generation tools live in `scripts/audio/`, written-source tools in `scripts/corpus/`, and packaging utilities in `scripts/release/`. Retired Azure generation tools remain in Git history.
 
 ### Validate and build without Anki
 

@@ -15,11 +15,11 @@ def _contrast(first: str, second: str) -> float:
 
 
 class ThemeTests(unittest.TestCase):
-    def test_neutral_light_and_dark_palette(self) -> None:
-        self.assertEqual((LIGHT.window_bg, LIGHT.card_bg), ("#f5f6f8", "#ffffff"))
-        self.assertEqual((DARK.window_bg, DARK.card_bg), ("#1c1f24", "#24282f"))
-        self.assertEqual(LIGHT.accent, "#2563eb")
-        self.assertEqual(DARK.accent, "#2563eb")
+    def test_dashboard_light_and_dark_palette(self) -> None:
+        self.assertEqual((LIGHT.window_bg, LIGHT.card_bg), ("#F3F6F8", "#FFFFFF"))
+        self.assertEqual((DARK.window_bg, DARK.card_bg), ("#0B1118", "#151D26"))
+        self.assertEqual(LIGHT.accent, "#315D7A")
+        self.assertEqual(DARK.accent, "#9FBAD1")
 
     def test_theme_resolution_has_only_light_and_dark_outputs(self) -> None:
         self.assertIs(theme_tokens("dark"), DARK)
@@ -55,7 +55,8 @@ class ThemeTests(unittest.TestCase):
                     (tokens.danger, tokens.card_bg),
                 ):
                     self.assertGreaterEqual(_contrast(foreground, background), 4.5)
-                self.assertGreaterEqual(_contrast(tokens.card_border, tokens.card_bg), 3.0)
+                self.assertGreaterEqual(_contrast(tokens.field_border, tokens.field_bg), 3.0)
+                self.assertGreaterEqual(_contrast(tokens.focus_border, tokens.field_bg), 3.0)
 
 
 if __name__ == "__main__":

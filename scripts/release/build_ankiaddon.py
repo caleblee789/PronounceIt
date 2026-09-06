@@ -58,6 +58,8 @@ REQUIRED_ARCHIVE_FILES = {
     "pronounceit/tts.py",
     "pronounceit/qa.py",
     "pronounceit/ui.py",
+    "pronounceit/ui_components.py",
+    "pronounceit/settings.py",
     "pronounceit/theme.py",
     "pronounceit/written_guides.py",
     "pronounceit/assets/buy_me_a_coffee.png",

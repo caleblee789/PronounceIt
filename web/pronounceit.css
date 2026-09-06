@@ -1,18 +1,23 @@
 .pronounceit-popup,
 .pronounceit-notice {
-  --pronounceit-bg: #ffffff;
-  --pronounceit-surface: #f5f6f8;
-  --pronounceit-text: #1f2937;
-  --pronounceit-muted: #667085;
-  --pronounceit-border: #d9dfe7;
-  --pronounceit-accent: #2563eb;
-  --pronounceit-accent-strong: #1d4ed8;
-  --pronounceit-accent-text: #ffffff;
-  --pronounceit-hover: #eaf0fb;
-  --pronounceit-shadow: rgba(15, 23, 42, 0.18);
-  --pronounceit-status: #15803d;
-  --pronounceit-guidance: #945b05;
-  --pronounceit-danger: #b42318;
+  --pronounceit-bg: #FFFFFF;
+  --pronounceit-surface: #F7F9FB;
+  --pronounceit-text: #111827;
+  --pronounceit-muted: #637180;
+  --pronounceit-border: #C7D1DB;
+  --pronounceit-accent: #315D7A;
+  --pronounceit-accent-strong: #315D7A;
+  --pronounceit-accent-text: #FFFFFF;
+  --pronounceit-accent-hover: #506D87;
+  --pronounceit-accent-pressed: #445F78;
+  --pronounceit-control-border: #AAB8C5;
+  --pronounceit-disabled: #52606D;
+  --pronounceit-disabled-bg: #EDF1F4;
+  --pronounceit-hover: #EDF1F4;
+  --pronounceit-shadow: rgba(15, 23, 42, 0.20);
+  --pronounceit-status: #2F7D50;
+  --pronounceit-guidance: #8A6815;
+  --pronounceit-danger: #A6424A;
   box-sizing: border-box;
   position: fixed;
   z-index: 2147483647;
@@ -38,36 +43,44 @@
 .pronounceit-theme-light { color-scheme: light; }
 .pronounceit-theme-dark {
   color-scheme: dark;
-  --pronounceit-bg: #24282f;
-  --pronounceit-surface: #20242b;
-  --pronounceit-text: #eef1f5;
-  --pronounceit-muted: #adb6c2;
-  --pronounceit-border: #39414c;
-  --pronounceit-accent-strong: #60a5fa;
-  --pronounceit-hover: #30363f;
+  --pronounceit-bg: #151D26;
+  --pronounceit-surface: #1B2631;
+  --pronounceit-text: #F1F5F9;
+  --pronounceit-muted: #87939F;
+  --pronounceit-border: #2B3948;
+  --pronounceit-accent: #9FBAD1;
+  --pronounceit-accent-strong: #B1C9DD;
+  --pronounceit-accent-text: #0D131A;
+  --pronounceit-accent-hover: #B1C9DD;
+  --pronounceit-accent-pressed: #8AA7BF;
+  --pronounceit-control-border: #3A4C5E;
+  --pronounceit-disabled: #A9B4C0;
+  --pronounceit-disabled-bg: #202C37;
+  --pronounceit-hover: #202C37;
   --pronounceit-shadow: rgba(0, 0, 0, 0.38);
-  --pronounceit-status: #6fd28c;
-  --pronounceit-guidance: #f4bd55;
-  --pronounceit-danger: #fca5a5;
+  --pronounceit-status: #63D49A;
+  --pronounceit-guidance: #E2BD57;
+  --pronounceit-danger: #EE7880;
 }
 .pronounceit-popup { width: min(380px, calc(100vw - 20px)); padding: 0; }
-.pronounceit-card { display: grid; gap: 10px; padding: 16px; }
+.pronounceit-card { display: grid; gap: 12px; padding: 16px; }
 .pronounceit-card-header { display: flex; align-items: start; gap: 8px; }
 .pronounceit-term {
   flex: 1; min-width: 0; margin: 0; padding: 0; color: var(--pronounceit-text);
-  font-size: 18px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere;
+  font-size: 18px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere;
 }
 .pronounceit-popup button {
-  appearance: none; font: inherit; line-height: 18px; min-height: 32px;
-  border: 1px solid var(--pronounceit-border); border-radius: 6px;
+  appearance: none; font: inherit; line-height: 18px; min-height: 34px;
+  border: 1px solid var(--pronounceit-control-border); border-radius: 8px;
   padding: 6px 12px; margin: 0; cursor: pointer; box-shadow: none;
   background: var(--pronounceit-surface); color: var(--pronounceit-text);
 }
 .pronounceit-popup .pronounceit-close {
-  flex: 0 0 26px; min-height: 26px; padding: 2px; margin: -4px -4px 0 0;
+  flex: 0 0 34px; min-height: 34px; padding: 2px; margin: -4px -4px 0 0;
   font-size: 20px; background: transparent; color: var(--pronounceit-muted); border-color: transparent;
 }
 .pronounceit-pronunciation-block { min-width: 0; }
+.pronounceit-pronunciation-label { margin-bottom: 4px; color: var(--pronounceit-muted); font-size: 12px; line-height: 1.4; }
 .pronounceit-pronunciation {
   color: var(--pronounceit-text); font-size: 20px; font-weight: 550; line-height: 1.4;
   overflow-wrap: anywhere;
@@ -78,9 +91,9 @@
   background: var(--pronounceit-accent); border-color: var(--pronounceit-accent); color: var(--pronounceit-accent-text);
 }
 .pronounceit-popup button:hover { background: var(--pronounceit-hover); }
-.pronounceit-popup .pronounceit-play-button:hover { background: #1d4ed8; }
-.pronounceit-popup button:focus-visible, .pronounceit-details summary:focus-visible { outline: 2px solid var(--pronounceit-accent-strong); outline-offset: 2px; }
-.pronounceit-popup button:disabled { cursor: default; opacity: .62; }
+.pronounceit-popup .pronounceit-play-button:hover { background: var(--pronounceit-accent-hover); }
+.pronounceit-popup button:focus-visible, .pronounceit-details summary:focus-visible { outline: 3px solid var(--pronounceit-accent-strong); outline-offset: 2px; }
+.pronounceit-popup button:disabled { cursor: default; color: var(--pronounceit-disabled); background: var(--pronounceit-disabled-bg); border-color: var(--pronounceit-border); }
 .pronounceit-details { color: var(--pronounceit-muted); font-size: 12px; }
 .pronounceit-details summary { cursor: pointer; width: fit-content; }
 .pronounceit-source { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--pronounceit-muted); }
