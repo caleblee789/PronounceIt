@@ -166,13 +166,14 @@ class AudioPackDownloadController:
     def _progress(self, done: int, total: int, shard: str) -> None:
         with self._lock:
             paused = self._state.paused
+            cancelling = self._state.phase == "cancelling"
             self._state = replace(
                 self._state,
-                phase="paused" if paused else "downloading",
+                phase="cancelling" if cancelling else "paused" if paused else "downloading",
                 done_bytes=max(0, int(done)),
                 total_bytes=max(0, int(total)),
                 shard=str(shard),
-                message=(
+                message=self._state.message if cancelling else (
                     "Offline pronunciation pack download paused."
                     if paused
                     else "Downloading offline pronunciation pack…"

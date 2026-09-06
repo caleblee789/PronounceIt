@@ -7,6 +7,7 @@ Version 1.3.0 replaces the complete audio collection with the accepted American 
 - Preserves the written guides from v1.2.1, every canonical term and alias, custom overrides, saved words, and existing playback controls.
 - Supports version 3 provenance and clip checksum metadata while retaining version 2 compatibility for matching older dictionaries.
 - Checks cached recordings against the current clip checksum so an older clip cannot hide a correction.
+- Keeps the download in its cancelling state when an in-flight transfer reports final progress.
 - Shows only Word and Pronunciation in the details window, with wrapping for long guides.
 - Includes pronunciation-source attribution and applicable asset licenses separately from the application code license.
 

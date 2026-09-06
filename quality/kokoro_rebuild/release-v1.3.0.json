@@ -33,5 +33,6 @@
   "dictionaryAuditPassed": true,
   "python311SyntaxPassed": true,
   "ownerPublicationApproved": true,
-  "installerSha256": "d35297f6d49b8478bce1dcf8901115f7d7595a9d0e0455a3c9981ab3181588c3"
+  "installerSha256": "3c8e3de32ebd5873384b49e826a9a23eee71b133bca4dc2ee8c8b39ff9b5207e",
+  "cancellationRaceRegressionPassed": true
 }
