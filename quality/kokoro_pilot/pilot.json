@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "pilotId": "kokoro-medical-10-v2",
+  "dialect": "en-US",
+  "phonemeAlphabet": "arpabet-syllables-v1",
+  "method": {
+    "provider": "kokoro-local",
+    "modelRepo": "hexgrad/Kokoro-82M",
+    "modelRevision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+    "modelFile": "kokoro-v1_0.pth",
+    "expectedModelSha256": "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4",
+    "voice": "af_heart",
+    "speed": 0.95,
+    "sampleRate": 24000,
+    "bitrateKbps": 48,
+    "seed": 42,
+    "device": "cpu"
+  },
+  "terms": [
+    {
+      "term": "sphygmomanometer",
+      "reason": "Consonant cluster, six syllables, and a confirmed error in the current guide.",
+      "words": [{"text": "sphygmomanometer", "syllables": ["S F IH2 G", "M OW0", "M AH0", "N AA1", "M AH0", "T ER0"]}],
+      "sources": [{"title": "Merriam-Webster Medical", "url": "https://www.merriam-webster.com/dictionary/sphygmomanometer", "accessed": "2026-09-05", "pronunciationExcerpt": "ˌsfig-mō-mə-ˈnä-mə-tər"}],
+      "note": "The current guide incorrectly ends in stern. This candidate restores the meter ending."
+    },
+    {
+      "term": "choledocholithiasis",
+      "reason": "Eight syllables with secondary and primary stress.",
+      "words": [{"text": "choledocholithiasis", "syllables": ["K OW0", "L EH2", "D OW0", "K OW0", "L IH0", "TH AY1", "AH0", "S IH0 S"]}],
+      "sources": [{"title": "Merriam-Webster Medical", "url": "https://www.merriam-webster.com/medical/choledocholithiasis", "accessed": "2026-09-05", "pronunciationExcerpt": "-lith-ˈī-ə-səs"}],
+      "note": "The reference abbreviates the prefix. The prefix follows the existing curated medical guide; primary stress is on THY."
+    },
+    {
+      "term": "pheochromocytoma",
+      "reason": "Full vowels in the pheo and chromo syllables.",
+      "words": [{"text": "pheochromocytoma", "syllables": ["F IY2", "OW0", "K R OW2", "M OW0", "S AY0", "T OW1", "M AH0"]}],
+      "sources": [{"title": "National Cancer Institute", "url": "https://www.cancer.gov/publications/dictionaries/cancer-terms/def/pheochromocytoma", "accessed": "2026-09-05", "pronunciationExcerpt": "FEE-oh-KROH-moh-sy-TOH-muh"}],
+      "note": "Revised to follow the National Cancer Institute's full vowel sequence."
+    },
+    {
+      "term": "dysdiadochokinesia",
+      "reason": "Long consonant and vowel transitions.",
+      "words": [{"text": "dysdiadochokinesia", "syllables": ["D IH0 S", "D AY0", "AE2 D", "OW0", "K OW0", "K IH0", "N IY1", "Z IY0", "AH0"]}],
+      "sources": [{"title": "Farlex Partner Medical Dictionary", "url": "https://medical-dictionary.thefreedictionary.com/dysdiadochocinesia", "accessed": "2026-09-05", "pronunciationExcerpt": "dis-dī-ad'ō-kō-ki-nē'zē-ă"}],
+      "note": "Uses the full nee-zee-uh ending and short ki vowel listed in Farlex Partner Medical Dictionary."
+    },
+    {
+      "term": "levetiracetam",
+      "reason": "Medication stress and unstressed vowels.",
+      "words": [{"text": "levetiracetam", "syllables": ["L IY2", "V AH0", "T AY0", "R AE1", "S AH0", "T AE0 M"]}],
+      "sources": [{"title": "MedlinePlus / ASHP", "url": "https://medlineplus.gov/druginfo/meds/a699059.html", "accessed": "2026-09-05", "pronunciationExcerpt": "lee ve tye ra' se tam"}],
+      "note": "The displayed a in the stressed RA syllable is the short vowel in cat."
+    },
+    {
+      "term": "sulfamethoxazole trimethoprim",
+      "reason": "Two long medication names in one fluent phrase.",
+      "words": [
+        {"text": "sulfamethoxazole", "syllables": ["S AH2 L", "F AH0", "M EH2 TH", "AA1 K", "S AH0", "Z OW2 L"]},
+        {"text": "trimethoprim", "syllables": ["T R AY0", "M EH1 TH", "OW0", "P R IH0 M"]}
+      ],
+      "sources": [
+        {"title": "Merriam-Webster Medical: sulfamethoxazole", "url": "https://www.merriam-webster.com/dictionary/sulfamethoxazole", "accessed": "2026-09-05", "pronunciationExcerpt": "-ˌmeth-ˈäk-sə-ˌzōl"},
+        {"title": "MedlinePlus / ASHP: trimethoprim", "url": "https://medlineplus.gov/druginfo/meds/a684025.html", "accessed": "2026-09-05", "pronunciationExcerpt": "trye meth' oh prim"}
+      ],
+      "note": "Each medication keeps its own primary stress. No pauses are inserted between syllables."
+    },
+    {
+      "term": "Pseudomonas aeruginosa",
+      "reason": "Scientific names with differing pronunciation traditions.",
+      "words": [
+        {"text": "Pseudomonas", "syllables": ["S UW2", "D AH0", "M OW1", "N AH0 S"]},
+        {"text": "aeruginosa", "syllables": ["EH2 R", "UW0", "JH IH0", "N OW1", "S AH0"]}
+      ],
+      "sources": [
+        {"title": "Merriam-Webster Medical: Pseudomonas", "url": "https://www.merriam-webster.com/dictionary/pseudomonas", "accessed": "2026-09-05", "pronunciationExcerpt": "ˌsüd-ə-ˈmō-nəs"},
+        {"title": "LPSN: species name and Latin stress", "url": "https://lpsn.dsmz.de/species/pseudomonas-aeruginosa", "accessed": "2026-09-05", "pronunciationExcerpt": "a͡e-ru-gi-NO-sa"},
+        {"title": "University of Minnesota Duluth: alternative English reading", "url": "https://www.d.umn.edu/~rhicks/genmicro/Pronunciation%20Guide.pdf", "accessed": "2026-09-05", "pronunciationExcerpt": "soo-doh-MOH-nass ah-ridge-IN-oh-sa"}
+      ],
+      "note": "Uses the familiar English reading with NOH stress in aeruginosa. Scientific-name pronunciations can vary."
+    },
+    {
+      "term": "Wernicke encephalopathy",
+      "reason": "An eponym followed by a long medical word.",
+      "words": [
+        {"text": "Wernicke", "syllables": ["V EH1 R", "N IH0", "K AH0"]},
+        {"text": "encephalopathy", "syllables": ["IH0 N", "S EH2 F", "AH0", "L AA1 P", "AH0", "TH IY0"]}
+      ],
+      "sources": [
+        {"title": "Oxford: Wernicke's area, US pronunciation", "url": "https://www.oxfordlearnersdictionaries.com/us/definition/english/wernicke-s-area", "accessed": "2026-09-05", "pronunciationExcerpt": "/ˈvernɪkəz eriə/"},
+        {"title": "Merriam-Webster Medical: encephalopathy", "url": "https://www.merriam-webster.com/dictionary/encephalopathy", "accessed": "2026-09-05", "pronunciationExcerpt": "in-ˌsef-ə-ˈläp-ə-thē"}
+      ],
+      "note": "Uses Oxford's US Wernicke name pronunciation, without the possessive s."
+    },
+    {
+      "term": "metoprolol",
+      "reason": "A familiar medication for judging stress and voice quality.",
+      "words": [{"text": "metoprolol", "syllables": ["M EH0", "T OW1", "P R OW0", "L OW0 L"]}],
+      "sources": [{"title": "MedlinePlus / ASHP", "url": "https://medlineplus.gov/druginfo/meds/a682864.html", "accessed": "2026-09-05", "pronunciationExcerpt": "me toe' proe lole"}],
+      "note": "Primary stress is on TOH."
+    },
+    {
+      "term": "pneumothorax",
+      "reason": "A familiar medical comparison term.",
+      "words": [{"text": "pneumothorax", "syllables": ["N UW2", "M AH0", "TH AO1 R", "AE2 K S"]}],
+      "sources": [{"title": "Merriam-Webster Medical", "url": "https://www.merriam-webster.com/dictionary/pneumothorax", "accessed": "2026-09-05", "pronunciationExcerpt": "ˌnü-mə-ˈthȯr-ˌaks"}],
+      "note": "Uses the common US noo opening; the reference also lists nyoo."
+    }
+  ]
+}

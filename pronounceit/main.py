@@ -42,6 +42,7 @@ CALEB_ADDONS_MENU_OBJECT_NAME = "caleb_m_addons_menu"
 _AUDIO_SOURCE_LABELS = {
     "custom": "Custom audio",
     "azure": "High Quality Downloaded Pack",
+    "recorded": "High Quality Downloaded Pack",
     "generated": "Standard text-to-speech",
     "live": "Standard text-to-speech",
 }
@@ -1615,8 +1616,6 @@ def _pronunciation_detail_fields(payload: dict[str, Any], term: str) -> list[tup
     return [
         ("Word", str(payload.get("term") or payload.get("requestedText") or term)),
         ("Pronunciation", str(payload.get("pronunciation") or _config().unknown_term_message)),
-        ("Syllables", str(payload.get("syllables") or "Unavailable")),
-        ("Speech text", str(payload.get("speechText") or term)),
     ]
 
 
@@ -1628,11 +1627,13 @@ def _show_pronunciation_details(payload: dict[str, Any], term: str) -> None:
 
         dialog = QDialog(mw)
         dialog.setWindowTitle("Pronunciation details")
-        dialog.setMinimumWidth(460)
+        dialog.setMinimumWidth(600)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(20, 20, 20, 16)
         layout.setSpacing(16)
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setHorizontalSpacing(24)
         form.setVerticalSpacing(14)
         for label, value in fields:
@@ -1900,11 +1901,11 @@ def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
         result["audioStatus"] = "Custom audio ready"
         result["audioHelp"] = "Play uses your custom audio file."
     elif found and audio_file and _audio_file_is_available(audio_file):
-        result["audioSource"] = "azure"
+        result["audioSource"] = "recorded" if result.get("audioProvider") == "kokoro-local" else "azure"
         result["audioStatus"] = "High Quality Downloaded Pack ready"
         result["audioHelp"] = "Play uses High Quality Downloaded Pack audio."
     elif found and _audio_pack is not None and _audio_pack.status().installed:
-        result["audioSource"] = "azure"
+        result["audioSource"] = "recorded" if result.get("audioProvider") == "kokoro-local" else "azure"
         result["audioStatus"] = "High Quality Downloaded Pack ready"
         result["audioHelp"] = "Play uses High Quality Downloaded Pack audio."
     elif config.audio_backend == "system_tts":
@@ -2078,7 +2079,7 @@ def _playback_request_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def _playback_payload_from_lookup(result: dict[str, Any]) -> dict[str, Any]:
     audio_file = str(result.get("audioFile") or "")
     audio_source = str(result.get("audioSource") or "")
-    if audio_source not in {"custom", "azure"} or not _audio_file_is_available(audio_file):
+    if audio_source not in {"custom", "azure", "recorded"} or not _audio_file_is_available(audio_file):
         audio_file = ""
     return {
         "text": result.get("synthesisText") or result.get("term") or result.get("requestedText") or "",
@@ -2097,7 +2098,7 @@ def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
     text = display_term(str(payload.get("text") or payload.get("term") or ""))
     config = _config()
     audio_source = str(payload.get("audioSource") or "")
-    if audio_source not in {"custom", "azure", "generated", "live"}:
+    if audio_source not in {"custom", "azure", "recorded", "generated", "live"}:
         audio_source = (
             "custom"
             if payload.get("source") == "user-override"

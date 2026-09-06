@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PronounceIt · Listen & review</title>
+<style>
+  :root { color-scheme: light; --ink:#163834; --muted:#60736e; --line:#d7e2dd; --green:#176f59; --paper:#f4f7f3; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  main { max-width:980px; padding:42px 28px 120px; margin:auto; }
+  .eyebrow { color:var(--green); font-size:12px; font-weight:750; letter-spacing:1.5px; text-transform:uppercase; }
+  h1 { font-size:clamp(32px,5vw,48px); line-height:1.12; margin:12px 0 14px; letter-spacing:-1.6px; }
+  .intro { max-width:690px; color:var(--muted); font-size:17px; margin:0 0 22px; }
+  .meta { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0 24px; }
+  .meta span { border:1px solid var(--line); padding:5px 10px; border-radius:20px; color:var(--muted); font-size:13px; }
+  .key { padding:14px 18px; border-left:3px solid #8cbaa5; background:#eaf1e9; border-radius:0 10px 10px 0; font-size:14px; margin-bottom:26px; }
+  .card { background:white; border:1px solid var(--line); border-radius:16px; padding:23px 25px; margin-bottom:16px; box-shadow:0 2px 4px #17383404; }
+  .heading { display:flex; gap:14px; align-items:flex-start; }
+  .number { color:#52776a; background:#edf4ec; font-size:13px; font-weight:700; border-radius:10px; min-width:34px; height:34px; display:grid; place-items:center; margin-top:2px; }
+  h2 { font-size:22px; margin:0; letter-spacing:-.4px; overflow-wrap:anywhere; }
+  .reason { font-size:13px; color:var(--muted); margin:3px 0 13px; }
+  .guide { font-size:21px; font-weight:550; line-height:1.55; margin:4px 0 15px; overflow-wrap:anywhere; }
+  audio { width:100%; height:42px; margin:0 0 15px; }
+  fieldset { border:0; padding:0; margin:0; }
+  legend { font-size:13px; font-weight:650; margin-bottom:9px; }
+  .choices { display:flex; flex-wrap:wrap; gap:9px; }
+  .choice { display:flex; align-items:center; gap:7px; padding:9px 13px; border:1px solid var(--line); border-radius:8px; font-size:14px; cursor:pointer; }
+  .choice:has(input:checked) { background:#e7f3eb; border-color:#5b9e82; color:#155940; }
+  .choice.correction:has(input:checked) { background:#fff0e4; border-color:#c99a71; color:#794919; }
+  input[type=radio] { accent-color:var(--green); margin:0; }
+  textarea { width:100%; min-height:65px; font-size:14px; line-height:1.45; font-family:inherit; padding:11px 12px; margin-top:11px; resize:vertical; border:1px solid var(--line); border-radius:8px; color:var(--ink); background:#fcfdfb; }
+  textarea:focus, button:focus-visible, a:focus-visible { outline:3px solid #a4cbb9; outline-offset:2px; }
+  details { margin:14px 0 0; color:var(--muted); font-size:13px; }
+  summary { cursor:pointer; width:fit-content; font-weight:550; }
+  details p { margin:9px 0; }
+  a { color:#176d59; }
+  .reference-links { display:flex; gap:7px 18px; flex-wrap:wrap; margin-top:9px; }
+  .note { color:#665b42; background:#fbf6e9; border-radius:8px; padding:10px 13px; font-size:13px; margin:8px 0 14px; }
+  .voice { border-color:#a9c6b4; background:#fafffa; margin-top:25px; }
+  .voice p { color:var(--muted); margin:7px 0 17px; }
+  .bottom { position:fixed; z-index:10; bottom:0; left:0; right:0; background:#fafffcf5; border-top:1px solid var(--line); backdrop-filter:blur(16px); }
+  .bottom-inner { max-width:980px; padding:17px 28px; margin:auto; display:flex; align-items:center; gap:16px; }
+  .progress { flex:1; min-width:0; }
+  #progress { font-size:14px; font-weight:650; }
+  #status { display:block; font-size:12px; color:var(--muted); }
+  button { background:var(--green); color:#fff; border:0; border-radius:9px; padding:12px 19px; font-size:14px; font-weight:650; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .footnote { color:var(--muted); font-size:13px; max-width:740px; margin:25px 0; }
+  @media(max-width:600px) {
+    main { padding:26px 15px 120px; } .card { padding:19px 17px; }
+    h2 { font-size:19px; } .guide { font-size:18px; } .bottom-inner { padding:13px 15px; }
+    .heading { gap:10px; } .meta { gap:6px; } button { padding:12px 14px; }
+  }
+</style>
+<main>
+  <div class="eyebrow">PronounceIt / pronunciation pilot</div>
+  <h1>Revised audio</h1>
+  <p class="intro">Start with clips 2, 3, and 4, then compare the others. Judge the spoken sounds and naturalness. Mark each clip Accept or Needs correction and save your feedback.</p>
+  <div class="meta"><span>10 medical terms</span><span>American English</span><span>Kokoro · Heart voice</span><span>95% speed</span></div>
+  <div class="key">Audio revision 2 · The first set was rejected. These are new candidates for listening review.</div>
+  <div id="terms"></div>
+  <section class="card voice">
+    <h2>How does the voice feel overall?</h2>
+    <p>Consider clarity, naturalness, pace, and whether it is easy to imitate.</p>
+    <fieldset><legend>Voice quality</legend><div class="choices">
+      <label class="choice"><input type="radio" name="voice" value="accept">Natural and clear</label>
+      <label class="choice correction"><input type="radio" name="voice" value="needs-correction">Needs improvement</label>
+    </div></fieldset>
+    <textarea id="voice-note" maxlength="2000" aria-label="Overall voice feedback" placeholder="Optional voice feedback"></textarea>
+  </section>
+  <p class="footnote">This is a candidate pilot. Your existing Anki dictionary and recordings have not been replaced. All ten terms and the overall voice must be accepted before full generation; accepting this sample does not verify every pronunciation in the library.</p>
+</main>
+<div class="bottom"><div class="bottom-inner">
+  <div class="progress"><div id="progress">0 of 10 reviewed</div><span id="status" role="status">No review saved yet</span></div>
+  <button id="save" type="button">Save review</button>
+</div></div>
+<script id="pilot-data" type="application/json">__PILOT_DATA__</script>
+<script>
+  "use strict";
+  const pilot = JSON.parse(document.getElementById("pilot-data").textContent);
+  const token = "__REVIEW_TOKEN__";
+  const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+  const container = document.getElementById("terms");
+  const storageKey = "pronounceit-pilot-" + pilot.bindingSha256;
+  let dirty = false;
+  for (const entry of pilot.entries) {
+    const article = document.createElement("article");
+    article.className = "card";
+    article.dataset.assetId = entry.assetId;
+    const id = entry.assetId;
+    const sources = entry.sources.map(source => '<a href="' + escapeHtml(source.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(source.title) + "</a>").join("");
+    article.innerHTML =
+      '<div class="heading"><div class="number">' + String(entry.position).padStart(2, "0") + '</div><div><h2>' + escapeHtml(entry.term) + '</h2><p class="reason">' + escapeHtml(entry.reason) + "</p></div></div>" +
+      '<audio controls preload="metadata" aria-label="Play ' + escapeHtml(entry.term) + '" src="' + escapeHtml(entry.audioFile) + '"></audio>' +
+      (entry.referenceConflict ? '<p class="note">' + escapeHtml(entry.note) + "</p>" : "") +
+      '<fieldset><legend>Does the pronunciation sound correct?</legend><div class="choices">' +
+      '<label class="choice"><input type="radio" name="' + id + '" value="accept">Accept</label>' +
+      '<label class="choice correction"><input type="radio" name="' + id + '" value="needs-correction">Needs correction</label></div></fieldset>' +
+      '<textarea maxlength="2000" aria-label="Feedback for ' + escapeHtml(entry.term) + '" placeholder="Optional: which sound or stress should change?"></textarea>' +
+      '<details><summary>References and comparison</summary>' +
+      '<p><strong>Candidate guide:</strong> ' + escapeHtml(entry.pronunciation) + '</p>' +
+      (entry.referenceConflict ? "" : "<p>" + escapeHtml(entry.note) + "</p>") +
+      "<p><strong>Current guide:</strong> " + escapeHtml(entry.currentPronunciation) + "</p>" +
+      '<div class="reference-links">' + sources + "</div></details>";
+    container.appendChild(article);
+  }
+  function collect() {
+    return {
+      bindingSha256: pilot.bindingSha256,
+      decisions: Array.from(document.querySelectorAll("article")).map(card => ({
+        assetId: card.dataset.assetId,
+        decision: card.querySelector("input:checked")?.value || "",
+        note: card.querySelector("textarea").value
+      })),
+      voiceDecision: document.querySelector('input[name="voice"]:checked')?.value || "",
+      voiceNote: document.getElementById("voice-note").value
+    };
+  }
+  function update() {
+    const review = collect();
+    const reviewed = review.decisions.filter(d => d.decision).length;
+    document.getElementById("progress").textContent = reviewed + " of 10 reviewed" + (review.voiceDecision ? " · voice reviewed" : "");
+    try { localStorage.setItem(storageKey, JSON.stringify(review)); } catch (_) {}
+  }
+  function apply(review) {
+    if (!review || review.bindingSha256 !== pilot.bindingSha256) return;
+    for (const d of review.decisions || []) {
+      const card = document.querySelector('article[data-asset-id="' + d.assetId + '"]');
+      if (!card) continue;
+      for (const input of card.querySelectorAll("input")) input.checked = input.value === d.decision;
+      card.querySelector("textarea").value = d.note || "";
+    }
+    for (const input of document.querySelectorAll('input[name="voice"]')) input.checked = input.value === review.voiceDecision;
+    document.getElementById("voice-note").value = review.voiceNote || "";
+    update();
+  }
+  document.addEventListener("input", () => {
+    dirty = true;
+    update();
+    document.getElementById("status").textContent = "Unsaved changes";
+  });
+  for (const player of document.querySelectorAll("audio")) player.addEventListener("play", () => {
+    for (const other of document.querySelectorAll("audio")) if (other !== player) other.pause();
+  });
+  document.getElementById("save").addEventListener("click", async () => {
+    const button = document.getElementById("save");
+    button.disabled = true;
+    try {
+      const response = await fetch("/review", {
+        method:"POST", headers:{"Content-Type":"application/json","X-Review-Token":token},
+        body:JSON.stringify(collect())
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Save failed");
+      dirty = false;
+      document.getElementById("status").textContent =
+        result.fullGenerationApproved ? "Saved · pilot accepted. Return to Codex to continue." :
+        result.status === "needs-correction" ? "Saved · corrections requested" : "Saved · you can finish the remaining items later";
+    } catch (error) {
+      document.getElementById("status").textContent = "Could not save. Keep this page open and return to Codex.";
+    } finally { button.disabled = false; }
+  });
+  (async () => {
+    try {
+      const response = await fetch("/review", {headers:{"X-Review-Token":token}});
+      if (!response.ok) throw new Error("Unavailable");
+      const saved = await response.json();
+      if (saved.savedAt) {
+        apply(saved);
+        document.getElementById("status").textContent = "Previously saved review restored";
+      } else {
+        try { apply(JSON.parse(localStorage.getItem(storageKey))); } catch (_) {}
+      }
+    } catch (_) {
+      try { apply(JSON.parse(localStorage.getItem(storageKey))); } catch (_) {}
+      document.getElementById("status").textContent = "Open the local listening page in Codex to save your review";
+    }
+  })();
+  window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+</script>
+</html>

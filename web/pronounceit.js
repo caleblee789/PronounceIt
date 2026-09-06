@@ -1219,6 +1219,7 @@
     const labels = {
       custom: "Custom audio",
       azure: "High Quality Downloaded Pack",
+      recorded: "High Quality Downloaded Pack",
       generated: "Standard text-to-speech",
       live: "Standard text-to-speech",
     };
@@ -1227,7 +1228,7 @@
 
   function sourceKey(payload) {
     const value = String(payload.audioSource || "").toLowerCase();
-    return ["custom", "azure", "generated", "live"].includes(value) ? value : "loading";
+    return ["custom", "azure", "recorded", "generated", "live"].includes(value) ? value : "loading";
   }
 
   function updateStatus(text, state) {

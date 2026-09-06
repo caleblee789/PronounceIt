@@ -13,7 +13,7 @@ from .audio_pack import AudioPackManager
 
 
 AudioBackend = Literal["system_tts", "local_audio", "local_audio_then_tts"]
-AudioSource = Literal["custom", "azure", "generated", "live"]
+AudioSource = Literal["custom", "azure", "recorded", "generated", "live"]
 
 
 @dataclass(frozen=True)
@@ -178,7 +178,7 @@ class LocalAudioFileEngine(TtsEngine):
             return result
         source: AudioSource = (
             settings.audio_source_hint
-            if settings.audio_source_hint in {"custom", "azure"}
+            if settings.audio_source_hint in {"custom", "azure", "recorded"}
             else "azure"
         )
         return TtsResult(True, result.reason, result.attempts, source)
@@ -344,13 +344,15 @@ class AudioPackEngine(TtsEngine):
         result = self._player.play_path(audio_path)
         if not result.ok:
             return TtsResult(False, result.reason, result.attempts)
+        metadata = self.manager.playback_metadata(term) if hasattr(self.manager, "playback_metadata") else {}
         details = [
             *result.attempts,
             f"pack-version: {audio_path.parent.name}",
             f"asset: {audio_path.stem}",
-            "audio-review: passed",
+            f"audio-review: {metadata.get('reviewStatus', 'passed')}",
+            f"provider: {metadata.get('provider', 'azure-speech')}",
         ]
-        return TtsResult(True, "playing offline pronunciation pack", details, "azure")
+        return TtsResult(True, "playing offline pronunciation pack", details, metadata.get("source", "azure"))
 
 
 class CompositeTtsEngine(TtsEngine):

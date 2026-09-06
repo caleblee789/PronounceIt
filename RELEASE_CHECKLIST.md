@@ -1,3 +1,13 @@
+# Version 1.3.0 release record
+
+The owner approved publication of the completed Kokoro audio pack and integration into the add-on on September 6, 2026. The exact 1,107,753,744-byte pack size is approved. Preserve all earlier releases and all generated audio checksums.
+
+For this release, preserve v1.2.1 written guides, bind the version 3 manifest to the integrated dictionary, include the 155 matching recordings and attribution in the add-on, run automated and complete file checks, publish the pack, and verify the full anonymous download before releasing the matching add-on. The owner requested no further Anki launches; native validation of the final package is recorded as unrun. AnkiWeb publication is a separate task.
+
+The historical checklist below describes the earlier version 2 workflow; its Azure-specific requirements do not govern the approved version 3 generation method or its approved pack size.
+
+---
+
 # PronounceIt Release Checklist
 
 For release-prep merges to `main`, run the checks below before creating either

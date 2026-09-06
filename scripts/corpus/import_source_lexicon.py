@@ -77,8 +77,19 @@ def merge_lexicon(data_file: Path, lexicon_file: Path) -> dict[str, int]:
             added += 1
             continue
 
+        record = item.get("pronunciationRecord")
+        protected = (
+            item.get("source") == "user-override"
+            or bool(item.get("sapiPhonemes") or item.get("sapiSegments"))
+            or item.get("audioReviewStatus") in {"passed", "approved", "accepted", "listening-approved"}
+            or bool(item.get("pronunciationApproved"))
+            or (isinstance(record, dict) and record.get("reviewStatus") in {"reviewed", "approved", "listening-approved"})
+        )
+        if protected:
+            continue
         if item.get("pronunciation") != pronunciation:
             item["pronunciation"] = pronunciation
+            item["syllables"] = syllables_from_pronunciation(pronunciation)
             updated += 1
         if not item.get("syllables"):
             item["syllables"] = syllables_from_pronunciation(pronunciation)
@@ -105,9 +116,10 @@ def dedupe_terms(terms: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def ordered_item(item: dict[str, Any]) -> dict[str, Any]:
     ordered: dict[str, Any] = {}
     for field in ("term", "pronunciation", "syllables", "speechText", "aliases", "source", "notes"):
-        value = item.get(field)
-        if value not in (None, "", []):
-            ordered[field] = value
+        if field in item:
+            ordered[field] = item[field]
+    # Preserve correction, audio, review, and future provenance fields verbatim.
+    ordered.update({key: value for key, value in item.items() if key not in ordered})
     return ordered
 
 
