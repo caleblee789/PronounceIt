@@ -1,6 +1,6 @@
 # PronounceIt Configuration
 
-The settings dialog has Review, Audio, and Tools tabs. Anki stores these values in `config.json`.
+The settings dialog has Review, Audio, and Tools tabs. The bundled `config.json` supplies defaults; Anki’s add-on manager persists user settings.
 
 ## Review
 
@@ -26,13 +26,14 @@ The settings dialog has Review, Audio, and Tools tabs. Anki stores these values 
 
 ## Audio and review behavior
 
-- `audio_backend`: playback mode. The default is `local_audio_then_tts`, which uses Custom audio first, then Recorded audio audio, followed by Computer voice when needed. Recorded audio covers bundled and downloaded recordings.
+- `audio_backend`: playback mode. The default is `local_audio_then_tts`, which uses Custom audio first, then Recorded audio, followed by Computer voice when needed. Recorded audio covers bundled and downloaded recordings.
   - `local_audio_then_tts`: use local audio, then system voice if needed.
-  - `local_audio`: use local audio only.
+  - `local_audio`: use recordings only; never generate computer speech.
   - `system_tts`: use system voice only.
 - `allow_on_question_side`: allow lookups before the answer is shown. Defaults to `true`; an existing explicit `false` remains respected.
 - `auto_close_on_card_change`: close the popup when Anki advances to another card.
 - `show_save_button`: show Save in search results and quick pronunciation cards.
+- An explicit custom `speechText` override bypasses recordings and requires a playback mode with computer voice. Clearing it restores normal audio.
 - `tts_voice`: optional system voice name. Leave blank for the operating system default.
 - `tts_rate`: system voice speech rate from -10 to 10 where supported.
 - `tts_volume`: system voice volume from 0 to 100 where supported.

@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import unittest
 import zipfile
@@ -8,6 +9,7 @@ from unittest.mock import patch
 
 from pronounceit.audio_pack import (
     AudioPackManager,
+    AudioPackError,
     audio_asset_id,
     dictionary_sha256,
     file_sha256,
@@ -204,6 +206,49 @@ class AudioPackTests(unittest.TestCase):
             self.assertFalse(status.installed)
             self.assertEqual((status.downloaded_shards, status.total_shards), (1, 16))
             self.assertEqual(status.message, "Offline pronunciation pack download is incomplete (1/16 files).")
+            (version_dir / "shard-1.zip.part").write_bytes(b"x")
+            manager.remove()
+            self.assertFalse(version_dir.exists())
+            self.assertEqual(manager.status().total_shards, 0)
+
+    def test_download_recovers_complete_corrupt_and_resumable_partial_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "data").mkdir()
+            dictionary = root / "data/medical_pronunciations.json"
+            dictionary.write_text('{"terms": []}')
+            manager = AudioPackManager(root, manifest_url="https://example.com/pack-manifest.json")
+            data = b"downloaded shard content"
+            shards = [{"id": sid, "file": f"shard-{sid}.zip", "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
+                      for sid in "0123456789abcdef"]
+            manifest = {"schemaVersion": 2, "packVersion": "2-test", "dictionarySha256": dictionary_sha256(dictionary),
+                        "reviewLedgerSha256": "1" * 64, "synthesisStrategyCounts": {"azure-native": 1}, "shards": shards}
+            version_dir = manager.pack_root / "2-test"
+            version_dir.mkdir(parents=True)
+            # A crash after writing the final byte, a resumable prefix, and two
+            # corrupt files must all be recoverable without manual deletion.
+            for sid, content in {"0": data, "1": data[:5], "2": b"x" * len(data), "3": data + b"extra", "4": b"wrong"}.items():
+                (version_dir / f"shard-{sid}.zip.part").write_bytes(content)
+            requests = []
+            def fetch(request, timeout):
+                sid = request.full_url.rsplit("-", 1)[1][0]
+                range_header = request.get_header("Range")
+                requests.append((sid, range_header))
+                start = int(range_header[6:-1]) if range_header else 0
+                response = io.BytesIO(data[start:])
+                response.status = 206 if start else 200
+                response.headers = {"Content-Range": f"bytes {start}-{len(data) - 1}/{len(data)}"}
+                return response
+            with patch.object(manager, "_fetch_manifest", return_value=manifest), patch("pronounceit.audio_pack.urllib.request.urlopen", side_effect=fetch):
+                with self.assertRaisesRegex(AudioPackError, "checksum"):
+                    manager.download()
+                self.assertFalse((version_dir / "shard-4.zip.part").exists())
+                self.assertTrue(manager.download().installed)
+            self.assertNotIn(("0", None), requests)
+            self.assertIn(("1", "bytes=5-"), requests)
+            self.assertIn(("2", None), requests)
+            self.assertIn(("3", None), requests)
+            self.assertIn(("4", None), requests)
 
 
 if __name__ == "__main__":

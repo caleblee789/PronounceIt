@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from pronounceit.tts import (
     AudioPackEngine,
@@ -9,6 +9,7 @@ from pronounceit.tts import (
     CompositeTtsEngine,
     GeneratedAudioFileEngine,
     LocalAudioFileEngine,
+    QtTextToSpeechEngine,
     TtsEngine,
     TtsResult,
     TtsSettings,
@@ -257,15 +258,21 @@ class TtsTests(unittest.TestCase):
                     "clozapine",
                     TtsSettings(audio_backend="local_audio_then_tts", term="clozapine"),
                 )
+                self.assertFalse(engine.speak_result(
+                    "custom speech", TtsSettings(audio_backend="local_audio_then_tts", term="clozapine", use_text_override=True)
+                ).ok)
 
         self.assertTrue(result.ok)
         self.assertEqual(result.audio_source, "azure")
 
     def test_local_audio_only_does_not_fall_back_to_tts(self) -> None:
         recording = RecordingEngine()
-        engine = CompositeTtsEngine([LocalAudioFileEngine(Path("/missing")), recording])
+        generated = GeneratedAudioFileEngine(Path("/missing"))
+        engine = CompositeTtsEngine([LocalAudioFileEngine(Path("/missing")), generated, recording])
 
-        self.assertFalse(engine.speak("clozapine", TtsSettings(audio_backend="local_audio")))
+        with patch.object(generated, "_generate_audio") as generate:
+            self.assertFalse(engine.speak("clozapine", TtsSettings(audio_backend="local_audio")))
+            generate.assert_not_called()
         self.assertEqual(recording.spoken, [])
         self.assertEqual(
             engine.speak_result("clozapine", TtsSettings(audio_backend="local_audio")).reason,
@@ -341,7 +348,7 @@ class TtsTests(unittest.TestCase):
                 )
 
             self.assertTrue(result)
-            self.assertTrue((root / "user_files" / "generated_audio" / "clozapine.aiff").exists())
+            self.assertEqual(len(list((root / "user_files" / "generated_audio").glob("*.aiff"))), 1)
             run.assert_called_once()
             self.assertEqual(run.call_args.args[0][-1], "Clozapine")
             popen.assert_called_once()
@@ -367,6 +374,7 @@ class TtsTests(unittest.TestCase):
                 patch("pronounceit.tts.subprocess.run", side_effect=fake_run) as run,
                 patch("pronounceit.tts.subprocess.Popen"),
             ):
+                engine.speak("clozapine", TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine"))
                 self.assertTrue(
                     engine.speak(
                         "custom clozapine",
@@ -379,30 +387,53 @@ class TtsTests(unittest.TestCase):
                 )
 
             self.assertEqual(run.call_args.args[0][-1], "custom clozapine")
+            self.assertEqual(run.call_count, 2)
 
     def test_generated_audio_file_engine_reuses_existing_cached_file(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            cached = root / "user_files" / "generated_audio" / "clozapine.aiff"
-            cached.parent.mkdir(parents=True)
-            cached.write_bytes(valid_aiff_bytes())
             engine = GeneratedAudioFileEngine(root)
+
+            def fake_run(command, text, capture_output):
+                Path(command[command.index("-o") + 1]).write_bytes(valid_aiff_bytes())
+                return Mock(returncode=0)
 
             with (
                 patch("pronounceit.tts.platform.system", return_value="Darwin"),
                 patch("pronounceit.tts.shutil.which", return_value="/usr/bin/afplay"),
-                patch("pronounceit.tts.subprocess.run") as run,
+                patch("pronounceit.tts.subprocess.run", side_effect=fake_run) as run,
                 patch("pronounceit.tts.subprocess.Popen") as popen,
             ):
                 result = engine.speak_result(
                     "kloh zuh peen",
                     TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine"),
                 )
+                engine.speak_result("kloh zuh peen", TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine"))
+                self.assertEqual(run.call_count, 1)
+                engine.speak_result("kloh zuh peen", TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine", voice="Samantha"))
+                engine.speak_result("kloh zuh peen", TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine", voice="Samantha", rate=2))
 
             self.assertTrue(result.ok)
             self.assertEqual(result.audio_source, "generated")
-            run.assert_not_called()
-            popen.assert_called_once()
+            self.assertEqual(run.call_count, 3)
+            self.assertIn("Samantha", run.call_args.args[0])
+            self.assertIn("216", run.call_args.args[0])
+            self.assertEqual(popen.call_count, 4)
+
+    def test_qt_voice_and_rate_return_to_default(self) -> None:
+        engine = QtTextToSpeechEngine()
+        engine._engine = Mock()
+        default = Mock()
+        voice = Mock()
+        voice.name.return_value = "Samantha"
+        engine._default_voice = default
+        engine._engine.availableVoices.return_value = [voice]
+        self.assertTrue(engine.speak("test", TtsSettings(voice="Samantha", rate=4)))
+        engine._engine.setVoice.assert_called_with(voice)
+        engine._engine.setRate.assert_called_with(0.4)
+        self.assertTrue(engine.speak("test", TtsSettings()))
+        engine._engine.setVoice.assert_called_with(default)
+        engine._engine.setRate.assert_called_with(0)
 
 
 if __name__ == "__main__":

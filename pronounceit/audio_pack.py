@@ -101,7 +101,7 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise AudioPackError("audio pack manifest must be a JSON object")
     schema = raw.get("schemaVersion")
-    if schema not in {2, 3}:
+    if type(schema) is not int or schema not in {2, 3}:
         raise AudioPackError("unsupported audio pack manifest version")
     version = str(raw.get("packVersion") or "").strip()
     dictionary_hash = str(raw.get("dictionarySha256") or "").strip().casefold()
@@ -111,9 +111,9 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
     if (
         not version
         or not is_supported_pack_version(version)
-        or len(dictionary_hash) != 64
+        or not _sha256(dictionary_hash)
         or not version.startswith(str(schema))
-        or (schema == 2 and (len(review_hash) != 64 or not isinstance(strategies, dict)))
+        or (schema == 2 and (not _sha256(review_hash) or not isinstance(strategies, dict)))
         or not isinstance(shards, list)
     ):
         raise AudioPackError("audio pack manifest is missing required fields")
@@ -125,6 +125,7 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
     if schema == 3:
         _validate_v3(raw)
     seen: set[str] = set()
+    seen_files: set[str] = set()
     for shard in shards:
         if not isinstance(shard, dict):
             raise AudioPackError("audio pack shard entry is invalid")
@@ -136,14 +137,17 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
             len(shard_id) != 1
             or shard_id not in "0123456789abcdef"
             or shard_id in seen
+            or filename in seen_files
+            or "/" in filename or "\\" in filename
             or Path(filename).name != filename
             or not filename.endswith(".zip")
-            or len(checksum) != 64
+            or not _sha256(checksum)
             or not isinstance(size, int)
             or size <= 0
         ):
             raise AudioPackError(f"invalid audio pack shard: {shard_id or '(missing id)'}")
         seen.add(shard_id)
+        seen_files.add(filename)
     if seen != set("0123456789abcdef"):
         raise AudioPackError("audio pack manifest must contain all 16 shards")
     return raw
@@ -207,18 +211,15 @@ class AudioPackManager:
         downloaded_bytes = 0
         for shard in manifest["shards"]:
             path = self._shard_path(manifest, shard)
-            if not path.is_file():
-                continue
-            try:
-                size_matches = path.stat().st_size == int(shard["size"])
-            except OSError:
-                size_matches = False
-            hash_matches = not verify_hashes or (
-                size_matches and file_sha256(path) == str(shard["sha256"]).casefold()
-            )
-            if size_matches and hash_matches:
+            if self._valid_shard(path, shard, checksum=verify_hashes):
                 complete += 1
-                downloaded_bytes += path.stat().st_size
+                downloaded_bytes += int(shard["size"])
+            else:
+                partial = path.with_suffix(path.suffix + ".part")
+                try:
+                    downloaded_bytes += min(partial.stat().st_size, int(shard["size"]))
+                except OSError:
+                    pass
         total = len(manifest["shards"])
         total_bytes = sum(int(shard["size"]) for shard in manifest["shards"])
         installed = complete == total and compatible
@@ -252,11 +253,14 @@ class AudioPackManager:
         version_dir.mkdir(parents=True, exist_ok=True)
         self._write_json_atomic(version_dir / "pack-manifest.json", manifest)
 
-        remaining_bytes = sum(
-            int(shard["size"])
-            for shard in manifest["shards"]
-            if not self._valid_shard(self._shard_path(manifest, shard), shard)
-        )
+        remaining_bytes = 0
+        for shard in manifest["shards"]:
+            target = self._shard_path(manifest, shard)
+            if not self._valid_shard(target, shard):
+                target.unlink(missing_ok=True)
+                existing = self._prepare_partial(target, shard)
+                if not self._valid_shard(target, shard, checksum=False):
+                    remaining_bytes += int(shard["size"]) - existing
         try:
             free_bytes = shutil.disk_usage(self.pack_root.parent).free
         except OSError as exc:
@@ -293,14 +297,21 @@ class AudioPackManager:
         return self.status(verify_hashes=True)
 
     def remove(self) -> None:
-        version = self._local_state_version()
-        if version:
-            shutil.rmtree(self.pack_root / version, ignore_errors=True)
-            shutil.rmtree(self.cache_root / version, ignore_errors=True)
         try:
+            # Incomplete downloads have no installed.json, and an update may
+            # have left more than one version on disk.
+            for root in (self.pack_root, self.cache_root):
+                if root.exists():
+                    for directory in root.iterdir():
+                        if is_supported_pack_version(directory.name) and directory.is_dir():
+                            if directory.is_symlink():
+                                directory.unlink()
+                            else:
+                                shutil.rmtree(directory)
             self.state_path.unlink(missing_ok=True)
         except OSError as exc:
             raise AudioPackError(str(exc)) from exc
+        self._manifest_cache = None
 
     def resolve(self, term: str) -> Path | None:
         manifest = self._load_local_manifest()
@@ -393,7 +404,7 @@ class AudioPackManager:
                 if cache and cache[:3] == (path, stamp.st_mtime_ns, stamp.st_size):
                     return cache[3]
                 manifest = validate_manifest(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError, AudioPackError):
+            except (OSError, ValueError, TypeError, AudioPackError):
                 continue
             if str(manifest["packVersion"]) == path.parent.name:
                 self._manifest_cache = (path, stamp.st_mtime_ns, stamp.st_size, manifest)
@@ -405,7 +416,7 @@ class AudioPackManager:
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
             version = str(state.get("packVersion") or "").strip()
             return version if is_supported_pack_version(version) else ""
-        except (OSError, AttributeError, json.JSONDecodeError):
+        except (OSError, UnicodeError, AttributeError, json.JSONDecodeError):
             return ""
 
     def _dictionary_is_compatible(self, manifest: dict[str, Any]) -> bool:
@@ -446,7 +457,9 @@ class AudioPackManager:
     ) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_suffix(target.suffix + ".part")
-        existing = partial.stat().st_size if partial.exists() else 0
+        existing = self._prepare_partial(target, shard)
+        if self._valid_shard(target, shard):
+            return
         url = str(shard.get("url") or "")
         if not url:
             url = urllib.parse.urljoin(self.manifest_url, str(shard["file"]))
@@ -457,6 +470,13 @@ class AudioPackManager:
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 append = existing > 0 and getattr(response, "status", 200) == 206
+                if append:
+                    content_range = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", response.headers.get("Content-Range", ""))
+                    if (not content_range or int(content_range[1]) != existing
+                            or int(content_range[3]) != int(shard["size"])
+                            or not existing <= int(content_range[2]) < int(shard["size"])):
+                        partial.unlink(missing_ok=True)
+                        raise AudioPackError(f"shard {shard['id']} returned an invalid resume range; retry the download")
                 if not append:
                     existing = 0
                 mode = "ab" if append else "wb"
@@ -469,15 +489,38 @@ class AudioPackManager:
                             break
                         handle.write(chunk)
                         existing += len(chunk)
+                        if existing > int(shard["size"]):
+                            raise AudioPackError(f"downloaded shard {shard['id']} exceeds its expected size")
                         if progress:
                             progress(base_bytes + existing, total_bytes, str(shard["id"]))
                     handle.flush()
                     os.fsync(handle.fileno())
+        except urllib.error.HTTPError as exc:
+            if exc.code == 416:
+                partial.unlink(missing_ok=True)
+            raise AudioPackError(f"could not download shard {shard['id']}: {exc}") from exc
         except (OSError, urllib.error.URLError) as exc:
             raise AudioPackError(f"could not download shard {shard['id']}: {exc}") from exc
+        if partial.stat().st_size < int(shard["size"]):
+            raise AudioPackError(f"downloaded shard {shard['id']} is incomplete; resume to finish")
         if not self._valid_shard(partial, shard):
+            partial.unlink(missing_ok=True)
             raise AudioPackError(f"downloaded shard {shard['id']} failed checksum validation")
         os.replace(partial, target)
+
+    def _prepare_partial(self, target: Path, shard: dict[str, Any]) -> int:
+        partial = target.with_suffix(target.suffix + ".part")
+        try:
+            size = partial.stat().st_size if partial.exists() else 0
+            if size >= int(shard["size"]):
+                if self._valid_shard(partial, shard):
+                    os.replace(partial, target)
+                else:
+                    partial.unlink()
+                return 0
+            return size
+        except OSError as exc:
+            raise AudioPackError(f"could not prepare shard {shard['id']}: {exc}") from exc
 
     def _wait_if_paused(self) -> None:
         while not self._pause_event.wait(timeout=0.25):

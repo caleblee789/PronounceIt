@@ -280,6 +280,8 @@ class DictionaryTests(unittest.TestCase):
             self.assertEqual(payload["pronunciation"], "LOCAL-KLOH-zuh-peen")
             self.assertEqual(payload["source"], "user-override")
             self.assertEqual(payload["speechText"], "local kloh zuh peen")
+            self.assertFalse(payload["useTextOverride"])
+            self.assertEqual(payload["synthesisText"], "clozapine")
 
     def test_user_dictionary_can_override_speech_text(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -303,6 +305,8 @@ class DictionaryTests(unittest.TestCase):
             payload = dictionary.lookup("clozapine")
             self.assertEqual(payload["pronunciation"], "LOCAL-KLOH-zuh-peen")
             self.assertEqual(payload["speechText"], "custom audio kloh zuh peen")
+            self.assertTrue(payload["useTextOverride"])
+            self.assertEqual(payload["synthesisText"], "custom audio kloh zuh peen")
 
     def test_malformed_user_entries_are_skipped_without_blocking_dictionary_load(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -339,13 +343,13 @@ class DictionaryTests(unittest.TestCase):
             self.assertTrue(dictionary.lookup("agranulocytosis")["found"])
             self.assertEqual(len(dictionary.load_issues), 1)
 
-    def test_verified_entry_uses_phonetic_guide_and_bundled_audio(self) -> None:
+    def test_sol_entry_uses_phonetic_guide_and_bundled_audio(self) -> None:
         dictionary = PronunciationDictionary.bundled()
         payload = dictionary.lookup("agranulocytosis")
-        self.assertEqual(payload["speechText"], "uh gran yoo loh sy toh sis")
+        self.assertEqual(payload["speechText"], "ay gran yuh loh sy toh sis")
         self.assertNotEqual(payload["speechText"], "agranulocytosis")
         self.assertEqual(payload["synthesisText"], "agranulocytosis")
-        self.assertEqual(payload["qualityTier"], "verified")
+        self.assertEqual(payload["qualityTier"], "generated")
         self.assertEqual(payload["audioFile"], "audio/agranulocytosis.mp3")
 
     def test_generated_entries_disclose_generated_quality(self) -> None:

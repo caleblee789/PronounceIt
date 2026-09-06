@@ -1,225 +1,112 @@
 # PronounceIt
 
-PronounceIt is an Anki desktop add-on for medical students who want quick pronunciation help while reviewing cards.
+PronounceIt adds pronunciation help to Anki desktop while you review medical cards. It includes **95,902 terms**, a readable written guide for each term, **155 bundled recordings**, and an optional offline audio pack.
 
-Use it before or after revealing an answer:
+- Hold **Option/Alt** while clicking or selecting a term, or select text and tap the key, to hear it.
+- Use **Control/Ctrl + click or right-click**, or select text and tap Control/Ctrl, to open a quick card with **Play** and **Save**.
+- Plain right-click keeps Anki’s standard menu.
 
-- Right-click normally for Anki’s standard context menu.
-- Hold Option/Alt while clicking or selecting text, or press it after selecting, to play pronunciation without opening details.
-- Control/Ctrl + left- or right-click, or select text and press Control/Ctrl to open the quick pronunciation card.
-
-PronounceIt includes 95,902 terms with one readable pronunciation each, 155 bundled high-yield clips, and an optional offline pronunciation pack. Capitals mark stressed sounds. Accepted written pronunciations may differ slightly from the audio. The Azure-native synthesis method is approved against a checksum-bound 1,092-clip pilot; this is method approval, not a claim that every generated clip was individually reviewed.
+Capitals in written guides mark stress. Written guides and recordings are maintained separately and can differ. The current recordings use the accepted American English Kokoro voice; ten pilot recordings were accepted. The full library has not been individually checked for pronunciation accuracy.
 
 ## Install
 
-Install the built Anki add-on package:
+For the published release, download [PronounceIt v1.3.0](https://github.com/caleblee789/PronounceIt/releases/download/v1.3.0/pronounceit.ankiaddon). The [AnkiWeb listing](https://ankiweb.net/shared/info/1352407063) is a separate distribution channel.
 
-```text
-dist/pronounceit.ankiaddon
-```
+For the current development version described below, build this checkout and install `dist/pronounceit.ankiaddon` through **Tools > Add-ons > Install from file...**, then restart Anki. Merging source changes does not publish a new release.
 
-The locally built archive is available at the path above. The offline pronunciation pack is published separately and is never embedded in the add-on archive.
+The add-on includes 155 recordings. The optional full pack contains 95,902 recordings across 16 files and downloads approximately **1.03 GiB**. It is downloaded separately and is never embedded in the add-on archive.
 
-In Anki, open the package through `Tools > Add-ons > Install from file...`, then restart Anki.
+## Settings and tools
 
-## How To Use
+Open **Caleb M. Add-ons Settings > PronounceIt settings** from Anki’s menu bar. Settings has three tabs:
 
-1. Start reviewing cards in Anki.
-2. Hold Option/Alt while clicking or selecting a medical term, or press it after selecting text, to hear it.
-3. Use Control/Ctrl + left- or right-click, or select text and press Control/Ctrl for the quick pronunciation card with Play and Save actions.
-4. Use plain right-click for Anki’s standard context menu without PronounceIt actions.
+| Tab | Controls |
+| --- | --- |
+| **Review** | Enable PronounceIt, choose playback and quick-card keys, allow pronunciation before revealing an answer, show Save, and choose Light or Dark appearance. |
+| **Audio** | Choose playback sources, manage the offline pack, and set computer voice, speed, and volume where supported. |
+| **Tools** | Search, saved pronunciations, custom corrections, library checks, audio troubleshooting, and local file shortcuts. |
 
-PronounceIt is available before answer reveal by default. You can disable pre-answer pronunciation on the Review tab.
+Pronunciation before revealing an answer is enabled by default. Turn it off on the Review tab if hearing a term would reveal the answer. Appearance changes preview immediately; **Save** keeps settings and **Cancel** discards the draft. A failed settings save leaves the draft open.
 
-## Saved Pronunciations
+Search and quick cards show a written guide with explicit **Play** and **Save** actions. Closing a result does not play audio. **Details** identifies the audio source. Long terms wrap inside the reviewer window.
 
-Saved words are available from:
+## Playback and offline recordings
 
-```text
-Caleb M. Add-ons Settings > PronounceIt settings > Tools > Saved pronunciations
-```
+Audio sources are labeled **Custom audio**, **Recorded audio**, or **Computer voice**. Recorded audio includes the bundled clips and matching downloaded pack.
 
-The saved list lets you:
+- **Recordings, then computer voice:** use an available recording, otherwise use computer speech.
+- **Recordings only:** play recordings without generating computer speech. Play is unavailable when there is no suitable recording.
+- **Computer voice only:** use your system’s speech service without using the recordings.
 
-- Search saved terms.
-- Play a saved pronunciation again.
-- Open the original card or note in Anki Browser when available.
-- Remove words you no longer need to practice.
+Computer voice availability depends on your operating system. Cached computer speech is kept separately from recordings; changing the text read aloud, voice, or speed selects a new cache entry.
 
-Saved pronunciations are stored locally in `user_files/saved_pronunciations.json` and are preserved during add-on upgrades.
-Updates are written atomically, with the previous valid file retained as a `.bak` backup. If the JSON is damaged, PronounceIt leaves it unchanged and reports the problem in the UI.
+The first-run prompt offers the offline pack once. **Audio** provides Download, Resume, Pause, Cancel download, Update, Check files, and Remove as appropriate. Downloads continue when Settings closes. Cancelling keeps partial files for a later resume; Remove deletes installed and partial pack files while preserving saved words and custom corrections. Interrupted downloads resume, and corrupt completed parts are downloaded again.
 
-## Tools Menu
+The add-on selects its matching version 3 pack from `data/audio-pack-release.json`. Downloaded shards and extracted clips are checked against the pack’s checksums. Older version 2 packs remain supported for matching older dictionaries. The extracted clip cache defaults to 250 MiB; downloaded ZIP files are separate from that limit.
 
-PronounceIt adds one item under the shared Tools submenu:
+## Saved pronunciations and custom corrections
 
-- `Caleb M. Add-ons Settings > PronounceIt settings`: open settings and Advanced tools.
+Use **Tools > Saved pronunciations** to search saved words, play them, open the original card or note in Browse when available, or remove a word.
 
-Advanced tools include selected-text playback, pronunciation search, saved pronunciations, custom pronunciation corrections, a pronunciation-library check, playback troubleshooting, local file shortcuts, and support.
+Use **Tools > Add custom pronunciation** to enter a term and its written pronunciation. **Additional options > Text read aloud** supplies an explicit computer-speech correction; leave it blank to retain normal audio. An explicit speech correction takes precedence over recordings and requires a mode that allows computer voice. Saving a pronunciation preserves its speech override for later playback.
 
-## Settings
+User data lives in the add-on’s `user_files/` directory:
 
-Open **Caleb M. Add-ons Settings > PronounceIt settings**. The dialog has three tabs:
+- `saved_pronunciations.json`: saved terms and available card, note, and deck metadata.
+- `custom_pronunciations.json`: local written and speech corrections.
+- `audio/`: custom recordings referenced by a custom entry’s `audioFile`.
+- `audio_packs/`, `audio_cache/`, and `generated_audio/`: downloaded packs and playback caches.
 
-- **Review:** enable PronounceIt, choose playback and quick-card keys, control before-answer behavior and Save visibility, and select Light or Dark appearance.
-- **Audio:** choose recordings with computer-voice fallback, recordings only, or computer voice only. Manage the optional offline pack here; Voice options contains the voice name and speaking speed.
-- **Tools:** search, saved pronunciations, custom corrections, library checks, and audio troubleshooting. File shortcuts are under Files.
+These files survive add-on upgrades. They are local to the Anki installation and shared by profiles that use the same add-ons directory; they are not synced through AnkiWeb. Saved/custom JSON updates are atomic and retain the previous file as a `.bak` backup. Damaged JSON is left unchanged and reported through the interface. Existing custom entries with `syllables` remain compatible, although syllables are no longer displayed separately.
 
-Search shows a written guide and explicit Play and Save actions in one window. Closing a result does not start playback. The quick card has the same compact actions, a close control, and a Details disclosure for its audio source. Long terms wrap inside the reviewer window.
+## Development
 
-Audio sources are **Custom audio**, **Recorded audio**, and **Computer voice**. Recordings include bundled clips and the optional offline pack. In recordings-only mode, terms without a recording have a disabled Play action.
+### Project layout
 
-### Offline pronunciation pack
+- `pronounceit/`: dictionary lookup, playback, downloads, storage, and Qt dialogs.
+- `web/`: reviewer JavaScript and CSS.
+- `data/medical_pronunciations.json`: canonical terms and the published audio contract.
+- `data/written_pronunciations.json`: written guides with references or generation provenance.
+- `data/audio-pack-release.json`: matching published pack metadata.
+- `audio/`: the 155 bundled recordings.
+- `scripts/release/`: deterministic add-on packaging and release utilities.
+- `scripts/audio/`: audio preparation, generation, pilot review, and pack building.
+- `scripts/corpus/`: written-guide generation, source import, and audits.
+- `tests/`: automated checks that run without launching Anki.
 
-The first-run prompt offers an optional background download once. Audio settings shows the current state and relevant actions: Download or Resume, Pause, Cancel download, Update, Check files, and Remove. Downloads continue when Settings closes. Downloaded files stay under `user_files/`, survive add-on updates, and are checked before use.
+### Validate and build without Anki
 
-## Custom Pronunciations
-
-Use `Caleb M. Add-ons Settings > PronounceIt settings > Tools > Add custom pronunciation` for local corrections.
-
-PronounceIt stores custom corrections in:
-
-```text
-user_files/custom_pronunciations.json
-```
-
-These files stay local to your Anki profile and are preserved during add-on upgrades.
-
-Enter the term and one readable pronunciation in the same editor. Additional options lets you change the text read aloud. Cancel discards the draft; a failed save keeps your input available. Existing custom files with a `syllables` field continue to load, but syllables are no longer displayed separately.
-
-## License
-
-PronounceIt code is released under the MIT License. Written dictionary data has separate attribution and license terms in `data/written-guide-attribution.md`.
-
-## For Developers
-
-The sections below are for local development, release checks, and pronunciation corpus maintenance.
-
-### Project Layout
-
-- `__init__.py`: Anki add-on entrypoint.
-- `manifest.json`: Anki add-on metadata.
-- `pronounceit/`: Python add-on code.
-- `web/`: reviewer JavaScript and CSS assets.
-- `data/medical_pronunciations.json`: bundled pronunciation corpus.
-- `audio/`: bundled high-yield AIFF or MP3 audio clips.
-- `user_files/`: Anki-preserved local user data.
-- `scripts/release/`: add-on build, audio-pack publication, and local pack server scripts.
-- `scripts/audio/`: Azure-native audio generation, review, and pack-build scripts.
-- `scripts/corpus/`: pronunciation audit and source-lexicon import scripts.
-- `tests/`: unit tests.
-- `dist/pronounceit.ankiaddon`: built Anki add-on archive.
-
-### Local Testing
-
-1. Open Anki.
-2. Go to `Tools > Add-ons > View Files`.
-3. Copy or symlink this repository folder into `addons21/pronounceit`.
-4. Restart Anki.
-5. Review a card and test pre-answer playback, Option/Alt selection gestures, plain right-click, and every Control/Ctrl quick-card gesture.
-
-### Build
-
-```bash
-python3 scripts/release/build_ankiaddon.py
-```
-
-The archive is written to:
-
-```text
-dist/pronounceit.ankiaddon
-```
-
-### Validation
-
-Run before distribution:
+Use Python 3.11 or newer and Node.js, matching the CI environment. Runtime add-on code needs no pronunciation-generation dependencies.
 
 ```bash
 python3 -m unittest discover -s tests
 python3 scripts/corpus/audit_pronunciations.py
 node --check web/pronounceit.js
-PYTHONPYCACHEPREFIX=/private/tmp/pronounceit_pycache python3 -m compileall __init__.py pronounceit scripts tests
+PYTHONPYCACHEPREFIX=/tmp/pronounceit_pycache python3 -m compileall -q __init__.py pronounceit scripts tests
 python3 scripts/release/build_ankiaddon.py
-unzip -l dist/pronounceit.ankiaddon
 ```
 
-See `RELEASE_CHECKLIST.md` for the full release gate and manual Anki smoke test.
+The builder validates written-guide coverage, the dictionary’s audio-pack checksum, the bundled audio set, required runtime files, and source notices. It excludes private user data and only replaces `dist/pronounceit.ankiaddon` after validation succeeds. Identical input files produce identical package bytes. Use `--output /path/to/candidate.ankiaddon` to preserve another candidate.
 
-GitHub deployment is intentionally staged: publish the immutable `audio-pack-v2`
-release only after isolated Anki validation, test the anonymous live download, and
-then publish the `v1.1.0` add-on release. AnkiWeb publication is deferred.
+Automated checks do not establish native Anki behavior or visual acceptance. Follow [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for a later smoke test in a disposable, sync-disabled Anki base. No Anki launch is needed for the commands above.
 
-## Release Notes
+### Written-guide maintenance
 
-Prepared release tag:
+Written guides prefer published references, then documented composition and corrections, followed by generated estimates. Provenance and generation status are retained in the data. Structural audits check completeness and reproducibility; they do not measure medical pronunciation accuracy.
 
-```text
-v1.1.0
-```
-
-Release focus:
-
-- Restores plain right-click to Anki and opens PronounceIt’s quick pronunciation card with Control/Ctrl activation.
-- Adds one customizable modifier for click, drag-selection, and selected-text playback.
-- Adds a separate Control/Ctrl-default modifier for the quick pronunciation card.
-- Enables pronunciation before answer reveal by default.
-- Adds one-time offline-pack onboarding and permanently visible pack controls.
-- Replaces the old theme presets with neutral Light and Dark themes.
-- Replaces the multi-key shortcut with one customizable playback modifier and a discoverable Tools action.
-- Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.
-- Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
-- Refreshes README and config wording around the quick pronunciation card and saved-word workflow.
-
-See `RELEASE_NOTES.md` for the PR and release summary.
-
-### Corpus Maintenance
-
-The UI shows one readable pronunciation field, with primary stress in capitals. Long phrases may wrap. Written guides use Wiktionary first, CMUdict second, then fully referenced phrase components and documented corrections. US English is preferred; other standard variants are accepted. Written guides do not need to match the audio exactly.
-
-```text
-clozapine -> KLOH-zuh-peen
-```
-
-Rebuild the text from the pinned local snapshots, then audit it:
+Rebuild from the pinned source snapshots using the existing generation environment:
 
 ```bash
 .venv-generation/bin/python scripts/corpus/build_written_guides.py
 python3 scripts/corpus/audit_pronunciations.py
 ```
 
-`data/written_pronunciations.json` records each selected reference or generation method, its phonetics, conversion, and internal status. `build/written-guides/coverage.json` reports coverage and generation counts. Source hashes are verified before building. Dictionary references take priority; remaining terms use US lexicon estimates, medical word-part composition, AI-authored clinical guides, and local US pronunciation rules. These records are marked `AI Generated` internally and have no additional interface label. Full-library linguistic accuracy has not been measured. `data/medical_pronunciations.json` retains legacy audio inputs; the display overlay does not change those inputs or the downloadable pack.
+Dependencies are pinned in `scripts/corpus/requirements-written-guides.txt`. The builder expects the local Wiktionary and CMUdict snapshots under `build/kokoro-source-snapshots/`, plus checksummed supplemental sources under `build/written-guide-sources/`. `scripts/corpus/fetch_written_sources.py` fetches the supplemental sources. See [PRONUNCIATION_QA.md](PRONUNCIATION_QA.md) for correction and acceptance rules.
 
-Generation uses the existing `.venv-generation` environment and the packages pinned in `scripts/corpus/requirements-written-guides.txt`. No model or pronunciation-generation dependency is required in Anki. Use `--references-only` with a separate `--output` and `--report` to measure published-reference coverage without filling gaps. AI-authored clinical adjustments live in `data/written-guide-ai-overrides.json`; source-backed corrections live in `data/written-guide-corrections.json`.
+Keep display-only changes in the written-guide overlay. Changing `data/medical_pronunciations.json` changes the audio compatibility checksum and requires a matching pack. Audio regeneration and pilot acceptance are separate workflows; the tools and historical approvals are described in [OVERNIGHT_AUDIO_REBUILD.md](OVERNIGHT_AUDIO_REBUILD.md) and the pronunciation QA document.
 
-The additional reference pass uses NCI's Dictionary of Cancer Terms and the public-domain Moby Pronunciator II. Run `python3 scripts/corpus/fetch_written_sources.py` once to save their checksummed snapshots under `build/written-guide-sources/`. Subsequent builds use those snapshots offline. The rebuild also expects the existing pinned Wiktionary and CMUdict files under `build/kokoro-source-snapshots/`.
+## License
 
-Estimate the neural generation job without credentials:
+Application code uses the MIT License. Written guides have separate terms in [data/written-guide-attribution.md](data/written-guide-attribution.md). Audio-derived assets have separate attribution and applicable licenses in [PRONUNCIATION_ASSET_ATTRIBUTION.md](PRONUNCIATION_ASSET_ATTRIBUTION.md) and `pronunciation_licenses/`.
 
-```bash
-python3 scripts/audio/generate_neural_audio.py --dry-run
-```
-
-Generate the pilot, record the checksum-bound owner approval, and then generate the full corpus. Uncorrected terms use Azure's native pronunciation; only explicit corrections use SAPI phonemes:
-
-```bash
-export AZURE_SPEECH_KEY=...
-export AZURE_SPEECH_REGION=...
-python3 scripts/audio/generate_neural_audio.py --scope high-yield --workers 4
-python3 scripts/audio/generate_neural_audio.py --scope curated --workers 4
-python3 scripts/audio/generate_neural_audio.py --scope generated-sample --workers 4
-python3 scripts/audio/review_audio.py approve-method \
-  --reviewer owner \
-  --statement "The Azure-native pronunciations sound high quality."
-python3 scripts/audio/review_audio.py status
-
-# Reuses pilot clips whose SSML sidecar hash still matches.
-python3 scripts/audio/generate_neural_audio.py --scope all --workers 4
-python3 scripts/audio/build_audio_pack.py \
-  --pack-version 2 \
-  --base-url https://github.com/caleblee789/PronounceIt/releases/download/audio-pack-v2 \
-  --install-high-yield
-```
-
-Azure credentials are read only by the generation script and are never placed in the add-on or audio pack. Any clip is regenerated automatically when its SSML sidecar hash changes.
-
-See `PRONUNCIATION_QA.md` for pronunciation acceptance criteria.
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for development changes and the published v1.3.0 release.

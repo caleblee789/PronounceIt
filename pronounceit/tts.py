@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import platform
 import shutil
 import subprocess
@@ -70,6 +72,7 @@ class QtTextToSpeechEngine(TtsEngine):
 
     def __init__(self) -> None:
         self._engine: Any | None = None
+        self._default_voice: Any | None = None
 
     def _ensure_engine(self) -> Any:
         if self._engine is not None:
@@ -82,6 +85,7 @@ class QtTextToSpeechEngine(TtsEngine):
             except Exception as exc:
                 raise RuntimeError("Qt TextToSpeech is unavailable") from exc
         self._engine = QTextToSpeech()
+        self._default_voice = self._engine.voice()
         return self._engine
 
     def speak(self, text: str, settings: TtsSettings) -> bool:
@@ -96,8 +100,10 @@ class QtTextToSpeechEngine(TtsEngine):
             return TtsResult(False, "Qt TextToSpeech is unavailable", [str(exc)])
         if settings.volume is not None and hasattr(engine, "setVolume"):
             engine.setVolume(max(0, min(100, settings.volume)) / 100)
-        if settings.rate and hasattr(engine, "setRate"):
+        if hasattr(engine, "setRate"):
             engine.setRate(max(-10, min(10, settings.rate)) / 10)
+        if self._default_voice is not None:
+            engine.setVoice(self._default_voice)
         if settings.voice and hasattr(engine, "availableVoices"):
             for voice in engine.availableVoices():
                 if settings.voice.casefold() in voice.name().casefold():
@@ -170,6 +176,8 @@ class LocalAudioFileEngine(TtsEngine):
     def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
             return TtsResult(False, "local audio disabled")
+        if settings.use_text_override:
+            return TtsResult(False, "custom speech text overrides recordings")
         audio_path = self._resolve_audio_file(settings.audio_file)
         if audio_path is None:
             return TtsResult(False, "local audio unavailable")
@@ -269,13 +277,13 @@ class GeneratedAudioFileEngine(TtsEngine):
         return self.speak_result(text, settings).ok
 
     def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
-        if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
+        if settings.audio_backend != "local_audio_then_tts":
             return TtsResult(False, "generated audio disabled")
         source_text = text if settings.use_text_override else (settings.term or text)
         speech_text = " ".join(source_text.split())
         if not speech_text:
             return TtsResult(False, "empty speech text")
-        audio_path = self._cache_path(settings.term or speech_text)
+        audio_path = self._cache_path(speech_text, settings)
         if not audio_file_has_content(audio_path) and not self._generate_audio(
             speech_text, audio_path, settings
         ):
@@ -290,7 +298,7 @@ class GeneratedAudioFileEngine(TtsEngine):
                 audio_backend=settings.audio_backend,
                 audio_file=relative_path,
                 term=settings.term,
-                use_text_override=settings.use_text_override,
+                use_text_override=False,
                 quality_tier=settings.quality_tier,
                 audio_source_hint="generated",
             ),
@@ -299,9 +307,11 @@ class GeneratedAudioFileEngine(TtsEngine):
             return TtsResult(False, result.reason or "generated audio playback failed", result.attempts)
         return TtsResult(True, "playing generated audio", result.attempts, "generated")
 
-    def _cache_path(self, key: str) -> Path:
-        slug = _audio_slug(key) or "pronounceit_term"
-        return self.cache_dir / f"{slug}.aiff"
+    def _cache_path(self, speech_text: str, settings: TtsSettings) -> Path:
+        identity = json.dumps([speech_text, settings.voice, settings.rate], ensure_ascii=False)
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        slug = (_audio_slug(settings.term or speech_text) or "pronounceit_term")[:60]
+        return self.cache_dir / f"{slug}-{digest}.aiff"
 
     def _generate_audio(self, speech_text: str, output_path: Path, settings: TtsSettings) -> bool:
         say = shutil.which("say")
@@ -314,6 +324,8 @@ class GeneratedAudioFileEngine(TtsEngine):
         command = [say]
         if settings.voice:
             command.extend(["-v", settings.voice])
+        if settings.rate:
+            command.extend(["-r", str(max(80, min(360, 180 + settings.rate * 18)))])
         command.extend(["-o", str(output_path), speech_text])
         try:
             result = subprocess.run(command, text=True, capture_output=True)
@@ -335,6 +347,8 @@ class AudioPackEngine(TtsEngine):
     def speak_result(self, text: str, settings: TtsSettings) -> TtsResult:
         if settings.audio_backend not in {"local_audio", "local_audio_then_tts"}:
             return TtsResult(False, "offline pronunciation pack disabled")
+        if settings.use_text_override:
+            return TtsResult(False, "custom speech text overrides recordings")
         term = " ".join((settings.term or text).split())
         if not term:
             return TtsResult(False, "empty audio pack term")

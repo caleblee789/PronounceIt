@@ -1,79 +1,49 @@
 # PronounceIt Release Checklist
 
-For release-prep merges to `main`, run the checks below before creating either
-GitHub Release. AnkiWeb publication is explicitly out of scope for this release.
+Source review and merge can be completed without launching Anki. Native acceptance and public distribution are separate gates. The current review explicitly defers Anki testing and does not authorize a new release or AnkiWeb upload.
 
-Run these checks before distributing `dist/pronounceit.ankiaddon`:
+## Automated source and package checks
 
 ```bash
 python3 -m unittest discover -s tests
 python3 scripts/corpus/audit_pronunciations.py
 node --check web/pronounceit.js
-PYTHONPYCACHEPREFIX=/private/tmp/pronounceit_pycache python3 -m compileall __init__.py pronounceit scripts tests
+PYTHONPYCACHEPREFIX=/tmp/pronounceit_pycache python3 -m compileall -q __init__.py pronounceit scripts tests
 python3 scripts/release/build_ankiaddon.py
-unzip -l dist/pronounceit.ankiaddon
 ```
 
-Manual Anki smoke test:
+- Verify 95,902 canonical terms, all aliases, 155 high-yield terms, and complete written-guide coverage.
+- Keep the released dictionary, `data/audio-pack-release.json`, and bundled recordings consistent. Display-only updates must not change the audio dictionary checksum.
+- Validate referenced written-guide conversions, generated-guide provenance, and the checked-in corrections. Passing an audit does not establish linguistic accuracy.
+- Require all Python/UI/web dependencies, written-guide data, audio provenance, and both sets of source attribution and license notices in the archive.
+- Verify the archive contains exactly the 155 expected playable bundled recordings and excludes private user files, backups, caches, credentials, scripts, and build reports.
+- Build a second archive with `--output` and confirm the package bytes match when source files are unchanged.
+- Record the tested commit and candidate checksum. Preserve earlier packages and evidence.
 
-Use a disposable Anki base/profile copy, disable sync, and set a unique
-`ANKI_SINGLE_INSTANCE_KEY`. Never run release acceptance against the live profile.
-Before publishing, serve the exact local pack artifacts over a Range-capable local
-HTTP server and install the exact candidate `.ankiaddon` into the disposable base.
+## Deferred native Anki smoke test
 
-1. Install or symlink the add-on into `addons21/pronounceit`.
-2. Restart Anki.
-3. Review a card with a known medical term, such as `agranulocytosis`.
-4. Confirm Option/Alt gestures report “Reveal the answer first” before reveal when `allow_on_question_side` is explicitly `false`.
-5. Reveal the answer, then hold Option/Alt and click the term; confirm audio plays once without opening the popup.
-6. Hold Option/Alt while dragging across part of a word or phrase; confirm playback starts after selection and resolves the longest matching medical phrase, then complete word bounds.
-7. Select the term normally, press and release Option/Alt, and confirm audio plays once. Confirm releasing Option/Alt after a modifier-click does not play twice.
-8. Plain right-click the term and confirm Anki’s normal menu opens without PronounceIt actions or playback.
-9. Control/Ctrl + click the term and confirm the PronounceIt submenu opens with Play, Details, and Save. Select the term, press Control/Ctrl, and confirm the same submenu opens.
-10. Open Caleb M. Add-ons Settings > PronounceIt settings and confirm the activation-modifier selector and all groups render cleanly without horizontal scrolling.
-11. Change between Light and Dark and confirm Settings, the reviewer popup, and notices retheme immediately and remain readable.
-12. Hover or click a marked AMBOSS term, then use Caleb M. Add-ons Settings > PronounceIt settings > Tools > Search pronunciation and confirm the PronounceIt popup appears.
-13. Use Caleb M. Add-ons Settings > PronounceIt settings > Tools > Search pronunciation and enter `agranulocytosis`.
-14. Use Caleb M. Add-ons Settings > PronounceIt settings > Tools > Add custom pronunciation on a test term and confirm it is saved to `user_files/custom_pronunciations.json`.
-15. Save the term, then open Caleb M. Add-ons Settings > PronounceIt settings > Tools > Saved pronunciations.
-16. Pronounce a non-dictionary test word and confirm a cached clip appears in `user_files/generated_audio/` before any live TTS fallback is needed.
-17. Open Caleb M. Add-ons Settings > PronounceIt settings > Tools > Dictionary audit and confirm it reports PASS.
-18. Open Caleb M. Add-ons Settings > PronounceIt settings > Tools > Playback diagnostics and confirm recent playback attempts and any data warnings are readable.
-19. In Offline pronunciation pack, start the complete pack download, close Settings, and confirm card review remains responsive while all 16 shards download in the background.
-20. Reopen Settings and verify progress reconnects; test pause/resume, cancellation, interrupted Range resume, checksum failure, verification, update, removal, and low-space failure messaging.
-21. Verify Custom, Azure, Generated, and Live audio plus diagnostics. Confirm bundled and downloaded clips report Azure, uncached pack terms extract on demand, and the 250 MiB LRU evicts old files.
-22. Inspect Settings and reviewer UI in light/dark themes, keyboard navigation, and representative scaling. Capture acceptance screenshots.
-23. Restart Anki twice and confirm saved/custom pronunciations, partial downloads, and installed pack state persist.
-24. Confirm the isolated base contains all writes and sync remained disabled.
+Run only when authorized. Use a fresh disposable Anki base/profile, disable sync, and set a unique `ANKI_SINGLE_INSTANCE_KEY`. Install the exact candidate archive. Never use the normal collection for release acceptance.
 
-GitHub deployment gate:
+1. Verify the process, visible window, filesystem writes, and sync settings identify the disposable base.
+2. Review known, unknown, long, and multiword terms. Test before and after answer reveal, including the setting that blocks pre-answer pronunciation.
+3. Verify Option/Alt click, selection, and modifier-tap playback; Control/Ctrl click, right-click, and modifier-tap quick cards; and Anki’s unchanged plain right-click. Check that each gesture plays at most once.
+4. Test nested card markup and AMBOSS-wrapped terms, phrase boundaries, viewport edges, and theme changes.
+5. Open all three settings tabs and owned dialogs in Light and Dark, at normal and compact sizes. Check keyboard navigation, scrolling, wrapping, and focus. Capture native acceptance screenshots.
+6. Confirm Search plays only after Play. Save a word, filter the saved list, play it, open its original card in Browse, and remove it.
+7. Add a written-only custom correction and confirm normal recordings still play. Add explicit text read aloud and confirm it overrides recordings, survives saving, and changes when edited. Clear it to restore normal audio.
+8. Confirm Recordings only never invokes computer speech, including modifier playback and saved words. Test computer-only and mixed modes; change and reset voice, speed, and volume where supported.
+9. Save and cancel settings drafts. Test a save failure, then retry. Disable and re-enable pronunciation while reviewing.
+10. Download the matching pack, close/reopen Settings, pause, resume, and cancel. Restart and resume partial files. Test corrupt downloads, Check files, low-space errors, and Remove after both completed and cancelled downloads.
+11. Confirm the full pack resolves uncached terms, reports the actual playback source, and respects the extraction-cache limit. Verify custom recordings and system-voice fallback independently.
+12. Restart twice. Recheck saved/custom data, settings, pack status, the isolated process and base, and disabled sync. Record all unrun or failed gates separately.
 
-- Merge the tested commit and rebuild both artifacts from that exact merge commit.
-- Run `python3 scripts/release/publish_audio_pack.py` as a dry verification, then rerun with `--publish` only after `gh auth status` passes.
-- Publish `audio-pack-v2` as non-latest and verify all 18 remote assets.
-- Repeat the complete anonymous download from GitHub in the isolated profile.
-- Only then push tag `v1.1.0`; the release workflow builds and publishes `pronounceit.ankiaddon`.
-- Do not create or update an AnkiWeb listing.
+A Range-capable local server can exercise interruption and corruption before testing anonymous downloads from the published pack URL.
 
-Pronunciation release gate:
+## Public distribution
 
-- If `data/medical_pronunciation_lexicon_for_codex.txt` changes, run `python3 scripts/corpus/import_source_lexicon.py` before the checks above.
-- If a high-yield pronunciation changes, run `python3 scripts/audio/generate_bundled_audio.py --force --high-yield --parallel` before the checks above.
-- For a neural audio release, generate the 1,092-clip pilot, record the checksum-bound owner method approval, then confirm `python3 scripts/audio/review_audio.py status` reports `readyForFullGeneration: true`.
-- Run full generation only after the pilot passes, then build with `python3 scripts/audio/build_audio_pack.py --pack-version 2 --base-url <v2-release-url> --install-high-yield`.
-- The builder must reject generated G2P phonemes, stale method approval, mismatched SSML, invalid sidecars, and checksum or duration errors.
-- The high-yield checklist must pass with no missing terms.
-- The bundled dictionary must contain at least 590 unique terms and the checklist must contain at least 155 terms.
-- The source lexicon in `data/medical_pronunciation_lexicon_for_codex.txt` must have no missing runtime dictionary terms.
-- The source lexicon must have no pronunciation mismatches against the runtime dictionary.
-- Every bundled term must include display pronunciation, syllables, stress capitalization, and TTS speech text.
-- Every high-yield checklist term must have valid playable AIFF or MP3 audio.
-- Every comprehensive-pack term must have one valid MP3 and metadata sidecar; all 16 deterministic shards must match `pack-manifest.json`, `SHA256SUMS`, and the dictionary hash.
-- Confirm Azure credentials, build reports, pack shards, and private `user_files` content are absent from `dist/pronounceit.ankiaddon`.
-- The archive must exclude zero-frame placeholders, generated caches, saved/custom JSON, backups, and private `user_files/audio` content.
-- TTS speech text must not include capitals, hyphens, or alternate-pronunciation `or` text.
-- New terms should be added to `data/high_yield_checklist.json` when they represent common medical-school review content.
-
-## UI candidate review
-
-Use a disposable, sync-disabled macOS Anki profile. Review all three settings tabs and owned dialogs in Light and Dark, at default and compact sizes. Check long and unknown terms, quick-card viewport edges, errors, and expanded details. Confirm saved-list filtering and removal, custom-editor cancellation, settings persistence after restart, and pack download/pause/resume/cancel/check/remove. Keep candidate hashes and native captures together. Unit tests and package validation do not replace these native checks. Do not publish as part of this UI implementation.
+- Obtain native acceptance for the exact release candidate before a new public release.
+- Retain immutable existing release tags and assets. Do not overwrite v1.3.0 or its matching audio pack.
+- A source-only change can continue using the existing version 3 pack when the audio dictionary checksum is unchanged.
+- Audio changes require their own pilot approval, provenance, full decoding/checksum validation, matching dictionary and pack metadata, and explicit publication authorization. Historical Azure approval does not approve Kokoro audio.
+- Publish a new immutable pack only when needed, verify anonymous downloads, then tag the approved add-on version. A version tag triggers `.github/workflows/release-addon.yml`.
+- AnkiWeb publication requires a separate request. A merge, passing CI, or a valid archive does not establish native or human acceptance.

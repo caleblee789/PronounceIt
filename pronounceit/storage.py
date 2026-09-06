@@ -103,7 +103,7 @@ class SavedPronunciations:
             "found": bool(payload.get("found")),
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
-        for key in ("cardId", "noteId", "deckId", "deckName"):
+        for key in ("cardId", "noteId", "deckId", "deckName", "useTextOverride", "synthesisText", "audioProvider"):
             if payload.get(key) not in (None, ""):
                 record[key] = payload[key]
         raw_items.append(record)
@@ -182,6 +182,7 @@ class CustomPronunciations:
                 terms[index] = {**item, **record}
                 if not speech_text:
                     terms[index].pop("speechText", None)
+                    terms[index].pop("speech_text", None)
                 break
         else:
             terms.append(record)

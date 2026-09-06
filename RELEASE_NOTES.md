@@ -1,57 +1,32 @@
-# PronounceIt v1.1.0 Release Notes
+# Unreleased
 
-> Offline pronunciation pack version 2 is the first public pack. Local artifacts are prepared here; publishing the separate pack remains an explicit later step.
+This development update retains the released v1.3.0 recordings and matching pack while integrating the written-guide overlay and three-tab settings interface.
 
-## Summary
+- Keeps one written guide per term, with source attribution and internal generation provenance separate from audio inputs.
+- Makes search playback explicit and keeps saved words, custom corrections, and long quick-card results usable in the revised interface.
+- Honors recordings-only playback and explicit custom speech corrections, including saved corrections.
+- Refreshes computer-speech caches when text, voice, or speed changes; restores default Qt voice and speed correctly.
+- Recovers interrupted and corrupt pack downloads, preserves cancellation, and removes partial packs when requested.
+- Reports settings write failures instead of claiming success and permits enabling reviewer integration without a webview reload.
+- Preserves deterministic packaging, includes both audio and written-guide source notices, excludes private data, and replaces an existing build only after validation succeeds.
 
-PronounceIt v1.1.0 refines reviewer playback, onboarding, and appearance. Plain right-click remains Anki-native, while Control/Ctrl + left- or right-click or selected text opens the quick pronunciation card, and pronunciation is available before answer reveal by default.
+Validation is limited to automated checks and package inspection until the native smoke test in `RELEASE_CHECKLIST.md` is performed. Anki was not launched for this review. No new release tag or public add-on package is published by this source merge.
 
-## Highlights
+# PronounceIt v1.3.0
 
-- Adds one Option/Alt modifier key: hold it while clicking or selecting text, or press it after selecting, to play pronunciation.
-- Adds a separate Ctrl-default quick-card modifier for PronounceIt actions.
-- Restores plain right-click to Anki and opens the quick pronunciation card with Control/Ctrl activation.
-- Enables pre-answer pronunciation by default while preserving explicit disabled preferences.
-- Adds a one-time optional offline-pack prompt and moves all pack controls into the main settings view.
-- Replaces the old theme presets with unified Progressbar-style Light and Dark themes across Qt and reviewer surfaces.
-- Replaces the text Support control with the image-backed Buy Me a Coffee button.
-- Adds anchored loading, success, blocked, and failure feedback without forcing a popup.
-- Upgrades Saved Pronunciations with search, Play, Open Original, and Remove actions.
-- Records card, note, and deck metadata for new saved pronunciations when Anki exposes it.
-- Replaces the multi-key shortcut with a platform-aware, customizable direct playback modifier and keeps a discoverable Tools action.
-- Refreshes README, config docs, and release checklist wording for the v1.1.0 workflow.
-- Adds a checksum-bound Azure-native method approval and a separately downloadable 95,902-clip pack.
-- Unifies playback reporting around Custom audio, High Quality Downloaded Pack, and Standard text-to-speech.
-- Keeps offline-pronunciation-pack downloads running after Settings closes, with persistent status, pause/resume, restart-safe partial files, and non-modal completion or failure notices.
-- Makes configuration parsing and saved/custom pronunciation storage resilient to malformed data.
-- Adds atomic user-data writes, backups, visible data warnings, safer bridge parsing, and keyboard focus improvements.
+Version 1.3.0 replaces the complete audio collection with the accepted American English Kokoro voice and connects the add-on to its matching download pack.
 
-## Validation
+- 95,902 MP3 recordings, with 155 included in the add-on and the full collection in 16 download files.
+- Approximately 1.03 GiB for the full pack; this exact size was approved by the owner.
+- Preserves the written guides from v1.2.1, every canonical term and alias, custom overrides, saved words, and existing playback controls.
+- Supports version 3 provenance and clip checksum metadata while retaining version 2 compatibility for matching older dictionaries.
+- Checks cached recordings against the current clip checksum so an older clip cannot hide a correction.
+- Keeps the download in its cancelling state when an in-flight transfer reports final progress.
+- Shows only Word and Pronunciation in the details window, with wrapping for long guides.
+- Includes pronunciation-source attribution and applicable asset licenses separately from the application code license.
 
-- `python3 -m unittest discover -s tests`
-- `python3 scripts/corpus/audit_pronunciations.py`
-- `node --check web/pronounceit.js`
-- `PYTHONPYCACHEPREFIX=/private/tmp/pronounceit_pycache python3 -m compileall __init__.py pronounceit scripts tests`
-- `python3 scripts/release/build_ankiaddon.py`
-- `unzip -l dist/pronounceit.ankiaddon`
+The ten pilot recordings and voice were accepted. Reference-backed inputs and unverified estimates are separated in `quality/kokoro_rebuild/release-v1.3.0.json`; successful synthesis is not a whole-library accuracy measurement.
 
-Manual Anki smoke testing should follow `RELEASE_CHECKLIST.md` before publishing the tag, GitHub Release, or AnkiWeb upload.
-# Unreleased — written pronunciation refresh
+Validation covers the automated regression suite, the complete dictionary audit, all audio decoding and checksums, exact term and alias coverage, the bundled audio set, download-pack compatibility, and anonymous public downloads. Native Anki validation of this final package was not run at the owner's request.
 
-- Shows one readable pronunciation field throughout quick cards, details, saved entries, and custom corrections.
-- Uses Wiktionary as the primary written source, with CMUdict, referenced components, and documented corrections filling gaps.
-- Adds an additional gap-filling pass using NCI and Moby reference data.
-- Fills remaining terms with generated guides whose methods and `AI Generated` status are stored internally. Results show one pronunciation without a generation label.
-- Preserves existing audio inputs and user corrections, and accepts legacy syllable fields without displaying them.
-- Adds reproducible source provenance, a coverage report, and dictionary-data attribution.
-
-## Unreleased — UI release polish
-
-- Organizes settings into Review, Audio, and Tools with compact layouts and shared Light/Dark styling.
-- Keeps search and results together with explicit playback; replaces custom prompts with one cancellable editor.
-- Replaces the saved-word table with a list and retains search, playback, removal, and original-card links.
-- Fits quick cards to the reviewer after lookup, status changes, and resizing; wraps long terms and moves audio-source information into Details.
-- Preserves block boundaries when selecting card text and keeps inline phrase offsets intact.
-- Uses clear audio-source labels and disables unavailable recordings in recordings-only mode.
-- Gives errors a short explanation with technical details available separately.
-- Preserves the written-guide pipeline, existing configuration keys, and local user data formats.
+Install the add-on package, restart Anki, then use Download/Update under Offline pronunciation pack in settings to install the full new collection. Earlier releases remain available. AnkiWeb publication is separate from this GitHub release.

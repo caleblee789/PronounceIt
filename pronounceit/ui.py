@@ -366,7 +366,7 @@ def show_saved(parent=None) -> None:
             control.setVisible(bool(items))
         guide.setText(str(item.get("pronunciation") or "No pronunciation guide found") if item else "")
         guide.setVisible(bool(item))
-        play_button.setEnabled(bool(item))
+        play_button.setEnabled(bool(item and core._enrich_lookup_payload(item).get("audioAvailable")))
         browse.setEnabled(bool(item and core._saved_origin_search_query(item)))
         remove.setEnabled(bool(item))
     view.selectionModel().currentChanged.connect(lambda *_: update())
@@ -480,7 +480,11 @@ def show_onboarding() -> None:
     dialog.footer.addWidget(button("Download pack", dialog.accept, "primary"))
     dialog.fit(500, 175)
     accepted = dialog.exec() == QDialog.DialogCode.Accepted
-    core._complete_audio_pack_onboarding(accepted)
+    try:
+        core._complete_audio_pack_onboarding(accepted)
+    except Exception as exc:
+        core._record_runtime_diagnostic(str(exc))
+        feedback("Could not save your download choice. Try again in Audio settings.", error=True)
 
 
 class Settings(Dialog):

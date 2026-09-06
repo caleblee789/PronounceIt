@@ -22,7 +22,11 @@ The 155 high-yield checklist terms are bundled locally. The separately downloade
 - Legacy phonetic speech text: `uh gran yoo loh sy toh sis`
 - Fluent fallback input: `agranulocytosis`
 
-Space-separated respellings must not be sent to ordinary system TTS because they create a pause between every syllable. Neural release audio uses raw term spelling as one fluent SSML phrase by default. A `<phoneme>` element is permitted only for a manually reviewed correction. General-English G2P output must never control release audio. Runtime resolution is custom audio, reviewed bundled audio, reviewed comprehensive pack, generated cache, then raw-term system TTS.
+The current version 3 audio pack uses Kokoro-82M with phoneme input, the American English `af_heart` voice, speed 0.95, and 24 kHz mono MP3 encoding at 48 kbps. Ten exact pilot clips and the generation method were accepted. Every other recording remains individually unreviewed; reference-backed pronunciation inputs and generated estimates are reported separately.
+
+Audio metadata is independent of the displayed guide. Version 1.3.0 preserves the published v1.2.1 written guides while replacing only audio assets and associated provenance. Raw canonical term spelling remains the default system TTS fallback; space-separated respellings are used only for explicit user overrides. Custom recordings are preferred when referenced by an entry. An explicit user speech override bypasses recordings; a written-only correction leaves normal audio available.
+
+The historical version 2 Azure pipeline uses raw-term SSML and manually reviewed SAPI corrections. Its approval cannot approve a version 3 Kokoro pack. Both manifest versions are supported only when the dictionary checksum matches.
 
 The audit reports any zero-frame AIFF placeholders and the package builder excludes them. An AIFF is shippable only when its header reports at least one frame and its sound-data chunk is non-empty; release-ready checkouts should contain none.
 
@@ -34,7 +38,7 @@ Use explicit `sapiPhonemes` for reviewed synthesis corrections. Existing `speech
 2. Add high-yield terms to `data/high_yield_checklist.json`.
 3. Include aliases for abbreviations such as `GERD`, `TMJ`, or organism shorthand.
 4. If updating from the source lexicon, run `python3 scripts/corpus/import_source_lexicon.py`.
-5. Dry-run, generate, and package neural audio with `scripts/audio/generate_neural_audio.py` and `scripts/audio/build_audio_pack.py`.
+5. Rebuild the written-guide inventory and matching audio-pack metadata before packaging. The current Kokoro workflow is described in `OVERNIGHT_AUDIO_REBUILD.md`; the Azure scripts are historical tooling and must not overwrite the current release.
 6. Run:
 
 ```bash
@@ -62,7 +66,7 @@ python3 scripts/release/build_ankiaddon.py
 - The built archive contains no audio-pack shards, generation credentials, build reports, invalid audio, or private `user_files` data.
 - TTS speech text must be lowercase, hyphen-free, and must not include alternate-pronunciation wording such as `or`.
 - Accepted written variants may differ from audio. The original dictionary, audio files, synthesis inputs, and audio identifiers must remain unchanged during text-only updates.
-- The Azure-native method approval is bound to the 1,092 pilot MP3 checksums, SSML hashes, dictionary hash, voice, rate, and output format.
+- The historical Azure-native method approval is bound to the 1,092 pilot MP3 checksums, SSML hashes, dictionary hash, voice, rate, and output format.
 - The approval covers the synthesis method and pilot quality; it does not claim individual review of all 95,902 clips.
 - Any pilot re-synthesis or SSML change invalidates the method approval automatically.
 - The pack builder refuses release unless the method approval is current and every asset, sidecar, checksum, duration, and identifier validates.
@@ -70,6 +74,6 @@ python3 scripts/release/build_ankiaddon.py
 
 ## Local Corrections
 
-Use Caleb M. Add-ons Settings > PronounceIt settings > Advanced > Pronunciation tools > Add custom pronunciation when a term needs a local correction before the bundled dictionary is updated. Custom entries are stored in `user_files/custom_pronunciations.json` and override bundled entries immediately after saving.
+Use Caleb M. Add-ons Settings > PronounceIt settings > Tools > Add custom pronunciation when a term needs a local correction before the bundled dictionary is updated. Custom entries are stored in `user_files/custom_pronunciations.json` and override bundled entries immediately after saving.
 
 Document broadly useful text corrections with their references in `data/written-guide-corrections.json`, then rebuild written guides. The source dictionaries normally take precedence; set `overrideReference` only for a documented source error. AI-authored corrections belong in `data/written-guide-ai-overrides.json` and only fill remaining gaps. Do not modify the legacy audio corpus to change display text.

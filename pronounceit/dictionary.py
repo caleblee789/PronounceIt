@@ -45,8 +45,9 @@ class PronunciationEntry:
             payload.pop(key, None)
         payload["requestedText"] = requested_text
         payload["speechText"] = self.speech_text or pronunciation_to_speech_text(self.pronunciation)
+        payload["useTextOverride"] = self.source == "user-override" and bool(self.speech_text)
         payload["synthesisText"] = (
-            payload["speechText"] if self.source == "user-override" and self.speech_text else self.term
+            payload["speechText"] if payload["useTextOverride"] else self.term
         )
         payload["audioFile"] = self.audio_file or default_audio_file(self.term)
         payload["qualityTier"] = self.quality_tier

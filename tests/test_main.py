@@ -168,7 +168,7 @@ class MainMessageTests(unittest.TestCase):
         script = reviewer.web.scripts[0]
         self.assertIn("window.PronounceIt.show", script)
         self.assertIn('"pronunciation": ' + json.dumps(main._dictionary.lookup("agranulocytosis")["pronunciation"]), script)
-        self.assertIn("uh gran yoo loh sy toh sis", script)
+        self.assertIn("ay gran yuh loh sy toh sis", script)
 
     def test_lookup_message_uses_longest_context_phrase(self) -> None:
         reviewer = FakeReviewer()
@@ -315,7 +315,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(fake_tts.calls), 1)
         self.assertEqual(fake_tts.calls[0][0], "agranulocytosis")
         self.assertEqual(fake_tts.calls[0][1].term, "agranulocytosis")
-        self.assertEqual(fake_tts.calls[0][1].quality_tier, "verified")
+        self.assertEqual(fake_tts.calls[0][1].quality_tier, "generated")
         self.assertIn('"ok": true', reviewer.web.scripts[0])
         self.assertIn('"term": "agranulocytosis"', reviewer.web.scripts[0])
 
@@ -892,8 +892,8 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertTrue(payload["found"])
         self.assertEqual(payload["term"], "Glasgow Coma Scale")
-        self.assertEqual(payload["speechText"], "glaz goh koh muh skayl")
-        self.assertEqual(payload["audioSource"], "azure")
+        self.assertEqual(payload["speechText"], "glas goh koh muh skayl")
+        self.assertEqual(payload["audioSource"], "recorded")
         self.assertEqual(payload["audioSourceLabel"], "Recorded audio")
         self.assertFalse(payload["alreadySaved"])
 
@@ -948,6 +948,8 @@ class MainMessageTests(unittest.TestCase):
                         "term": "Example",
                         "audioFile": "example.wav",
                         "source": "user-override",
+                        "speechText": "ex am pul",
+                        "useTextOverride": False,
                         "found": True,
                     }
                 )
@@ -1124,6 +1126,13 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(written["tts_volume"], 100)
         self.assertEqual(written["theme"], "light")
 
+        from unittest.mock import Mock, patch
+        manager = Mock()
+        manager.writeConfig.side_effect = OSError("disk full")
+        with patch.dict(sys.modules, {"aqt": types.SimpleNamespace(mw=types.SimpleNamespace(addonManager=manager))}):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                main._write_config({})
+
     def test_show_manual_pronunciation_keeps_playback_explicit(self) -> None:
         shown: list[tuple[dict, str]] = []
         spoken: list[dict] = []
@@ -1168,6 +1177,12 @@ class MainMessageTests(unittest.TestCase):
             self.assertEqual(main._current_saved_entry(item), {**item, "pronunciation": "", "textSource": "", "textReviewStatus": ""})
             custom = {**item, "source": "user-override"}
             self.assertEqual(main._current_saved_entry(custom), custom)
+        with patch.object(main, "_lookup_payload", return_value={"source": "user-override", "useTextOverride": True}):
+            legacy = main._current_saved_entry(custom)
+            self.assertTrue(legacy["useTextOverride"])
+            playback = main._playback_payload_from_lookup(legacy)
+            self.assertTrue(playback["useTextOverride"])
+            self.assertEqual(playback["text"], "original")
         self.assertEqual(item["pronunciation"], "old")
 
     def test_save_custom_pronunciation_reloads_dictionary(self) -> None:

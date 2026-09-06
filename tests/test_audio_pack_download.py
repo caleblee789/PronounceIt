@@ -14,6 +14,7 @@ class FakeAudioPackManager:
         self.cancelled = False
         self.removed = False
         self.installed = False
+        self.progress = None
 
     def status(self, verify_hashes: bool = False) -> AudioPackStatus:
         return AudioPackStatus(
@@ -28,6 +29,7 @@ class FakeAudioPackManager:
         )
 
     def download(self, progress):
+        self.progress = progress
         self.started.set()
         progress(100, 800, "0")
         self.release.wait(timeout=2)
@@ -47,7 +49,6 @@ class FakeAudioPackManager:
 
     def cancel(self):
         self.cancelled = True
-        self.release.set()
 
     def remove(self):
         self.removed = True
@@ -98,8 +99,10 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
         self.assertFalse(controller.snapshot().paused)
         self.assertFalse(manager.paused)
         self.assertTrue(controller.cancel())
+        manager.progress(100, 800, "0")  # A final transfer update can arrive after cancellation.
         self.assertEqual(controller.snapshot().phase, "cancelling")
         self.assertFalse(controller.cancel())
+        manager.release.set()
         self.wait_for(lambda: controller.snapshot().phase == "cancelled")
         self.assertEqual(controller.snapshot().error, "")
         self.assertIn("resume later", controller.snapshot().message)

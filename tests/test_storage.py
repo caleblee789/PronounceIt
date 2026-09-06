@@ -30,6 +30,8 @@ class StorageTests(unittest.TestCase):
                 "noteId": 456,
                 "deckId": 789,
                 "deckName": "Medical School",
+                "useTextOverride": True,
+                "synthesisText": "custom text read aloud",
             }
 
             first = storage.save_entry(payload)
@@ -45,6 +47,8 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(saved[0]["noteId"], 456)
             self.assertEqual(saved[0]["deckId"], 789)
             self.assertEqual(saved[0]["deckName"], "Medical School")
+            self.assertTrue(saved[0]["useTextOverride"])
+            self.assertEqual(saved[0]["synthesisText"], "custom text read aloud")
             self.assertTrue(storage.contains({"term": "Agranulocytosis"}))
             self.assertFalse(storage.contains({"term": "clozapine"}))
 
@@ -101,6 +105,12 @@ class StorageTests(unittest.TestCase):
             data = json.loads((Path(tmp) / "user_files" / "custom_pronunciations.json").read_text())
             self.assertEqual(len(data["terms"]), 1)
             self.assertEqual(data["terms"][0]["speechText"], "local kloh zuh peen")
+            data["terms"][0]["speech_text"] = "legacy override"
+            storage.path.write_text(json.dumps(data))
+            storage.upsert_entry("clozapine", "KLOH-zuh-peen")
+            record = storage.load()["terms"][0]
+            self.assertNotIn("speechText", record)
+            self.assertNotIn("speech_text", record)
 
     def test_corrupt_saved_json_is_not_overwritten(self) -> None:
         from pathlib import Path

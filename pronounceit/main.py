@@ -247,7 +247,11 @@ def _migrate_theme_config() -> dict[str, Any]:
         "theme": _legacy_theme_choice(raw.get("theme"), _current_anki_theme()),
         "theme_initialized": True,
     }
-    return _write_config(migrated)
+    try:
+        return _write_config(migrated)
+    except Exception as exc:
+        _record_runtime_diagnostic(f"Could not save appearance settings: {exc}")
+        return raw
 
 
 def _audio_pack_onboarding_needed(
@@ -591,10 +595,12 @@ def _show_saved_pronunciations() -> None:
 
 def _current_saved_entry(item: dict[str, Any]) -> dict[str, Any]:
     """Refresh display text in memory without rewriting saved files or audio fields."""
-    if item.get("source") == "user-override":
-        return item
     term = str(item.get("term") or item.get("requestedText") or "")
     payload = _lookup_payload(term)
+    if item.get("source") == "user-override":
+        if "useTextOverride" not in item and payload.get("source") == "user-override":
+            return {**item, "useTextOverride": bool(payload.get("useTextOverride"))}
+        return item
     return {**item, "pronunciation": payload.get("pronunciation", ""),
             "textSource": payload.get("textSource", ""), "textReviewStatus": payload.get("textReviewStatus", "")}
 
@@ -891,10 +897,11 @@ def _write_config(mapping: dict[str, Any]) -> dict[str, Any]:
     next_config = PronounceItConfig.from_mapping(mapping).as_config_mapping()
     try:
         from aqt import mw
-
-        mw.addonManager.writeConfig(_addon_module, next_config)
-    except Exception:
-        pass
+    except ImportError:
+        return next_config
+    mw.addonManager.writeConfig(_addon_module, next_config)
+    if _audio_pack is not None:
+        _audio_pack.cache_bytes = next_config["audio_pack_cache_mb"] * 1024 * 1024
     return next_config
 
 
@@ -1002,7 +1009,7 @@ def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
     result = dict(payload)
     config = _config()
     audio_file = str(result.get("audioFile") or "")
-    override = result.get("source") == "user-override" and bool(result.get("speechText"))
+    override = bool(result.get("useTextOverride"))
     local = bool(audio_file and _audio_file_is_available(audio_file))
     pack = False
     if config.audio_backend != "system_tts" and not override and not local and _audio_pack is not None:
@@ -1075,9 +1082,8 @@ def _is_reviewer_context(context: Any) -> bool:
 def _on_webview_will_set_content(web_content: Any, context: Any) -> None:
     if not _is_reviewer_context(context):
         return
-    config = _config()
-    if not config.enabled:
-        return
+    # Keep the bridge available so enabling PronounceIt works without reloading
+    # the reviewer. JavaScript receives the enabled flag in its ready callback.
     try:
         from aqt import mw
 
@@ -1183,13 +1189,15 @@ def _playback_request_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def _playback_payload_from_lookup(result: dict[str, Any]) -> dict[str, Any]:
     audio_file = str(result.get("audioFile") or "")
     audio_source = str(result.get("audioSource") or "")
+    override = bool(result.get("useTextOverride"))
+    text = result.get("speechText") if override else result.get("synthesisText")
     if audio_source not in {"custom", "azure", "recorded"} or not _audio_file_is_available(audio_file):
         audio_file = ""
     return {
-        "text": result.get("synthesisText") or result.get("term") or result.get("requestedText") or "",
+        "text": text or result.get("term") or result.get("requestedText") or "",
         "term": result.get("term") or result.get("requestedText") or "",
         "audioFile": audio_file,
-        "useTextOverride": result.get("source") == "user-override" and bool(result.get("speechText")),
+        "useTextOverride": override,
         "qualityTier": result.get("qualityTier", "fallback"),
         "synthesisStrategy": result.get("synthesisStrategy", "azure-native"),
         "audioReviewStatus": result.get("audioReviewStatus", "unreviewed"),
@@ -1199,6 +1207,9 @@ def _playback_payload_from_lookup(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
+    if context is not None and not _pronunciation_allowed():
+        _send_pronunciation_blocked(context, payload)
+        return False
     text = display_term(str(payload.get("text") or payload.get("term") or ""))
     config = _config()
     audio_source = str(payload.get("audioSource") or "")

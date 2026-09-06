@@ -19,7 +19,7 @@ class PronunciationQaTests(unittest.TestCase):
         self.assertEqual(audit.source_lexicon_pronunciation_mismatches, [])
         self.assertEqual(audit.unsafe_speech_text, [])
         self.assertEqual(sum(audit.quality_tiers.values()), audit.dictionary_terms)
-        self.assertEqual(audit.quality_tiers["verified"], 155)
+        self.assertEqual(audit.quality_tiers, {"generated": 95902})
         self.assertEqual(sum(audit.written_quality_counts.values()), audit.dictionary_terms)
         self.assertEqual(audit.missing_syllables, [])
         self.assertEqual(audit.missing_pronunciation, [])
@@ -29,7 +29,7 @@ class PronunciationQaTests(unittest.TestCase):
         entries = load_source_lexicon()
 
         self.assertEqual(len(entries), 462)
-        self.assertIn(("agranulocytosis", "uh-GRAN-yoo-loh-sy-TOH-sis"), entries)
+        self.assertIn(("agranulocytosis", "ay-gran-yuh-loh-sy-TOH-sis"), entries)
         self.assertIn(("thoracentesis", "thor-uh-sen-TEE-sis"), entries)
 
 
