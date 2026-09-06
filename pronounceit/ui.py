@@ -456,11 +456,26 @@ from .settings import Settings
 
 
 _settings: Settings | None = None
+_settings_open_pending = False
 
 
 def show_settings() -> None:
-    # Keep one settings draft while allowing Browse to open from the saved list.
-    global _settings
+    """Let the native menu close before constructing any settings widgets."""
+    global _settings_open_pending
+    if _settings is not None:
+        _settings.setFocus()
+        return
+    if _settings_open_pending:
+        return
+    _settings_open_pending = True
+    QTimer.singleShot(0, _open_settings)
+
+
+def _open_settings() -> None:
+    # Retain the Anki-owned dialog and draft while allowing Show in Browse.
+    # Forcing window activation here can switch macOS Spaces during menu exit.
+    global _settings, _settings_open_pending
+    _settings_open_pending = False
     if _settings is None:
         _settings = Settings()
         _settings.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -469,5 +484,4 @@ def show_settings() -> None:
             _settings = None
         _settings.finished.connect(closed)
     _settings.show()
-    _settings.raise_()
-    _settings.activateWindow()
+    _settings.setFocus()

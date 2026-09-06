@@ -160,9 +160,11 @@ class FieldRow(QWidget):
         self.title = label(title)
         self.title.setBuddy(control)
         self.help = label(description, "secondary")
-        self.help.setVisible(bool(description))
         body.addWidget(self.title)
         body.addWidget(self.help)
+        # Adopt the label before showing it. A parentless visible label becomes
+        # a native window and can pull macOS out of Anki's full-screen Space.
+        self.help.setVisible(bool(description))
         self.control = control
         control.setAccessibleName(title)
         control.setAccessibleDescription(description)
