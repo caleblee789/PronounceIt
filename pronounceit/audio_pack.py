@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 import urllib.error
@@ -17,7 +18,7 @@ from .audio import audio_file_has_content
 from .dictionary import normalize_term
 
 
-PACK_SCHEMA_VERSION = 2
+PACK_SCHEMA_VERSION = 3
 AUDIO_ASSET_NAMESPACE = "pronounceit-audio-v2"
 DEFAULT_MANIFEST_URL = (
     "https://github.com/caleblee789/PronounceIt/releases/download/"
@@ -40,7 +41,7 @@ class AudioPackStatus:
     total_shards: int = 0
     downloaded_bytes: int = 0
     total_bytes: int = 0
-    message: str = "Audio pack is not installed."
+    message: str = "Offline pronunciation pack is not installed."
 
 
 def audio_asset_id(term: str) -> str:
@@ -66,13 +67,41 @@ def file_sha256(path: Path) -> str:
 
 
 def is_supported_pack_version(version: str) -> bool:
-    return version == "2" or version.startswith("2.") or version.startswith("2-")
+    return bool(re.fullmatch(r"[23](?:[.-][A-Za-z0-9._-]+)?", version))
+
+
+def _sha256(value: Any) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-f]{64}", value))
+
+
+def _validate_v3(raw: dict[str, Any]) -> None:
+    generation, phonemes, review, assets = (raw.get(k) for k in ("generation", "phonemeInput", "review", "assets"))
+    if not all(isinstance(value, dict) for value in (generation, phonemes, review, assets)):
+        raise AudioPackError("audio pack is missing generation and pronunciation metadata")
+    if (generation.get("provider") != "kokoro-local"
+        or not all(generation.get(k) for k in ("model", "modelRevision", "voice", "speed"))
+        or not _sha256(generation.get("bindingSha256"))
+        or phonemes.get("alphabet") != "kokoro-us-v1"
+        or not _sha256(phonemes.get("recordsSha256"))
+        or review.get("methodApproval") != "accepted-kokoro-pilot"
+        or review.get("pilotClipCount") != 10
+        or not _sha256(review.get("pilotBindingSha256"))):
+        raise AudioPackError("audio pack has invalid provider or pilot approval metadata")
+    if raw.get("assetCount") != len(assets) or phonemes.get("termCount") != len(assets):
+        raise AudioPackError("audio pack pronunciation coverage differs")
+    for identifier, asset in assets.items():
+        if (not _sha256(identifier) or not isinstance(asset, dict)
+            or not _sha256(asset.get("sha256")) or not _sha256(asset.get("phonemeInputSha256"))
+            or asset.get("clipReviewStatus") not in {"accepted", "unreviewed"}
+            or asset.get("reviewStatus") not in {"listening-approved", "reference-backed", "unverified-estimate"}):
+            raise AudioPackError("audio pack contains invalid asset provenance")
 
 
 def validate_manifest(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise AudioPackError("audio pack manifest must be a JSON object")
-    if raw.get("schemaVersion") != PACK_SCHEMA_VERSION:
+    schema = raw.get("schemaVersion")
+    if schema not in {2, 3}:
         raise AudioPackError("unsupported audio pack manifest version")
     version = str(raw.get("packVersion") or "").strip()
     dictionary_hash = str(raw.get("dictionarySha256") or "").strip().casefold()
@@ -83,16 +112,18 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
         not version
         or not is_supported_pack_version(version)
         or len(dictionary_hash) != 64
-        or len(review_hash) != 64
-        or not isinstance(strategies, dict)
+        or not version.startswith(str(schema))
+        or (schema == 2 and (len(review_hash) != 64 or not isinstance(strategies, dict)))
         or not isinstance(shards, list)
     ):
         raise AudioPackError("audio pack manifest is missing required fields")
-    if (
+    if schema == 2 and (
         any(key not in {"azure-native", "manual-sapi"} for key in strategies)
         or any(not isinstance(value, int) or value < 0 for value in strategies.values())
     ):
         raise AudioPackError("audio pack manifest uses a forbidden synthesis strategy")
+    if schema == 3:
+        _validate_v3(raw)
     seen: set[str] = set()
     for shard in shards:
         if not isinstance(shard, dict):
@@ -132,6 +163,7 @@ class AudioPackManager:
         self.manifest_url = (
             manifest_url
             or os.environ.get("PRONOUNCEIT_AUDIO_PACK_MANIFEST_URL", "").strip()
+            or self._candidate_manifest_url()
             or DEFAULT_MANIFEST_URL
         )
         self.cache_bytes = max(0, int(cache_bytes))
@@ -139,6 +171,18 @@ class AudioPackManager:
         self._pause_event.set()
         self._cancel_event = threading.Event()
         self._dictionary_hash: str | None = None
+        self._dictionary_stamp: tuple[int, int, int] | None = None
+        self._manifest_cache: tuple[Path, int, int, dict[str, Any]] | None = None
+
+    def _candidate_manifest_url(self) -> str:
+        try:
+            release = json.loads((self.addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
+            url = str(release.get("manifestUrl") or "")
+            if release.get("schemaVersion") == 3 and urllib.parse.urlparse(url).scheme == "https":
+                return url
+        except (OSError, ValueError, AttributeError):
+            pass
+        return ""
 
     @property
     def state_path(self) -> Path:
@@ -179,11 +223,11 @@ class AudioPackManager:
         total_bytes = sum(int(shard["size"]) for shard in manifest["shards"])
         installed = complete == total and compatible
         if not compatible:
-            message = "Installed audio pack does not match this dictionary version."
+            message = "Installed offline pronunciation pack does not match this dictionary version."
         elif installed:
-            message = f"Audio pack {manifest['packVersion']} is installed and ready."
+            message = f"Offline pronunciation pack {manifest['packVersion']} is installed and ready."
         else:
-            message = f"Audio pack download is incomplete ({complete}/{total} shards)."
+            message = f"Offline pronunciation pack download is incomplete ({complete}/{total} files)."
         return AudioPackStatus(
             installed=installed,
             compatible=compatible,
@@ -271,7 +315,12 @@ class AudioPackManager:
         if not self._valid_shard(shard_path, shard, checksum=False):
             return None
         cache_path = self.cache_root / str(manifest["packVersion"]) / f"{asset_id}.mp3"
-        if audio_file_has_content(cache_path):
+        asset = manifest.get("assets", {}).get(asset_id)
+        if manifest["schemaVersion"] == 3 and asset is None:
+            return None
+        if asset:
+            cache_path = cache_path.with_name(f"{asset_id}-{asset['sha256'][:16]}.mp3")
+        if audio_file_has_content(cache_path) and (not asset or file_sha256(cache_path) == asset["sha256"]):
             try:
                 os.utime(cache_path, None)
             except OSError:
@@ -281,7 +330,7 @@ class AudioPackManager:
         try:
             with zipfile.ZipFile(shard_path) as archive:
                 data = archive.read(member)
-            if not data:
+            if not data or (asset and hashlib.sha256(data).hexdigest() != asset["sha256"]):
                 return None
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             temp_path = cache_path.with_suffix(".mp3.tmp")
@@ -291,6 +340,15 @@ class AudioPackManager:
             return None
         self._enforce_cache_limit(keep=cache_path)
         return cache_path if audio_file_has_content(cache_path) else None
+
+    def playback_metadata(self, term: str) -> dict[str, str]:
+        manifest = self._load_local_manifest()
+        if manifest and self._dictionary_is_compatible(manifest) and manifest["schemaVersion"] == 3:
+            asset = manifest["assets"].get(audio_asset_id(term), {})
+            return {"source": "recorded", "provider": manifest["generation"]["provider"],
+                    "reviewStatus": asset.get("clipReviewStatus", "unreviewed"),
+                    "packVersion": manifest["packVersion"]}
+        return {"source": "azure", "provider": "azure-speech", "reviewStatus": "passed"}
 
     def _fetch_manifest(self) -> dict[str, Any]:
         try:
@@ -305,25 +363,58 @@ class AudioPackManager:
         return validate_manifest(raw)
 
     def _load_local_manifest(self) -> dict[str, Any] | None:
-        try:
-            state = json.loads(self.state_path.read_text(encoding="utf-8"))
-            version = str(state.get("packVersion") or "")
-            path = self.pack_root / version / "pack-manifest.json"
-            return validate_manifest(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, AttributeError, json.JSONDecodeError, AudioPackError):
-            return None
+        """Load an installed manifest, or a persisted partial-download manifest.
+
+        ``installed.json`` is deliberately written only after every shard has
+        passed validation.  The manifest is written before downloading shards,
+        though, and must remain discoverable after an Anki restart so the UI
+        can show progress and the downloader can resume from ``.part`` files.
+        """
+        version = self._local_state_version()
+        candidates: list[Path] = []
+        if version:
+            candidates.append(self.pack_root / version / "pack-manifest.json")
+        else:
+            try:
+                candidates.extend(
+                    sorted(
+                        self.pack_root.glob("*/pack-manifest.json"),
+                        key=lambda path: path.parent.name,
+                        reverse=True,
+                    )
+                )
+            except OSError:
+                return None
+
+        for path in candidates:
+            try:
+                stamp = path.stat()
+                cache = self._manifest_cache
+                if cache and cache[:3] == (path, stamp.st_mtime_ns, stamp.st_size):
+                    return cache[3]
+                manifest = validate_manifest(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, json.JSONDecodeError, AudioPackError):
+                continue
+            if str(manifest["packVersion"]) == path.parent.name:
+                self._manifest_cache = (path, stamp.st_mtime_ns, stamp.st_size, manifest)
+                return manifest
+        return None
 
     def _local_state_version(self) -> str:
         try:
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
-            return str(state.get("packVersion") or "").strip()
+            version = str(state.get("packVersion") or "").strip()
+            return version if is_supported_pack_version(version) else ""
         except (OSError, AttributeError, json.JSONDecodeError):
             return ""
 
     def _dictionary_is_compatible(self, manifest: dict[str, Any]) -> bool:
         try:
-            if self._dictionary_hash is None:
+            stat = self.dictionary_path.stat()
+            stamp = (stat.st_mtime_ns, stat.st_size, stat.st_ino)
+            if self._dictionary_hash is None or stamp != self._dictionary_stamp:
                 self._dictionary_hash = dictionary_sha256(self.dictionary_path)
+                self._dictionary_stamp = stamp
             return self._dictionary_hash == manifest["dictionarySha256"]
         except OSError:
             return False

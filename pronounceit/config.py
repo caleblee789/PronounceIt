@@ -9,6 +9,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "hotkey": "",
     "direct_click_modifier": "alt",
     "popup_click_modifier": "alt",
+    "native_context_menu_modifier": "ctrl",
     "show_native_context_menu": True,
     "tts_voice": "",
     "tts_rate": 0,
@@ -16,15 +17,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "audio_backend": "local_audio_then_tts",
     "audio_pack_cache_mb": 250,
     "auto_close_on_card_change": True,
-    "allow_on_question_side": False,
+    "allow_on_question_side": True,
     "activation_mode": "context_menu",
     "theme": "system",
+    "theme_initialized": False,
+    "audio_pack_prompt_seen": False,
     "show_context_menu": False,
     "show_save_button": True,
     "unknown_term_message": "Pronunciation unavailable",
 }
 
-SUPPORTED_THEMES = {"system", "clinical_light", "slate", "high_contrast"}
+SUPPORTED_THEMES = {"light", "dark"}
 SUPPORTED_CLICK_MODIFIERS = {"alt", "shift", "meta", "ctrl", "mod", "disabled"}
 
 
@@ -34,6 +37,7 @@ class PronounceItConfig:
     hotkey: str
     direct_click_modifier: str
     popup_click_modifier: str
+    native_context_menu_modifier: str
     show_native_context_menu: bool
     tts_voice: str
     tts_rate: int
@@ -44,6 +48,8 @@ class PronounceItConfig:
     allow_on_question_side: bool
     activation_mode: str
     theme: str
+    theme_initialized: bool
+    audio_pack_prompt_seen: bool
     show_context_menu: bool
     show_save_button: bool
     unknown_term_message: str
@@ -57,9 +63,7 @@ class PronounceItConfig:
         activation_mode = str(merged.get("activation_mode") or "context_menu")
         if activation_mode not in {"context_menu", "option_select"}:
             activation_mode = "context_menu"
-        theme = str(merged.get("theme") or "system")
-        if theme not in SUPPORTED_THEMES:
-            theme = "system"
+        theme = _theme_value(merged.get("theme"))
         direct_click_modifier = _click_modifier(
             merged.get("direct_click_modifier"),
             fallback="alt",
@@ -68,11 +72,16 @@ class PronounceItConfig:
             merged.get("popup_click_modifier"),
             fallback="alt",
         )
+        native_context_menu_modifier = _click_modifier(
+            merged.get("native_context_menu_modifier"),
+            fallback="ctrl",
+        )
         return cls(
             enabled=_bool_value(merged.get("enabled"), DEFAULT_CONFIG["enabled"]),
             hotkey=_hotkey_value(merged.get("hotkey")),
             direct_click_modifier=direct_click_modifier,
             popup_click_modifier=popup_click_modifier,
+            native_context_menu_modifier=native_context_menu_modifier,
             show_native_context_menu=_bool_value(
                 merged.get("show_native_context_menu"),
                 DEFAULT_CONFIG["show_native_context_menu"],
@@ -107,6 +116,10 @@ class PronounceItConfig:
             ),
             activation_mode=activation_mode,
             theme=theme,
+            theme_initialized=_bool_value(merged.get("theme_initialized"), False),
+            audio_pack_prompt_seen=_bool_value(
+                merged.get("audio_pack_prompt_seen"), False
+            ),
             show_context_menu=_bool_value(
                 merged.get("show_context_menu"), DEFAULT_CONFIG["show_context_menu"]
             ),
@@ -121,6 +134,8 @@ class PronounceItConfig:
             "enabled": self.enabled,
             "hotkey": self.hotkey,
             "directClickModifier": self.direct_click_modifier,
+            "contextMenuModifier": self.native_context_menu_modifier,
+            "showNativeContextMenu": self.show_native_context_menu,
             "allowOnQuestionSide": self.allow_on_question_side,
             "activationMode": self.activation_mode,
             "theme": self.theme,
@@ -135,6 +150,7 @@ class PronounceItConfig:
             "hotkey": self.hotkey,
             "direct_click_modifier": self.direct_click_modifier,
             "popup_click_modifier": self.popup_click_modifier,
+            "native_context_menu_modifier": self.native_context_menu_modifier,
             "show_native_context_menu": self.show_native_context_menu,
             "tts_voice": self.tts_voice,
             "tts_rate": self.tts_rate,
@@ -145,6 +161,8 @@ class PronounceItConfig:
             "allow_on_question_side": self.allow_on_question_side,
             "activation_mode": self.activation_mode,
             "theme": self.theme,
+            "theme_initialized": self.theme_initialized,
+            "audio_pack_prompt_seen": self.audio_pack_prompt_seen,
             "show_context_menu": self.show_context_menu,
             "show_save_button": self.show_save_button,
             "unknown_term_message": self.unknown_term_message,
@@ -162,6 +180,17 @@ def _click_modifier(value: Any, fallback: str) -> str:
     if modifier in SUPPORTED_CLICK_MODIFIERS:
         return modifier
     return fallback
+
+
+def _theme_value(value: Any, fallback: str = "light") -> str:
+    theme = str(value or "").strip().casefold()
+    if theme in SUPPORTED_THEMES:
+        return theme
+    if theme == "clinical_light":
+        return "light"
+    if theme in {"slate", "high_contrast"}:
+        return "dark"
+    return "dark" if fallback == "dark" else "light"
 
 
 def _hotkey_value(value: Any) -> str:

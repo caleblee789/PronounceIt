@@ -18,7 +18,7 @@ class AudioPackDownloadState:
     done_bytes: int = 0
     total_bytes: int = 0
     shard: str = ""
-    message: str = "Audio pack is not installed."
+    message: str = "Offline pronunciation pack is not installed."
     error: str = ""
     paused: bool = False
     installed: bool = False
@@ -27,7 +27,7 @@ class AudioPackDownloadState:
 
     @property
     def running(self) -> bool:
-        return self.phase in {"preparing", "downloading", "paused", "verifying"}
+        return self.phase in {"preparing", "downloading", "paused", "cancelling", "verifying"}
 
 
 class AudioPackDownloadController:
@@ -58,7 +58,7 @@ class AudioPackDownloadController:
             self.manager.resume()
             self._state = AudioPackDownloadState(
                 phase="preparing",
-                message="Preparing audio pack download…",
+                message="Preparing offline pronunciation pack download…",
             )
             self._worker = threading.Thread(
                 target=self._download_worker,
@@ -75,7 +75,7 @@ class AudioPackDownloadController:
             self._state = replace(
                 self._state,
                 phase="verifying",
-                message="Verifying downloaded audio pack…",
+                message="Verifying offline pronunciation pack…",
                 error="",
                 paused=False,
             )
@@ -96,7 +96,7 @@ class AudioPackDownloadController:
                 self._state,
                 phase="paused",
                 paused=True,
-                message="Audio pack download paused.",
+                message="Offline pronunciation pack download paused.",
             )
             return True
 
@@ -109,15 +109,22 @@ class AudioPackDownloadController:
                 self._state,
                 phase="downloading",
                 paused=False,
-                message="Resuming audio pack download…",
+                message="Resuming offline pronunciation pack download…",
             )
             return True
 
     def cancel(self) -> bool:
         with self._lock:
-            if not self._state.running:
+            if not self._state.running or self._state.phase == "cancelling":
                 return False
             self.manager.cancel()
+            self._state = replace(
+                self._state,
+                phase="cancelling",
+                paused=False,
+                message="Cancelling offline pronunciation pack download…",
+                error="",
+            )
             return True
 
     def remove(self) -> bool:
@@ -131,7 +138,7 @@ class AudioPackDownloadController:
 
     def refresh(self) -> AudioPackDownloadState:
         with self._lock:
-            if not self._state.running:
+            if self._state.phase in {"idle", "installed"}:
                 self._state = self._state_from_status(self.manager.status())
             return replace(self._state)
 
@@ -139,9 +146,12 @@ class AudioPackDownloadController:
         try:
             status = self.manager.download(self._progress)
         except Exception as exc:
-            self._finish_error(str(exc))
+            if "cancelled" in str(exc).casefold() or "canceled" in str(exc).casefold():
+                self._finish_cancelled()
+                return
+            self._finish_error(str(exc), "Download failed.")
             return
-        self._finish_success(status, "Audio pack download completed.")
+        self._finish_success(status, "Offline pronunciation pack download completed.")
 
     def _verify_worker(self) -> None:
         try:
@@ -149,9 +159,9 @@ class AudioPackDownloadController:
             if not status.installed:
                 raise RuntimeError(status.message)
         except Exception as exc:
-            self._finish_error(str(exc))
+            self._finish_error(str(exc), "Verification failed.")
             return
-        self._finish_success(status, "Audio pack verification passed.")
+        self._finish_success(status, "Offline pronunciation pack verification passed.")
 
     def _progress(self, done: int, total: int, shard: str) -> None:
         with self._lock:
@@ -163,9 +173,9 @@ class AudioPackDownloadController:
                 total_bytes=max(0, int(total)),
                 shard=str(shard),
                 message=(
-                    "Audio pack download paused."
+                    "Offline pronunciation pack download paused."
                     if paused
-                    else f"Downloading audio shard {shard}…"
+                    else "Downloading offline pronunciation pack…"
                 ),
             )
             now = time.monotonic()
@@ -177,16 +187,35 @@ class AudioPackDownloadController:
             self._state = self._state_from_status(status)
         self._dispatch(lambda: self._notifier(message, False))
 
-    def _finish_error(self, message: str) -> None:
+    def _finish_error(self, message: str, status_message: str) -> None:
         status = self.manager.status()
         with self._lock:
+            progress = self._state
             self._state = replace(
                 self._state_from_status(status),
                 phase="failed",
-                message="Audio pack operation failed.",
+                done_bytes=max(progress.done_bytes, status.downloaded_bytes),
+                total_bytes=max(progress.total_bytes, status.total_bytes),
+                shard=progress.shard,
+                message=status_message,
                 error=message,
             )
-        self._dispatch(lambda: self._notifier(f"Audio pack: {message}", True))
+        self._dispatch(lambda: self._notifier(f"Offline pronunciation pack: {message}", True))
+
+    def _finish_cancelled(self) -> None:
+        status = self.manager.status()
+        with self._lock:
+            progress = self._state
+            self._state = replace(
+                self._state_from_status(status),
+                phase="cancelled",
+                done_bytes=max(progress.done_bytes, status.downloaded_bytes),
+                total_bytes=max(progress.total_bytes, status.total_bytes),
+                shard=progress.shard,
+                message="Offline pronunciation pack download cancelled. Downloaded files were kept so you can resume later.",
+                error="",
+            )
+        self._dispatch(lambda: self._notifier("Offline pronunciation pack download cancelled.", False))
 
     @staticmethod
     def _state_from_status(status: AudioPackStatus) -> AudioPackDownloadState:

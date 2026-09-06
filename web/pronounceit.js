@@ -5,11 +5,14 @@
   const DEFAULT_CONFIG = {
     enabled: true,
     directClickModifier: "alt",
+    contextMenuModifier: "ctrl",
+    showNativeContextMenu: true,
     platformModifier: "ctrl",
-    allowOnQuestionSide: false,
+    allowOnQuestionSide: true,
     answerVisible: false,
     activationMode: "context_menu",
-    theme: "system",
+    theme: "light",
+    themeTokens: null,
     showSaveButton: true,
     unknownTermMessage: "Pronunciation unavailable",
   };
@@ -24,12 +27,19 @@
   let activationKeyDown = false;
   let activationKeyCancelled = false;
   let activationKeyUsedByGesture = false;
+  let activationSelectionRequest = null;
+  let contextMenuKeyDown = false;
+  let contextMenuKeyCancelled = false;
+  let contextMenuSelectionRequest = null;
+  let completedSelectionRequest = null;
   let suppressClickUntil = 0;
   let contextRequest = null;
   let activeRequest = null;
   let popupEl = null;
   let noticeEl = null;
   let noticeTimer = null;
+  let popupObserver = null;
+  let noticeAnchor = null;
 
   function send(action, payload) {
     if (typeof pycmd !== "function") {
@@ -59,6 +69,24 @@
       rect,
       expanded && expanded.context ? expanded.context : contextFromSelectionRange(range, text)
     );
+  }
+
+  function rememberCompletedSelection() {
+    const request = selectedText();
+    if (request) {
+      completedSelectionRequest = request;
+    } else if (!activationKeyDown) {
+      completedSelectionRequest = null;
+    }
+    return request;
+  }
+
+  function rememberCompletedSelectionDeferred() {
+    if (typeof window.setTimeout !== "function") {
+      rememberCompletedSelection();
+      return;
+    }
+    window.setTimeout(rememberCompletedSelection, 0);
   }
 
   function selectedTextAtPoint(event) {
@@ -179,7 +207,7 @@
     if (!pointInRect(x, y, rect)) {
       return null;
     }
-    const text = String(element.textContent || "").replace(/\u00a0/g, " ");
+    const text = contextTree(element).text.replace(/\u00a0/g, " ");
     const offset = nearestTextOffset(text, x, rect);
     const span = extractTermSpanAtOffset(text, offset);
     if (!span) {
@@ -372,17 +400,76 @@
       return contextFromTextNode(range.startContainer, range.startOffset, range.endOffset);
     }
 
-    const element = range.commonAncestorContainer &&
-      (range.commonAncestorContainer.nodeType === Node.TEXT_NODE
-        ? range.commonAncestorContainer.parentElement
-        : range.commonAncestorContainer);
-    const text = normalizedElementText((element && element.textContent) || "");
-    const selectedText = normalizedElementText(selected || "");
-    const offset = selectedText ? text.indexOf(selectedText) : -1;
+    const commonAncestor = range.commonAncestorContainer;
+    const element = commonAncestor &&
+      (commonAncestor.nodeType === Node.TEXT_NODE
+        ? commonAncestor.parentElement
+        : commonAncestor);
+    const sourceText = contextTree(element).text.replace(/\u00a0/g, " ");
+    const selectedText = String(selected || "").replace(/\u00a0/g, " ").trim();
+    const offsets = selectionOffsetsWithin(element, range);
+    if (offsets && sourceText.slice(offsets.start, offsets.end).trim() === selectedText) {
+      return contextFromText(sourceText, offsets.start, offsets.end);
+    }
+    const text = normalizedElementText(sourceText);
+    const normalizedSelected = normalizedElementText(selectedText);
+    const offset = normalizedSelected ? text.indexOf(normalizedSelected) : -1;
     if (offset >= 0) {
-      return contextFromText(text, offset, offset + selectedText.length);
+      return contextFromText(text, offset, offset + normalizedSelected.length);
     }
     return {};
+  }
+
+  function selectionOffsetsWithin(root, range) {
+    if (!root || !range || !range.startContainer || !range.endContainer) {
+      return null;
+    }
+    const start = boundaryOffsetWithin(root, range.startContainer, range.startOffset);
+    const end = boundaryOffsetWithin(root, range.endContainer, range.endOffset);
+    if (start === null || end === null || end < start) {
+      return null;
+    }
+    return { start: start, end: end };
+  }
+
+  // Preserve visual block boundaries without splitting phrases inside inline markup.
+  // The same walk supplies DOM offsets, including repeated text in separate nodes.
+  function contextTree(root) {
+    let text = "";
+    const boundaries = new Map();
+    function separator() {
+      if (text && !/\s$/.test(text)) text += "\n";
+    }
+    function walk(node) {
+      if (!node) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const start = text.length;
+        text += String(node.textContent || "").replace(/\u00a0/g, " ");
+        boundaries.set(node, { start: start, length: text.length - start });
+        return;
+      }
+      const tag = String(node.tagName || "").toUpperCase();
+      const block = /^(DIV|P|LI|UL|OL|H[1-6]|TR|TD|TH|SECTION|ARTICLE|BLOCKQUOTE|BR|HR)$/.test(tag);
+      if (block) separator();
+      const offsets = [text.length];
+      for (const child of node.childNodes || []) {
+        walk(child);
+        offsets.push(text.length);
+      }
+      boundaries.set(node, { offsets: offsets });
+      if (block) separator();
+    }
+    walk(root);
+    return { text: text, offset: function (node, offset) {
+      const entry = boundaries.get(node);
+      if (!entry) return null;
+      const value = Math.max(0, Number(offset) || 0);
+      return entry.offsets ? entry.offsets[Math.min(value, entry.offsets.length - 1)] : entry.start + Math.min(value, entry.length);
+    } };
+  }
+
+  function boundaryOffsetWithin(root, container, offset) {
+    return contextTree(root).offset(container, offset);
   }
 
   function contextFromTextNode(node, start, end) {
@@ -398,10 +485,10 @@
     let current = node && node.parentElement;
     let depth = 0;
     while (current && current !== document.body && depth < 5) {
-      const text = String(current.textContent || "").replace(/\u00a0/g, " ");
+      const text = contextTree(current).text.replace(/\u00a0/g, " ");
       if (text && text.length <= 1000 && text.length > String(nodeText || "").length) {
-        const nodeOffset = nodeText ? text.indexOf(nodeText) : -1;
-        if (nodeOffset >= 0) {
+        const nodeOffset = boundaryOffsetWithin(current, node, 0);
+        if (nodeOffset !== null) {
           return contextFromText(text, nodeOffset + start, nodeOffset + end);
         }
       }
@@ -548,6 +635,7 @@
       !canPronounce() ||
       isPronounceItElement(event && event.target) ||
       !isPrimaryClick(event) ||
+      modifierMatches(event, config.contextMenuModifier) ||
       !modifierMatches(event, config.directClickModifier)
     ) {
       directGesture = null;
@@ -626,10 +714,41 @@
     }, 0);
   }
 
+  function finishQuickCardGesture(event) {
+    if (
+      !canPronounce() ||
+      !config.showNativeContextMenu ||
+      isPronounceItElement(event && event.target) ||
+      !isPrimaryClick(event) ||
+      !modifierMatches(event, config.contextMenuModifier)
+    ) {
+      return false;
+    }
+    const request =
+      selectedTextAtPoint(event) ||
+      selectedText() ||
+      pointerRequest(event);
+    if (!request) {
+      return false;
+    }
+    suppressClickUntil = Date.now() + 500;
+    contextRequest = request;
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (typeof event.stopPropagation === "function") {
+      event.stopPropagation();
+    }
+    return openQuickCard(request);
+  }
+
   function cancelDirectGesture() {
     directGesture = null;
     if (activationKeyDown) {
       activationKeyCancelled = true;
+    }
+    if (contextMenuKeyDown) {
+      contextMenuKeyCancelled = true;
     }
   }
 
@@ -712,8 +831,8 @@
     );
   }
 
-  function activationModifierKey() {
-    const normalized = String(config.directClickModifier || "").toLowerCase();
+  function modifierKeyName(modifier) {
+    const normalized = String(modifier || "").toLowerCase();
     if (normalized === "alt" || normalized === "option") return "Alt";
     if (normalized === "shift") return "Shift";
     if (normalized === "meta" || normalized === "cmd" || normalized === "command") return "Meta";
@@ -722,8 +841,16 @@
     return "";
   }
 
+  function sameModifierKey(first, second) {
+    const firstKey = modifierKeyName(first);
+    return Boolean(firstKey && firstKey === modifierKeyName(second));
+  }
+
   function handleActivationKeyDown(event) {
-    const key = activationModifierKey();
+    if (sameModifierKey(config.directClickModifier, config.contextMenuModifier)) {
+      return;
+    }
+    const key = modifierKeyName(config.directClickModifier);
     if (!key) {
       return;
     }
@@ -737,24 +864,29 @@
       activationKeyDown = true;
       activationKeyCancelled = false;
       activationKeyUsedByGesture = false;
+      activationSelectionRequest = selectedText() || completedSelectionRequest;
     }
-    if (selectionValue() && typeof event.preventDefault === "function") {
+    if (activationSelectionRequest && typeof event.preventDefault === "function") {
       event.preventDefault();
     }
   }
 
   function handleActivationKeyUp(event) {
-    if (event.key !== activationModifierKey() || !activationKeyDown) {
+    if (sameModifierKey(config.directClickModifier, config.contextMenuModifier)) {
+      return;
+    }
+    if (event.key !== modifierKeyName(config.directClickModifier) || !activationKeyDown) {
       return;
     }
     const shouldPlay = !activationKeyCancelled && !activationKeyUsedByGesture;
     activationKeyDown = false;
     activationKeyCancelled = false;
     activationKeyUsedByGesture = false;
+    const request = activationSelectionRequest || selectedText();
+    activationSelectionRequest = null;
     if (!shouldPlay) {
       return;
     }
-    const request = selectedText();
     if (!request) {
       return;
     }
@@ -765,6 +897,49 @@
       event.stopPropagation();
     }
     requestAudioOnly(request);
+  }
+
+  function handleContextMenuKeyDown(event) {
+    const key = modifierKeyName(config.contextMenuModifier);
+    if (!key || !config.showNativeContextMenu) {
+      return;
+    }
+    if (event.key !== key) {
+      if (contextMenuKeyDown) {
+        contextMenuKeyCancelled = true;
+      }
+      return;
+    }
+    if (!contextMenuKeyDown) {
+      contextMenuKeyDown = true;
+      contextMenuKeyCancelled = false;
+      contextMenuSelectionRequest = selectedText() || completedSelectionRequest;
+    }
+    if (contextMenuSelectionRequest && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+  }
+
+  function handleContextMenuKeyUp(event) {
+    if (event.key !== modifierKeyName(config.contextMenuModifier) || !contextMenuKeyDown) {
+      return;
+    }
+    const request = contextMenuSelectionRequest || selectedText();
+    const shouldOpen = !contextMenuKeyCancelled && Boolean(request);
+    contextMenuKeyDown = false;
+    contextMenuKeyCancelled = false;
+    contextMenuSelectionRequest = null;
+    if (!shouldOpen) {
+      return;
+    }
+    contextRequest = request;
+    if (typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    if (typeof event.stopPropagation === "function") {
+      event.stopPropagation();
+    }
+    openQuickCard(request);
   }
 
   function isPrimaryClick(event) {
@@ -800,6 +975,7 @@
   }
 
   function placeNotice(rect) {
+    noticeAnchor = rect;
     if (!noticeEl) return;
     const anchor = rect || {};
     const hasAnchor = Number.isFinite(Number(anchor.left)) && Number.isFinite(Number(anchor.bottom));
@@ -831,7 +1007,7 @@
     return {
       word: word,
       playText: playText,
-      audioAvailable: Boolean(playText || payload.audioFile),
+      audioAvailable: payload.audioAvailable !== false && Boolean(playText || payload.audioFile),
     };
   }
 
@@ -869,6 +1045,8 @@
 
   function hidePopup() {
     if (popupEl) {
+      if (popupObserver) popupObserver.disconnect();
+      popupObserver = null;
       popupEl.remove();
       popupEl = null;
     }
@@ -879,25 +1057,60 @@
     hideNotice();
   }
 
-  function placeElement(element, left, top) {
+  function placeElement(element, left, top, anchorTop) {
     const margin = 10;
+    const viewport = window.visualViewport;
+    const width = viewport ? viewport.width : window.innerWidth;
+    const height = viewport ? viewport.height : window.innerHeight;
+    const x = viewport ? viewport.offsetLeft : 0;
+    const y = viewport ? viewport.offsetTop : 0;
+    element.style.maxWidth = Math.max(0, width - margin * 2) + "px";
+    element.style.maxHeight = Math.max(0, height - margin * 2) + "px";
     const rect = element.getBoundingClientRect();
-    const maxLeft = window.innerWidth - rect.width - margin;
-    const maxTop = window.innerHeight - rect.height - margin;
-    element.style.left = Math.max(margin, Math.min(left, maxLeft)) + "px";
-    element.style.top = Math.max(margin, Math.min(top, maxTop)) + "px";
+    let desiredTop = top;
+    if (top + rect.height > y + height - margin && Number.isFinite(anchorTop) && anchorTop - rect.height - 8 >= y + margin) {
+      desiredTop = anchorTop - rect.height - 8;
+    }
+    element.style.left = Math.max(x + margin, Math.min(left, x + width - rect.width - margin)) + "px";
+    element.style.top = Math.max(y + margin, Math.min(desiredTop, y + height - rect.height - margin)) + "px";
+  }
+
+  function placePopup() {
+    if (!popupEl) return;
+    const rect = (lastPayload && lastPayload.rect) || {};
+    placeElement(popupEl, Number(rect.left || 24), Number(rect.bottom || 24) + 8, Number(rect.top));
+  }
+
+  function reposition() {
+    placePopup();
+    if (noticeEl) placeNotice(noticeAnchor);
+  }
+  if (typeof window.addEventListener === "function") window.addEventListener("resize", reposition);
+  if (window.visualViewport && typeof window.visualViewport.addEventListener === "function") {
+    window.visualViewport.addEventListener("resize", reposition);
+    window.visualViewport.addEventListener("scroll", reposition);
   }
 
   function show(payload) {
     lastPayload = payload;
-    hidePopup();
+    hideNotice();
 
     const playback = playbackInfo(payload);
+    const loading = Boolean(payload.loading);
 
-    popupEl = document.createElement("div");
-    applyTheme(popupEl, "pronounceit-popup");
-    popupEl.setAttribute("role", "dialog");
-    popupEl.setAttribute("aria-label", "Pronunciation");
+
+    if (!popupEl) {
+      popupEl = document.createElement("div");
+      applyTheme(popupEl, "pronounceit-popup");
+      popupEl.setAttribute("role", "dialog");
+      popupEl.setAttribute("aria-label", "Pronunciation");
+      document.body.appendChild(popupEl);
+      if (typeof ResizeObserver === "function") {
+        popupObserver = new ResizeObserver(placePopup);
+        popupObserver.observe(popupEl);
+      }
+    }
+    popupEl.setAttribute("data-loading", loading ? "true" : "false");
 
     function playPayload() {
       requestPlayback(payload, updateStatus);
@@ -916,26 +1129,32 @@
 
     const card = createPronunciationCard({
       word: playback.word,
-      pronunciation: payload.pronunciation || payload.audioStatus || payload.audioHelp || "Generated audio available",
-      isCurated: Boolean(payload.found),
+      pronunciation: payload.pronunciation || "Pronunciation unavailable",
       source: sourceLabel(payload),
+      sourceKey: sourceKey(payload),
+      found: Boolean(payload.pronunciation),
       onPlay: playPayload,
       onSave: savePayload,
       audioAvailable: playback.audioAvailable,
       showSave: Boolean(config.showSaveButton),
       alreadySaved: Boolean(payload.alreadySaved),
+      loading: loading,
     });
 
     const status = document.createElement("div");
     status.className = "pronounceit-status";
     status.setAttribute("data-empty", "true");
 
-    popupEl.appendChild(card);
-    popupEl.appendChild(status);
-    document.body.appendChild(popupEl);
+    popupEl.replaceChildren(card, status);
 
-    const rect = payload.rect || {};
-    placeElement(popupEl, Number(rect.left || 24), Number(rect.bottom || 24) + 8);
+    placePopup();
+
+    if (!loading) {
+      const play = popupEl.querySelector(".pronounceit-play-button");
+      if (play && !play.disabled && typeof play.focus === "function") {
+        play.focus();
+      }
+    }
 
     if (payload.autoPlay && playback.audioAvailable) {
       playPayload();
@@ -944,7 +1163,7 @@
 
   function createPronunciationCard(options) {
     const word = options.word || "";
-    const source = options.source || (options.isCurated ? "Curated" : "Fallback");
+    const source = options.source || "Computer voice";
     const card = document.createElement("section");
     card.className = "pronounceit-card";
 
@@ -956,11 +1175,18 @@
     term.textContent = word;
 
     const badge = document.createElement("div");
-    badge.className = "pronounceit-source";
+    badge.className = "pronounceit-source " + (options.sourceKey || "generated");
     badge.textContent = source;
 
     header.appendChild(term);
-    header.appendChild(badge);
+    const close = document.createElement("button");
+    close.className = "pronounceit-close";
+    close.type = "button";
+    close.textContent = "×";
+    close.title = "Close";
+    close.setAttribute("aria-label", "Close pronunciation");
+    close.addEventListener("click", hidePopup);
+    header.appendChild(close);
 
     const pronunciationBlock = document.createElement("div");
     pronunciationBlock.className = "pronounceit-pronunciation-block";
@@ -970,10 +1196,10 @@
     label.textContent = "Pronunciation";
 
     const pronunciation = document.createElement("div");
-    pronunciation.className = options.isCurated ? "pronounceit-pronunciation" : "pronounceit-pronunciation generated";
+    pronunciation.className = "pronounceit-pronunciation" + (!options.found && !options.loading ? " unavailable" : "");
     pronunciation.textContent = options.pronunciation || "Pronunciation unavailable";
 
-    pronunciationBlock.appendChild(label);
+
     pronunciationBlock.appendChild(pronunciation);
 
     const actions = document.createElement("div");
@@ -984,8 +1210,8 @@
     play.className = "pronounceit-play-button pronounceit-icon-button";
     play.title = "Play pronunciation";
     play.setAttribute("aria-label", "Play pronunciation of " + (word || "selected term"));
-    play.textContent = "Play pronunciation";
-    play.disabled = !options.audioAvailable;
+    play.textContent = "Play";
+    play.disabled = Boolean(options.loading) || !options.audioAvailable;
     play.addEventListener("click", options.onPlay);
     actions.appendChild(play);
 
@@ -993,42 +1219,55 @@
       const save = document.createElement("button");
       save.type = "button";
       save.className = "pronounceit-save-button";
-      save.title = options.alreadySaved ? "Pronunciation already saved" : "Save pronunciation";
+      save.title = options.loading
+        ? "Save pronunciation after lookup"
+        : options.alreadySaved
+          ? "Pronunciation already saved"
+          : "Save pronunciation";
       save.setAttribute("aria-label", save.title);
-      save.textContent = options.alreadySaved ? "Saved" : "Save pronunciation";
-      save.disabled = Boolean(options.alreadySaved);
+      save.textContent = options.alreadySaved ? "Saved" : "Save";
+      save.disabled = Boolean(options.loading || options.alreadySaved);
       save.addEventListener("click", options.onSave);
       actions.appendChild(save);
     }
 
+    const details = document.createElement("details");
+    details.className = "pronounceit-details";
+    const summary = document.createElement("summary");
+    summary.textContent = "Details";
+    details.appendChild(summary);
+    details.appendChild(badge);
+    details.addEventListener("toggle", placePopup);
+
     card.appendChild(header);
     card.appendChild(pronunciationBlock);
     card.appendChild(actions);
+    card.appendChild(details);
 
     return card;
   }
 
   function sourceLabel(payload) {
-    const qualityTier = String(payload.qualityTier || "").toLowerCase();
-    if (qualityTier === "verified") {
-      return "Verified";
+    const explicit = String(payload.audioSourceLabel || "").trim();
+    if (explicit) {
+      return explicit;
     }
-    if (qualityTier === "curated") {
-      return "Curated";
-    }
-    if (qualityTier === "generated") {
-      return "Generated guide";
-    }
-    if (qualityTier === "fallback") {
-      return "Unverified fallback";
-    }
-    if (payload.audioKind === "generated") {
-      return "Generated";
-    }
-    return "Fallback";
+    const labels = {
+      custom: "Custom audio",
+      azure: "Recorded audio",
+      recorded: "Recorded audio",
+      generated: "Computer voice",
+      live: "Computer voice",
+    };
+    return labels[String(payload.audioSource || "").toLowerCase()] || "Computer voice";
   }
 
-  function updateStatus(text) {
+  function sourceKey(payload) {
+    const value = String(payload.audioSource || "").toLowerCase();
+    return ["custom", "azure", "recorded", "generated", "live"].includes(value) ? value : "loading";
+  }
+
+  function updateStatus(text, state) {
     if (!popupEl) {
       return;
     }
@@ -1036,11 +1275,21 @@
     if (status) {
       status.textContent = text || "";
       status.setAttribute("data-empty", text ? "false" : "true");
+      status.setAttribute("data-state", state || "success");
+      placePopup();
     }
   }
 
   function spoken(result) {
     if (!result || result.ok) {
+      if (popupEl && result && result.audioSource) {
+        const badge = popupEl.querySelector(".pronounceit-source");
+        const source = sourceLabel(result);
+        if (badge) {
+          badge.className = "pronounceit-source " + sourceKey(result);
+          badge.textContent = source;
+        }
+      }
       updateStatus("");
       if (!popupEl) {
         const term = String((result && (result.term || result.text)) || (activeRequest && activeRequest.text) || "").trim();
@@ -1051,23 +1300,30 @@
       activeRequest = null;
       return;
     }
-    const reason = result.reason ? "Could not play audio: " + result.reason : "Could not play audio.";
-    updateStatus(reason);
+    const answerRequired = [
+      "Reveal the answer before using PronounceIt.",
+      "Reveal the answer before playing pronunciation.",
+    ].includes(result.reason);
+    const reason = answerRequired
+      ? "Reveal the answer before playing pronunciation."
+      : "Could not play. Check your audio settings or open Troubleshoot audio.";
+    updateStatus(reason, answerRequired ? "info" : "error");
     if (!popupEl) {
-      showNotice(reason, "error", activeRequest && activeRequest.rect);
+      showNotice(reason, answerRequired ? "info" : "error", activeRequest && activeRequest.rect);
     }
     activeRequest = null;
   }
 
   function saved(result) {
     if (result && result.error) {
-      const message = "Could not save pronunciation: " + result.error;
-      updateStatus(message);
+      const message = "Could not save. Your existing pronunciations are unchanged. Open Troubleshoot audio for details.";
+      updateStatus(message, "error");
       if (!popupEl) {
         showNotice(message, "error", contextRequest && contextRequest.rect);
       }
       return;
     }
+    if (!result) return;
     if (result.alreadySaved) {
       lastPayload = Object.assign({}, lastPayload || {}, { alreadySaved: true });
     }
@@ -1079,10 +1335,7 @@
       );
       return;
     }
-    const status = popupEl.querySelector(".pronounceit-status");
-    if (status) {
-      status.textContent = result.duplicate ? "Already in your list." : "Saved.";
-    }
+    updateStatus("");
     const save = popupEl.querySelector(".pronounceit-save-button");
     if (save) {
       save.textContent = "Saved";
@@ -1096,6 +1349,7 @@
     config = Object.assign({}, config, nextConfig || {});
     if (popupEl) {
       applyTheme(popupEl, "pronounceit-popup");
+      placePopup();
     }
     if (noticeEl) {
       applyTheme(noticeEl, "pronounceit-notice");
@@ -1106,50 +1360,40 @@
     const theme = resolveTheme(config.theme);
     element.className = baseClass + " pronounceit-theme-" + theme;
     element.setAttribute("data-theme", theme);
+    const tokens = config.themeTokens || {};
+    for (const name of Object.keys(tokens)) {
+      const property = "--pronounceit-" + name;
+      if (typeof element.style.setProperty === "function") {
+        element.style.setProperty(property, String(tokens[name]));
+      } else {
+        element.style[property] = String(tokens[name]);
+      }
+    }
   }
 
   function resolveTheme(themeName) {
-    if (themeName === "clinical_light" || themeName === "slate" || themeName === "high_contrast") {
-      return themeName;
+    return themeName === "dark" ? "dark" : "light";
+  }
+
+  function openQuickCard(request) {
+    if (!request || !canPronounce()) {
+      return false;
     }
-    if (themeName === "system" && prefersDarkMode()) {
-      return "slate";
-    }
-    return "clinical_light";
-  }
-
-  function prefersDarkMode() {
-    return Boolean(
-      window.matchMedia &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches
-    );
-  }
-
-  function contextTarget() {
-    const request = contextRequest || currentPronounceRequest();
-    if (!request) {
-      showNotice("Point to or select a word first.", "error");
-      return null;
-    }
-    return request;
-  }
-
-  function playContextTarget() {
-    requestAudioOnly(contextTarget());
-  }
-
-  function showContextDetails() {
-    const request = contextTarget();
-    if (!request) return;
+    contextRequest = request;
+    const word = String(request.text || request.selectedText || "").trim();
+    show({
+      term: word,
+      requestedText: word,
+      pronunciation: "Looking up pronunciation…",
+      audioSource: "loading",
+      audioSourceLabel: "Looking up…",
+      audioAvailable: false,
+      loading: true,
+      request: request,
+      rect: request.rect || {},
+    });
     pendingRequest = request;
-    requestPronunciation({ autoPlay: false });
-  }
-
-  function saveContextTarget() {
-    const request = contextTarget();
-    if (!request) return;
-    showNotice("Saving…", "loading", request.rect, 0);
-    send("saveLookup", request);
+    return requestPronunciation({ autoPlay: false });
   }
 
   document.addEventListener("keydown", function (event) {
@@ -1159,16 +1403,24 @@
       return;
     }
     handleActivationKeyDown(event);
-  });
+    handleContextMenuKeyDown(event);
+  }, true);
 
-  document.addEventListener("keyup", handleActivationKeyUp);
+  document.addEventListener("keyup", handleActivationKeyUp, true);
+  document.addEventListener("keyup", handleContextMenuKeyUp, true);
+  document.addEventListener("selectionchange", rememberCompletedSelection);
+  document.addEventListener("dblclick", rememberCompletedSelectionDeferred, true);
 
   document.addEventListener("contextmenu", function (event) {
     if (
-      event.shiftKey ||
       !canPronounce() ||
+      !config.showNativeContextMenu ||
       isPronounceItElement(event && event.target)
     ) {
+      contextRequest = null;
+      return;
+    }
+    if (!modifierMatches(event, config.contextMenuModifier)) {
       contextRequest = null;
       return;
     }
@@ -1178,17 +1430,19 @@
       return;
     }
     contextRequest = request;
-    pendingRequest = request;
     if (typeof event.preventDefault === "function") {
       event.preventDefault();
     }
     if (typeof event.stopPropagation === "function") {
       event.stopPropagation();
     }
-    requestPronunciation({ autoPlay: true });
+    openQuickCard(request);
   }, true);
 
   function handlePointerDown(event) {
+    if (isPrimaryClick(event) && !modifierMatches(event, config.directClickModifier)) {
+      completedSelectionRequest = null;
+    }
     rememberPointerRequest(event);
     beginDirectGesture(event);
   }
@@ -1199,8 +1453,13 @@
   }
 
   function handlePointerUp(event) {
+    if (finishQuickCardGesture(event)) {
+      rememberCompletedSelectionDeferred();
+      return;
+    }
     finishDirectGesture(event);
     rememberPointerRequest(event);
+    rememberCompletedSelectionDeferred();
   }
 
   if (typeof window.PointerEvent === "function") {
@@ -1222,10 +1481,6 @@
     }
   });
 
-  window.addEventListener("resize", function () {
-    hidePopup();
-    hideNotice();
-  });
 
   window.PronounceIt = {
     configure: configure,
@@ -1235,9 +1490,6 @@
     hide: hideAll,
     pronounceCurrent: pronounceCurrent,
     playText: playText,
-    playContextTarget: playContextTarget,
-    showContextDetails: showContextDetails,
-    saveContextTarget: saveContextTarget,
   };
 
   if (window.PronounceItTestHooks) {

@@ -3,8 +3,6 @@
     {
       "term": "example medical term",
       "pronunciation": "eg-ZAM-pul MED-ih-kul term",
-      "syllables": "ex-am-ple med-i-cal term",
-      "speechText": "eg zam pul med ih kul term",
       "audioFile": "audio/example_medical_term.aiff",
       "notes": "Copy this file to custom_pronunciations.json and replace this entry."
     }

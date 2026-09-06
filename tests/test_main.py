@@ -48,6 +48,8 @@ class FakeWebView:
 class FakeAction:
     def __init__(self, label: str = "", parent=None) -> None:
         self.label = label
+        self.text = label
+        self._menu = None
         self.shortcut = ""
         self.callback = None
         self.triggered = self
@@ -58,10 +60,14 @@ class FakeAction:
     def setShortcut(self, shortcut: str) -> None:
         self.shortcut = shortcut
 
+    def menu(self):
+        return self._menu
+
 
 class FakeMenu:
     def __init__(self, title: str = "", parent=None) -> None:
         self.title = title
+        self._object_name = ""
         self.actions: list[tuple[str, FakeAction]] = []
         self.submenus: list[FakeMenu] = []
 
@@ -77,11 +83,19 @@ class FakeMenu:
 
     def addMenu(self, menu):
         submenu = menu if isinstance(menu, FakeMenu) else FakeMenu(str(menu))
+        action = FakeAction(submenu.title, self)
+        action._menu = submenu
         self.submenus.append(submenu)
         return submenu
 
     def addSeparator(self) -> None:
         self.actions.append(("---", FakeAction("---")))
+
+    def setObjectName(self, name: str) -> None:
+        self._object_name = name
+
+    def objectName(self) -> str:
+        return self._object_name
 
 
 class FakeTts:
@@ -153,7 +167,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(reviewer.web.scripts), 1)
         script = reviewer.web.scripts[0]
         self.assertIn("window.PronounceIt.show", script)
-        self.assertIn("uh-GRAN-yoo-loh-sy-TOH-sis", script)
+        self.assertIn('"pronunciation": ' + json.dumps(main._dictionary.lookup("agranulocytosis")["pronunciation"]), script)
         self.assertIn("uh gran yoo loh sy toh sis", script)
 
     def test_lookup_message_uses_longest_context_phrase(self) -> None:
@@ -414,11 +428,15 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn('"term": "clozapine"', script)
         self.assertIn("local-audio-file: local audio unavailable", script)
 
-    def test_lookup_message_is_blocked_on_question_side_by_default(self) -> None:
+    def test_lookup_message_is_blocked_when_question_side_is_explicitly_disabled(self) -> None:
         reviewer = FakeReviewer()
         original_answer_visible = main._reviewer_answer_visible
+        original_config = main._config
         try:
             main._reviewer_answer_visible = False
+            main._config = lambda: PronounceItConfig.from_mapping(
+                {"allow_on_question_side": False}
+            )
             handled = main._on_js_message(
                 (False, None),
                 "pronounceit:lookup:" + json.dumps({"text": "agranulocytosis"}),
@@ -426,21 +444,26 @@ class MainMessageTests(unittest.TestCase):
             )
         finally:
             main._reviewer_answer_visible = original_answer_visible
+            main._config = original_config
 
         self.assertEqual(handled, (True, None))
         self.assertEqual(len(reviewer.web.scripts), 2)
         self.assertEqual(reviewer.web.scripts[0], "window.PronounceIt && window.PronounceIt.hide();")
         self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[1])
         self.assertIn('"ok": false', reviewer.web.scripts[1])
-        self.assertIn('"reason": "Reveal the answer before using PronounceIt."', reviewer.web.scripts[1])
+        self.assertIn('"reason": "Reveal the answer before playing pronunciation."', reviewer.web.scripts[1])
         self.assertIn('"term": "agranulocytosis"', reviewer.web.scripts[1])
         self.assertIn("pronunciation blocked before answer reveal", reviewer.web.scripts[1])
 
     def test_audio_lookup_blocked_on_question_side_returns_spoken_status(self) -> None:
         reviewer = FakeReviewer()
         original_answer_visible = main._reviewer_answer_visible
+        original_config = main._config
         try:
             main._reviewer_answer_visible = False
+            main._config = lambda: PronounceItConfig.from_mapping(
+                {"allow_on_question_side": False}
+            )
             handled = main._on_js_message(
                 (False, None),
                 "pronounceit:audioLookup:" + json.dumps({"text": "clozapine"}),
@@ -448,12 +471,13 @@ class MainMessageTests(unittest.TestCase):
             )
         finally:
             main._reviewer_answer_visible = original_answer_visible
+            main._config = original_config
 
         self.assertEqual(handled, (True, None))
         self.assertEqual(len(reviewer.web.scripts), 2)
         self.assertEqual(reviewer.web.scripts[0], "window.PronounceIt && window.PronounceIt.hide();")
         self.assertIn('"ok": false', reviewer.web.scripts[1])
-        self.assertIn('"reason": "Reveal the answer before using PronounceIt."', reviewer.web.scripts[1])
+        self.assertIn('"reason": "Reveal the answer before playing pronunciation."', reviewer.web.scripts[1])
         self.assertIn('"term": "clozapine"', reviewer.web.scripts[1])
 
     def test_lookup_message_can_be_enabled_on_question_side(self) -> None:
@@ -488,34 +512,11 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertEqual(text, "Agranulocytosis")
 
-    def test_reviewer_context_menu_routes_to_reviewer_webview(self) -> None:
-        reviewer = FakeReviewer()
-        menu = FakeMenu()
-        original_config = main._config
-        original_import = __import__
+    def test_native_context_menu_injection_is_retired(self) -> None:
+        source = Path(main.__file__).read_text(encoding="utf-8")
 
-        class FakeMw:
-            state = "review"
-
-        def fake_import(name, *args, **kwargs):
-            if name == "aqt":
-                class FakeAqt:
-                    mw = FakeMw()
-
-                return FakeAqt
-            return original_import(name, *args, **kwargs)
-
-        import builtins
-
-        try:
-            builtins.__import__ = fake_import
-            main._config = lambda: PronounceItConfig.from_mapping({})
-            main._on_reviewer_will_show_context_menu(reviewer, menu)
-        finally:
-            main._config = original_config
-            builtins.__import__ = original_import
-
-        self.assertEqual([submenu.title for submenu in menu.submenus], ["PronounceIt"])
+        self.assertNotIn("reviewer_will_show_context_menu.append", source)
+        self.assertNotIn('menu.addMenu("PronounceIt")', source)
 
     def test_selected_text_uses_audio_only_javascript_path(self) -> None:
         reviewer = FakeReviewer()
@@ -569,138 +570,6 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(action, "")
         self.assertEqual(payload, {})
 
-    def test_native_context_menu_hook_adds_actions_in_review(self) -> None:
-        class FakeMw:
-            state = "review"
-
-        original_import = __import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "aqt":
-                class FakeAqt:
-                    mw = FakeMw()
-
-                return FakeAqt
-            return original_import(name, *args, **kwargs)
-
-        import builtins
-
-        menu = FakeMenu()
-        webview = FakeWebView("clozapine")
-        try:
-            builtins.__import__ = fake_import
-            main._on_webview_will_show_context_menu(webview, menu)
-        finally:
-            builtins.__import__ = original_import
-
-        self.assertEqual(menu.actions, [])
-        self.assertEqual(len(menu.submenus), 1)
-        submenu = menu.submenus[0]
-        self.assertEqual(
-            [label for label, _action in submenu.actions],
-            ["Play pronunciation", "Show pronunciation details…", "Save pronunciation"],
-        )
-        for _label, action in submenu.actions:
-            action.callback()
-        self.assertEqual(
-            menu.submenus[0].title,
-            "PronounceIt",
-        )
-        self.assertEqual(
-            webview.scripts,
-            [
-                "window.PronounceIt && window.PronounceIt.playContextTarget();",
-                "window.PronounceIt && window.PronounceIt.showContextDetails();",
-                "window.PronounceIt && window.PronounceIt.saveContextTarget();",
-            ],
-        )
-
-    def test_native_context_menu_hook_hides_save_when_disabled(self) -> None:
-        class FakeMw:
-            state = "review"
-
-        original_import = __import__
-        original_config = main._config
-
-        def fake_import(name, *args, **kwargs):
-            if name == "aqt":
-                class FakeAqt:
-                    mw = FakeMw()
-
-                return FakeAqt
-            return original_import(name, *args, **kwargs)
-
-        import builtins
-
-        menu = FakeMenu()
-        try:
-            main._config = lambda: PronounceItConfig.from_mapping({"show_save_button": False})
-            builtins.__import__ = fake_import
-            main._on_webview_will_show_context_menu(FakeWebView("clozapine"), menu)
-        finally:
-            main._config = original_config
-            builtins.__import__ = original_import
-
-        self.assertEqual(
-            [label for label, _action in menu.submenus[0].actions],
-            ["Play pronunciation", "Show pronunciation details…"],
-        )
-
-    def test_native_context_menu_hook_is_hidden_outside_review(self) -> None:
-        class FakeMw:
-            state = "deckBrowser"
-
-        original_import = __import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "aqt":
-                class FakeAqt:
-                    mw = FakeMw()
-
-                return FakeAqt
-            return original_import(name, *args, **kwargs)
-
-        import builtins
-
-        menu = FakeMenu()
-        try:
-            builtins.__import__ = fake_import
-            main._on_webview_will_show_context_menu(FakeWebView("clozapine"), menu)
-        finally:
-            builtins.__import__ = original_import
-
-        self.assertEqual(menu.submenus, [])
-
-    def test_native_context_menu_hook_can_be_disabled(self) -> None:
-        class FakeMw:
-            state = "review"
-
-        original_import = __import__
-        original_config = main._config
-
-        def fake_import(name, *args, **kwargs):
-            if name == "aqt":
-                class FakeAqt:
-                    mw = FakeMw()
-
-                return FakeAqt
-            return original_import(name, *args, **kwargs)
-
-        import builtins
-
-        menu = FakeMenu()
-        try:
-            main._config = lambda: PronounceItConfig.from_mapping(
-                {"show_native_context_menu": False}
-            )
-            builtins.__import__ = fake_import
-            main._on_webview_will_show_context_menu(FakeWebView("clozapine"), menu)
-        finally:
-            builtins.__import__ = original_import
-            main._config = original_config
-
-        self.assertEqual(menu.submenus, [])
-
     def test_pronunciation_allowed_recovers_when_reviewer_state_is_answer(self) -> None:
         class FakeReviewer:
             state = "answer"
@@ -739,6 +608,7 @@ class MainMessageTests(unittest.TestCase):
 
         original_import = __import__
         original_answer_visible = main._reviewer_answer_visible
+        original_config = main._config
 
         def fake_import(name, *args, **kwargs):
             if name == "aqt":
@@ -752,12 +622,16 @@ class MainMessageTests(unittest.TestCase):
 
         try:
             main._reviewer_answer_visible = False
+            main._config = lambda: PronounceItConfig.from_mapping(
+                {"allow_on_question_side": False}
+            )
             builtins.__import__ = fake_import
             self.assertFalse(main._pronunciation_allowed())
             self.assertFalse(main._js_config_payload()["answerVisible"])
         finally:
             builtins.__import__ = original_import
             main._reviewer_answer_visible = original_answer_visible
+            main._config = original_config
 
     def test_pronounce_current_selection_falls_back_to_reviewer_javascript(self) -> None:
         reviewer = FakeReviewer()
@@ -800,6 +674,7 @@ class MainMessageTests(unittest.TestCase):
 
             class Form:
                 menuTools = FakeMenu("Tools")
+                menubar = FakeMenu("Menu Bar")
 
             form = Form()
 
@@ -813,6 +688,10 @@ class MainMessageTests(unittest.TestCase):
             sys.modules["aqt"] = fake_aqt
             sys.modules["aqt.qt"] = fake_qt
             main._install_tools_menu_actions()
+            main._install_tools_menu_actions()
+            delattr(fake_aqt.mw, "_pronounceit_settings_action")
+            delattr(fake_aqt.mw, "_caleb_m_addons_menu")
+            main._install_tools_menu_actions()
         finally:
             if original_aqt is None:
                 sys.modules.pop("aqt", None)
@@ -823,24 +702,17 @@ class MainMessageTests(unittest.TestCase):
             else:
                 sys.modules["aqt.qt"] = original_qt
 
+        self.assertEqual(FakeMw.form.menuTools.actions, [])
         self.assertEqual(FakeMw.form.menuTools.submenus, [])
-        self.assertEqual(len(FakeMw.form.menuTools.actions), 3)
-        labels = [label for label, _action in FakeMw.form.menuTools.actions]
-        self.assertEqual(
-            labels,
-            [
-                "Pronounce Word or Selection",
-                "PronounceIt Settings...",
-                "PronounceIt Audio Diagnostics...",
-            ],
-        )
-        self.assertIs(
-            FakeMw.form.menuTools.actions[0][1].callback,
-            main._pronounce_current_reviewer_selection,
-        )
-        self.assertEqual(FakeMw.form.menuTools.actions[0][1].shortcut, "")
-        self.assertIs(FakeMw.form.menuTools.actions[1][1].callback, main._show_config_dialog)
-        self.assertIs(FakeMw.form.menuTools.actions[2][1].callback, main._show_audio_diagnostics)
+        self.assertEqual(len(FakeMw.form.menubar.submenus), 1)
+        submenu = FakeMw.form.menubar.submenus[0]
+        self.assertEqual(submenu.title, "Caleb M. Add-ons Settings")
+        self.assertEqual(submenu.objectName(), "caleb_m_addons_menu")
+        self.assertEqual(len(submenu.actions), 1)
+        labels = [label for label, _action in submenu.actions]
+        self.assertEqual(labels, ["PronounceIt settings"])
+        self.assertIs(submenu.actions[0][1].callback, main._show_config_dialog)
+        self.assertEqual(submenu.actions[0][1].shortcut, "")
 
     def test_lookup_start_choice_reflects_existing_config(self) -> None:
         self.assertEqual(
@@ -895,6 +767,107 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(main._activation_modifier_ui_value("mod", platform="linux"), "ctrl")
         self.assertEqual(main._activation_modifier_ui_value("alt", platform="darwin"), "alt")
 
+    def test_pack_presentation_uses_semantic_user_facing_states(self) -> None:
+        installed = main._pack_presentation(
+            main.AudioPackDownloadState(phase="installed", installed=True)
+        )
+        downloading = main._pack_presentation(
+            main.AudioPackDownloadState(phase="downloading", done_bytes=10, total_bytes=100)
+        )
+        verifying = main._pack_presentation(
+            main.AudioPackDownloadState(phase="verifying", installed=True)
+        )
+        paused = main._pack_presentation(
+            main.AudioPackDownloadState(phase="paused", done_bytes=25, total_bytes=100)
+        )
+        failed = main._pack_presentation(
+            main.AudioPackDownloadState(
+                phase="failed",
+                done_bytes=25,
+                total_bytes=100,
+                message="Verification failed.",
+            )
+        )
+
+        self.assertEqual((installed.status, installed.tone, installed.verified), ("Installed", "installed", True))
+        self.assertEqual((downloading.status, downloading.progress_text), ("Downloading… 10%", "10%"))
+        self.assertEqual((verifying.status, verifying.progress_indeterminate), ("Verifying…", True))
+        self.assertEqual((paused.status, paused.progress_text), ("Paused • 25%", "25% • Ready to resume"))
+        self.assertEqual((failed.status, failed.tone), ("Verification failed", "failed"))
+
+    def test_audio_pack_onboarding_needed_only_once_for_missing_pack(self) -> None:
+        unseen = PronounceItConfig.from_mapping({"audio_pack_prompt_seen": False})
+        seen = PronounceItConfig.from_mapping({"audio_pack_prompt_seen": True})
+
+        self.assertTrue(
+            main._audio_pack_onboarding_needed(unseen, main.AudioPackDownloadState())
+        )
+        self.assertFalse(
+            main._audio_pack_onboarding_needed(
+                unseen, main.AudioPackDownloadState(phase="installed", installed=True)
+            )
+        )
+        self.assertFalse(
+            main._audio_pack_onboarding_needed(
+                unseen, main.AudioPackDownloadState(phase="downloading")
+            )
+        )
+        self.assertFalse(
+            main._audio_pack_onboarding_needed(seen, main.AudioPackDownloadState())
+        )
+
+    def test_audio_pack_onboarding_persists_before_starting_download(self) -> None:
+        calls: list[object] = []
+
+        class Controller:
+            def start(self):
+                calls.append("start")
+                return True
+
+        original_config = main._config
+        original_write = main._write_config
+        original_controller = main._audio_pack_download
+        try:
+            main._config = lambda: PronounceItConfig.from_mapping(
+                {"audio_pack_prompt_seen": False, "audio_backend": "local_audio_then_tts"}
+            )
+            main._write_config = lambda mapping: calls.append(dict(mapping)) or mapping
+            main._audio_pack_download = Controller()
+            main._complete_audio_pack_onboarding(True)
+        finally:
+            main._config = original_config
+            main._write_config = original_write
+            main._audio_pack_download = original_controller
+
+        self.assertTrue(calls[0]["audio_pack_prompt_seen"])
+        self.assertEqual(calls[0]["audio_backend"], "local_audio_then_tts")
+        self.assertEqual(calls[1], "start")
+
+    def test_legacy_theme_migration_resolves_and_persists_once(self) -> None:
+        original_read = main._read_config_mapping
+        original_write = main._write_config
+        original_current = main._current_anki_theme
+        writes: list[dict] = []
+        try:
+            main._read_config_mapping = lambda: {"theme": "system"}
+            main._current_anki_theme = lambda: "dark"
+            main._write_config = lambda mapping: writes.append(dict(mapping)) or mapping
+            migrated = main._migrate_theme_config()
+        finally:
+            main._read_config_mapping = original_read
+            main._write_config = original_write
+            main._current_anki_theme = original_current
+
+        self.assertEqual(migrated["theme"], "dark")
+        self.assertTrue(migrated["theme_initialized"])
+        self.assertEqual(writes, [migrated])
+
+    def test_support_button_reuses_progressbar_asset_format(self) -> None:
+        self.assertTrue(main._support_image_path().is_file())
+        style = main._support_button_style()
+        self.assertIn("buyMeACoffeeButton", style)
+        self.assertIn("buy_me_a_coffee.png", style)
+
     def test_behavior_preview_lines_describe_current_controls(self) -> None:
         preview = main._behavior_preview_lines(
             PronounceItConfig.from_mapping(
@@ -907,9 +880,10 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(
             preview,
             [
-                f"Hold {main._modifier_display_name('alt')} while clicking or dragging, or tap {main._modifier_display_name('alt')} after selecting",
-                "Right-click plays and opens pronunciation details",
-                "Shift + right-click opens Anki's menu with PronounceIt actions",
+                "Using PronounceIt",
+                f"• Hold {main._modifier_display_name('alt')} while clicking or dragging text to play pronunciation.",
+                f"• Or select text, then tap {main._modifier_display_name('alt')}.",
+                f"• Hold {main._modifier_display_name('ctrl')} while clicking or right-clicking, or press {main._modifier_display_name('ctrl')} after selecting text, to open the quick pronunciation card.",
             ],
         )
 
@@ -919,15 +893,17 @@ class MainMessageTests(unittest.TestCase):
         self.assertTrue(payload["found"])
         self.assertEqual(payload["term"], "Glasgow Coma Scale")
         self.assertEqual(payload["speechText"], "glaz goh koh muh skayl")
-        self.assertEqual(payload["audioKind"], "bundled")
+        self.assertEqual(payload["audioSource"], "azure")
+        self.assertEqual(payload["audioSourceLabel"], "Recorded audio")
         self.assertFalse(payload["alreadySaved"])
 
     def test_lookup_payload_for_unknown_word_is_playable_generated_audio(self) -> None:
         payload = main._lookup_payload("notarealmedicalword")
 
         self.assertFalse(payload["found"])
-        self.assertEqual(payload["audioKind"], "generated")
-        self.assertEqual(payload["audioStatus"], "Generated audio available")
+        self.assertEqual(payload["audioSource"], "generated")
+        self.assertEqual(payload["audioSourceLabel"], "Computer voice")
+        self.assertEqual(payload["audioStatus"], "Computer voice ready")
         self.assertTrue(payload["audioAvailable"])
 
     def test_lookup_payload_does_not_label_missing_bundled_audio_ready(self) -> None:
@@ -952,8 +928,64 @@ class MainMessageTests(unittest.TestCase):
                 main._addon_root = original_root
                 main._config = original_config
 
-        self.assertEqual(payload["audioKind"], "generated")
-        self.assertNotEqual(payload["audioStatus"], "Bundled audio ready")
+        self.assertEqual(payload["audioSource"], "generated")
+        self.assertEqual(payload["audioSourceLabel"], "Computer voice")
+        self.assertNotEqual(payload["audioStatus"], "Recorded audio ready")
+
+    def test_lookup_payload_classifies_playable_user_audio_as_custom(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audio_file = root / "user_files" / "audio" / "example.wav"
+            audio_file.parent.mkdir(parents=True)
+            audio_file.write_bytes(b"custom audio")
+            original_root = main._addon_root
+            original_config = main._config
+            try:
+                main._addon_root = root
+                main._config = lambda: PronounceItConfig.from_mapping({})
+                payload = main._enrich_lookup_payload(
+                    {
+                        "term": "Example",
+                        "audioFile": "example.wav",
+                        "source": "user-override",
+                        "found": True,
+                    }
+                )
+            finally:
+                main._addon_root = original_root
+                main._config = original_config
+
+        self.assertEqual(payload["audioSource"], "custom")
+        self.assertEqual(payload["audioSourceLabel"], "Custom audio")
+        self.assertEqual(payload["audioStatus"], "Custom audio ready")
+
+    def test_lookup_payload_classifies_pack_and_system_tts_sources(self) -> None:
+        class InstalledStatus:
+            installed = True
+
+        class InstalledPack:
+            def resolve(self, term):
+                return Path("recording.mp3") if term == "Example" else None
+
+        original_pack = main._audio_pack
+        original_config = main._config
+        try:
+            main._audio_pack = InstalledPack()
+            main._config = lambda: PronounceItConfig.from_mapping({})
+            pack_payload = main._enrich_lookup_payload({"term": "Example", "found": True})
+            main._audio_pack = None
+            main._config = lambda: PronounceItConfig.from_mapping(
+                {"audio_backend": "system_tts"}
+            )
+            live_payload = main._enrich_lookup_payload({"term": "Unknown", "found": False})
+        finally:
+            main._audio_pack = original_pack
+            main._config = original_config
+
+        self.assertEqual(pack_payload["audioSource"], "azure")
+        self.assertEqual(pack_payload["audioSourceLabel"], "Recorded audio")
+        self.assertEqual(live_payload["audioSource"], "live")
+        self.assertEqual(live_payload["audioSourceLabel"], "Computer voice")
 
     def test_handle_save_includes_reviewer_origin_metadata(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -1018,7 +1050,9 @@ class MainMessageTests(unittest.TestCase):
         reviewer = FakeReviewer()
         original_tts = main._tts
         try:
-            main._tts = FakeTts(TtsResult(True, "playing local audio"))
+            main._tts = FakeTts(
+                TtsResult(True, "playing local audio", audio_source="azure")
+            )
             ok = main._handle_speak(
                 {"text": "kloh zuh peen", "term": "clozapine", "audioFile": "audio/clozapine.aiff"},
                 reviewer,
@@ -1030,6 +1064,8 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(reviewer.web.scripts), 1)
         self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
         self.assertIn('"ok": true', reviewer.web.scripts[0])
+        self.assertIn('"audioSource": "azure"', reviewer.web.scripts[0])
+        self.assertIn('"audioSourceLabel": "Recorded audio"', reviewer.web.scripts[0])
 
     def test_handle_speak_sends_failure_callback(self) -> None:
         reviewer = FakeReviewer()
@@ -1059,6 +1095,7 @@ class MainMessageTests(unittest.TestCase):
                     "term": "clozapine",
                     "audioBackend": "local_audio_then_tts",
                     "audioFile": "audio/clozapine.aiff",
+                    "audioSource": "azure",
                     "ok": False,
                     "reason": "local audio unavailable",
                     "attempts": ["local-audio-file: local audio unavailable"],
@@ -1074,7 +1111,8 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn("custom pronunciations entry 2 was skipped", text)
         self.assertIn("FAILED: kloh zuh peen", text)
         self.assertIn("Term: clozapine", text)
-        self.assertIn("Backend: local_audio_then_tts", text)
+        self.assertIn("Playback mode: local_audio_then_tts", text)
+        self.assertIn("Source: Recorded audio", text)
         self.assertIn("Audio file: audio/clozapine.aiff", text)
         self.assertIn("Reason: local audio unavailable", text)
         self.assertIn("local-audio-file: local audio unavailable", text)
@@ -1084,38 +1122,53 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertEqual(written["audio_backend"], "local_audio_then_tts")
         self.assertEqual(written["tts_volume"], 100)
-        self.assertEqual(written["theme"], "system")
+        self.assertEqual(written["theme"], "light")
 
-    def test_show_manual_pronunciation_displays_guide_and_speaks_fluent_term(self) -> None:
-        shown: list[tuple[str, str]] = []
+    def test_show_manual_pronunciation_keeps_playback_explicit(self) -> None:
+        shown: list[tuple[dict, str]] = []
         spoken: list[dict] = []
-        original_show_text = main._show_text
+        original_show_details = main._show_pronunciation_details
         original_handle_speak = main._handle_speak
 
         try:
-            main._show_text = lambda title, text: shown.append((title, text))
+            main._show_pronunciation_details = lambda payload, term: shown.append((payload, term))
             main._handle_speak = lambda payload: spoken.append(payload)
             main._show_manual_pronunciation("agranulocytosis")
         finally:
-            main._show_text = original_show_text
+            main._show_pronunciation_details = original_show_details
             main._handle_speak = original_handle_speak
 
-        self.assertEqual(shown[0][0], "PronounceIt")
-        self.assertIn("uh-GRAN-yoo-loh-sy-TOH-sis", shown[0][1])
+        self.assertEqual(shown[0][1], "agranulocytosis")
+        self.assertEqual(shown[0][0]["pronunciation"], main._dictionary.lookup("agranulocytosis")["pronunciation"])
+        self.assertEqual(spoken, [])
+
+    def test_pronunciation_details_use_user_facing_field_names(self) -> None:
+        fields = main._pronunciation_detail_fields(
+            {
+                "term": "agranulocytosis",
+                "pronunciation": "uh-GRAN-yoo-loh-sy-TOH-sis",
+                "syllables": "a·gran·u·lo·cy·to·sis",
+                "speechText": "uh gran yoo loh sy toh sis",
+            },
+            "agranulocytosis",
+        )
+
         self.assertEqual(
-            spoken,
+            fields,
             [
-                {
-                    "text": "agranulocytosis",
-                    "term": "agranulocytosis",
-                    "audioFile": "audio/agranulocytosis.mp3",
-                    "useTextOverride": False,
-                    "qualityTier": "verified",
-                    "synthesisStrategy": "azure-native",
-                    "audioReviewStatus": "passed",
-                }
+                ("Word", "agranulocytosis"),
+                ("Pronunciation", "uh-GRAN-yoo-loh-sy-TOH-sis"),
             ],
         )
+
+    def test_saved_display_refresh_preserves_audio_and_user_corrections(self) -> None:
+        from unittest.mock import patch
+        item = {"term": "test", "pronunciation": "old", "audioFile": "old.mp3", "speechText": "original"}
+        with patch.object(main, "_lookup_payload", return_value={"pronunciation": ""}):
+            self.assertEqual(main._current_saved_entry(item), {**item, "pronunciation": "", "textSource": "", "textReviewStatus": ""})
+            custom = {**item, "source": "user-override"}
+            self.assertEqual(main._current_saved_entry(custom), custom)
+        self.assertEqual(item["pronunciation"], "old")
 
     def test_save_custom_pronunciation_reloads_dictionary(self) -> None:
         with TemporaryDirectory() as tmp:

@@ -3,8 +3,12 @@ import zipfile
 from tempfile import TemporaryDirectory
 from pathlib import Path
 
-from scripts import build_ankiaddon
-from scripts.import_source_lexicon import merge_lexicon, parse_source_lexicon, pronunciation_to_speech_text
+from scripts.release import build_ankiaddon
+from scripts.corpus.import_source_lexicon import (
+    merge_lexicon,
+    parse_source_lexicon,
+    pronunciation_to_speech_text,
+)
 
 
 class BuildScriptTests(unittest.TestCase):
@@ -23,6 +27,20 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn("audio", build_ankiaddon.INCLUDE_DIRS)
         self.assertIn("LICENSE", build_ankiaddon.INCLUDE_FILES)
         self.assertIn("LICENSE", build_ankiaddon.REQUIRED_ARCHIVE_FILES)
+        self.assertIn(
+            "pronounceit/assets/buy_me_a_coffee.png",
+            build_ankiaddon.REQUIRED_ARCHIVE_FILES,
+        )
+        for name in (
+            "spin_up_light.svg",
+            "spin_down_light.svg",
+            "spin_up_dark.svg",
+            "spin_down_dark.svg",
+        ):
+            self.assertIn(
+                f"pronounceit/assets/{name}",
+                build_ankiaddon.REQUIRED_ARCHIVE_FILES,
+            )
 
     def test_validate_archive_rejects_forbidden_paths(self) -> None:
         with TemporaryDirectory() as tmp:

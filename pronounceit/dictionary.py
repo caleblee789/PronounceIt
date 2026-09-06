@@ -19,7 +19,7 @@ CONTEXT_BOUNDARY_RE = re.compile(r"[\n\r.,;:!?{}\[\]<>\"`]")
 class PronunciationEntry:
     term: str
     pronunciation: str
-    syllables: str
+    syllables: str = ""
     speech_text: str = ""
     audio_file: str = ""
     source: str = "bundled-medical"
@@ -27,12 +27,22 @@ class PronunciationEntry:
     quality_tier: str = "curated"
     sapi_phonemes: str = ""
     sapi_segments: tuple[dict[str, str], ...] = ()
+    audio_provider: str = ""
+    audio_review_status: str = ""
+    phoneme_input_sha256: str = ""
+    written_pronunciation: str | None = None
+    written_status: str = ""
+    written_source: str = ""
 
     def as_payload(self, requested_text: str) -> dict[str, Any]:
         payload = asdict(self)
+        for key in ("written_pronunciation", "written_status", "written_source"):
+            payload.pop(key, None)
         payload.pop("speech_text", None)
         payload.pop("audio_file", None)
         payload.pop("sapi_segments", None)
+        for key in ("audio_provider", "audio_review_status", "phoneme_input_sha256"):
+            payload.pop(key, None)
         payload["requestedText"] = requested_text
         payload["speechText"] = self.speech_text or pronunciation_to_speech_text(self.pronunciation)
         payload["synthesisText"] = (
@@ -44,10 +54,22 @@ class PronunciationEntry:
             "manual-sapi" if self.sapi_phonemes or self.sapi_segments else "azure-native"
         )
         payload["audioReviewStatus"] = "passed" if payload["audioFile"] else "unreviewed"
+        if self.audio_provider:
+            payload["audioProvider"] = self.audio_provider
+            payload["audioReviewStatus"] = self.audio_review_status or "unreviewed"
+            payload["phonemeInputSha256"] = self.phoneme_input_sha256
+            payload["synthesisStrategy"] = "kokoro-phonemes" if self.audio_provider == "kokoro-local" else payload["synthesisStrategy"]
         if self.sapi_phonemes:
             payload["sapiPhonemes"] = self.sapi_phonemes
         if self.sapi_segments:
             payload["sapiSegments"] = [dict(segment) for segment in self.sapi_segments]
+        # Resolve every playback input above from the original audio contract.
+        # Display data must never feed speechText, synthesisText, or cache keys.
+        if self.written_pronunciation is not None:
+            payload["pronunciation"] = self.written_pronunciation
+            payload["syllables"] = ""
+            payload["textReviewStatus"] = self.written_status
+            payload["textSource"] = self.written_source
         payload["found"] = True
         return payload
 
@@ -123,6 +145,16 @@ class PronunciationDictionary:
         entries: dict[str, PronunciationEntry] = {}
         issues: list[str] = []
         bundled_items = _read_terms_file(data_file)
+        written_file = data_file.with_name("written_pronunciations.json")
+        written = None
+        if written_file.exists() or data_file.resolve() == DATA_FILE.resolve():
+            from .written_guides import load_written_guides
+            try:
+                written = load_written_guides(written_file, bundled_items)
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                issues.append(f"Written pronunciations unavailable: {exc}")
+                # Audio and term lookup still work when display data is damaged.
+                written = {}
         verified_terms = _load_high_yield_terms()
         for item in bundled_items:
             if not isinstance(item, dict):
@@ -140,6 +172,7 @@ class PronunciationDictionary:
             issues,
             strict=True,
             verified_terms=verified_terms,
+            written_guides=written,
         )
         if user_file and user_file.exists():
             try:
@@ -164,6 +197,7 @@ class PronunciationDictionary:
         issues: list[str] | None = None,
         strict: bool = True,
         verified_terms: set[str] | None = None,
+        written_guides: dict[str, dict] | None = None,
     ) -> None:
         load_issues = issues if issues is not None else []
         for index, item in enumerate(items):
@@ -175,7 +209,7 @@ class PronunciationDictionary:
                 continue
             missing = [
                 key
-                for key in ("term", "pronunciation", "syllables")
+                for key in ("term", "pronunciation")
                 if not isinstance(item.get(key), str) or not item.get(key, "").strip()
             ]
             if missing:
@@ -201,7 +235,7 @@ class PronunciationDictionary:
             entry = PronunciationEntry(
                 term=item["term"],
                 pronunciation=item["pronunciation"],
-                syllables=item["syllables"],
+                syllables=str(item.get("syllables") or ""),
                 speech_text=item.get("speechText") or item.get("speech_text", ""),
                 audio_file=item.get("audioFile") or item.get("audio_file", ""),
                 source=source,
@@ -211,6 +245,15 @@ class PronunciationDictionary:
                 sapi_segments=_parse_sapi_segments(
                     item.get("sapiSegments") or item.get("sapi_segments", [])
                 ),
+                audio_provider=str(item.get("audioProvider") or ""),
+                audio_review_status=str(item.get("audioReviewStatus") or ""),
+                phoneme_input_sha256=str(item.get("phonemeInputSha256") or ""),
+                written_pronunciation=(written_guides.get(item["term"], {}).get("pronunciation", "")
+                                       if written_guides is not None else None),
+                written_status=(written_guides.get(item["term"], {}).get("reviewStatus", "unavailable")
+                                if written_guides is not None else ""),
+                written_source=(written_guides.get(item["term"], {}).get("provenance", {}).get("kind", "unavailable")
+                                if written_guides is not None else ""),
             )
             entries[normalize_term(entry.term)] = entry
             aliases = item.get("aliases", [])

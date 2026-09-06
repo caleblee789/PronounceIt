@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from pronounceit.tts import (
+    AudioPackEngine,
     CommandTtsEngine,
     CompositeTtsEngine,
     GeneratedAudioFileEngine,
@@ -112,6 +113,39 @@ class TtsTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.reason, "local audio unavailable")
 
+    def test_local_audio_reports_custom_and_azure_source_hints(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audio_file = root / "audio" / "clozapine.aiff"
+            audio_file.parent.mkdir()
+            audio_file.write_bytes(valid_aiff_bytes())
+            engine = LocalAudioFileEngine(root)
+
+            with (
+                patch("pronounceit.tts.platform.system", return_value="Darwin"),
+                patch("pronounceit.tts.shutil.which", return_value="/usr/bin/afplay"),
+                patch("pronounceit.tts.subprocess.Popen"),
+            ):
+                custom = engine.speak_result(
+                    "clozapine",
+                    TtsSettings(
+                        audio_backend="local_audio_then_tts",
+                        audio_file="audio/clozapine.aiff",
+                        audio_source_hint="custom",
+                    ),
+                )
+                azure = engine.speak_result(
+                    "clozapine",
+                    TtsSettings(
+                        audio_backend="local_audio_then_tts",
+                        audio_file="audio/clozapine.aiff",
+                        audio_source_hint="azure",
+                    ),
+                )
+
+        self.assertEqual(custom.audio_source, "custom")
+        self.assertEqual(azure.audio_source, "azure")
+
     def test_local_audio_file_engine_rejects_path_escape(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -188,6 +222,44 @@ class TtsTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.reason, "system TTS command failed to start")
         self.assertIn("exited immediately with status 1", result.attempts[0])
+
+    def test_command_tts_engine_reports_live_source(self) -> None:
+        engine = CommandTtsEngine()
+
+        with (
+            patch("pronounceit.tts.platform.system", return_value="Darwin"),
+            patch("pronounceit.tts.shutil.which", return_value="/usr/bin/say"),
+            patch("pronounceit.tts.subprocess.Popen"),
+        ):
+            result = engine.speak_result("clozapine", TtsSettings())
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.audio_source, "live")
+
+    def test_audio_pack_engine_reports_azure_source(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audio_file = root / "user_files" / "audio_cache" / "2" / "asset.mp3"
+            audio_file.parent.mkdir(parents=True)
+            audio_file.write_bytes(b"pack audio")
+
+            class Manager:
+                def resolve(self, term: str):
+                    return audio_file if term == "clozapine" else None
+
+            engine = AudioPackEngine(root, Manager())
+            with patch.object(
+                engine._player,
+                "play_path",
+                return_value=TtsResult(True, "playing local audio"),
+            ):
+                result = engine.speak_result(
+                    "clozapine",
+                    TtsSettings(audio_backend="local_audio_then_tts", term="clozapine"),
+                )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.audio_source, "azure")
 
     def test_local_audio_only_does_not_fall_back_to_tts(self) -> None:
         recording = RecordingEngine()
@@ -322,12 +394,13 @@ class TtsTests(unittest.TestCase):
                 patch("pronounceit.tts.subprocess.run") as run,
                 patch("pronounceit.tts.subprocess.Popen") as popen,
             ):
-                result = engine.speak(
+                result = engine.speak_result(
                     "kloh zuh peen",
                     TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine"),
                 )
 
-            self.assertTrue(result)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.audio_source, "generated")
             run.assert_not_called()
             popen.assert_called_once()
 

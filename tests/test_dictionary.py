@@ -16,6 +16,20 @@ from pronounceit.dictionary import (
 
 
 class DictionaryTests(unittest.TestCase):
+    def test_import_keeps_approved_corrections_and_unknown_audio_metadata(self) -> None:
+        from scripts.corpus.import_source_lexicon import merge_lexicon
+        with TemporaryDirectory() as tmp:
+            data, lexicon = Path(tmp) / "data.json", Path(tmp) / "source.txt"
+            protected = {"term": "test", "pronunciation": "accepted", "syllables": "accepted",
+                         "aliases": ["alias"], "audioReviewStatus": "accepted", "audioFile": "test.mp3",
+                         "futureMetadata": {"enabled": False}, "sapiPhonemes": "t eh 1 s t"}
+            data.write_text(json.dumps({"terms": [protected, {"term": "another", "pronunciation": "old", "syllables": "old"}]}))
+            lexicon.write_text("alias | stale\nanother | NEW\n")
+            merge_lexicon(data, lexicon)
+            actual = json.loads(data.read_text())["terms"]
+            self.assertEqual(actual[0], protected)
+            self.assertEqual(actual[1]["syllables"], "new")
+
     def make_dictionary(self) -> PronunciationDictionary:
         entries = {}
         items = [
@@ -216,8 +230,33 @@ class DictionaryTests(unittest.TestCase):
         for term in ["myocardial infarction", "acetaminophen", "meningococcemia"]:
             payload = dictionary.lookup(term)
             self.assertTrue(payload["term"])
-            self.assertTrue(payload["pronunciation"])
-            self.assertTrue(payload["syllables"])
+            self.assertEqual(bool(payload["pronunciation"]), payload["textReviewStatus"] != "unavailable")
+            self.assertTrue(payload["synthesisText"])
+            self.assertTrue(payload["found"])
+
+    def test_display_guides_never_change_playback_and_legacy_syllables_are_optional(self) -> None:
+        from pronounceit.written_guides import canonical_terms_sha256
+        with TemporaryDirectory() as tmp:
+            data_file = Path(tmp) / "dictionary.json"
+            item = {"term": "test", "pronunciation": "OLD", "audioFile": "audio/test.mp3", "aliases": ["alias"]}
+            data_file.write_text(json.dumps({"terms": [item]}))
+            original = PronunciationDictionary.bundled(data_file).lookup("alias")
+            written_file = data_file.with_name("written_pronunciations.json")
+            for guide, status in (("TEHST", "reference-backed"), ("TEHST", "ai-generated"), ("", "unavailable")):
+                written_file.write_text(json.dumps({"schemaVersion": 2,
+                    "canonicalTermsSha256": canonical_terms_sha256([item]), "terms": [
+                        {"term": "test", "pronunciation": guide, "reviewStatus": status,
+                         "provenance": {"kind": status, "label": "AI Generated", "method": "test-fixture",
+                                        "references": ["https://en.wiktionary.org/wiki/test"] if status == "reference-backed" else []}}]}))
+                payload = PronunciationDictionary.bundled(data_file).lookup("alias")
+                self.assertEqual(payload["pronunciation"], guide)
+                self.assertEqual({k: v for k, v in payload.items() if k not in {"pronunciation", "syllables", "textReviewStatus", "textSource"}},
+                                 {k: v for k, v in original.items() if k not in {"pronunciation", "syllables"}})
+            written_file.write_text("broken JSON")
+            dictionary = PronunciationDictionary.bundled(data_file)
+            self.assertTrue(dictionary.load_issues)
+            self.assertEqual(dictionary.lookup("alias")["pronunciation"], "")
+            self.assertEqual(dictionary.lookup("alias")["audioFile"], original["audioFile"])
 
     def test_user_dictionary_overrides_bundled_entry(self) -> None:
         with TemporaryDirectory() as tmp:

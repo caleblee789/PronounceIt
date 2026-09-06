@@ -2,13 +2,13 @@
 
 PronounceIt is an Anki desktop add-on for medical students who want quick pronunciation help while reviewing cards.
 
-Use it after revealing an answer:
+Use it before or after revealing an answer:
 
-- Right-click a term to play immediately and open pronunciation details.
-- Hold Option/Alt while clicking or selecting text, or press it after selecting, to play audio without opening details.
-- Shift + right-click to open Anki's context menu and the native `PronounceIt` submenu.
+- Right-click normally for Anki’s standard context menu.
+- Hold Option/Alt while clicking or selecting text, or press it after selecting, to play pronunciation without opening details.
+- Control/Ctrl + left- or right-click, or select text and press Control/Ctrl to open the quick pronunciation card.
 
-PronounceIt includes a 95,902-term medical pronunciation guide library, 155 bundled high-yield clips, and an optional comprehensive neural audio pack. The Azure-native synthesis method is approved against a checksum-bound 1,092-clip pilot; this is method approval, not a claim that every generated clip was individually reviewed.
+PronounceIt includes 95,902 terms with one readable pronunciation each, 155 bundled high-yield clips, and an optional offline pronunciation pack. Capitals mark stressed sounds. Accepted written pronunciations may differ slightly from the audio. The Azure-native synthesis method is approved against a checksum-bound 1,092-clip pilot; this is method approval, not a claim that every generated clip was individually reviewed.
 
 ## Install
 
@@ -18,26 +18,25 @@ Install the built Anki add-on package:
 dist/pronounceit.ankiaddon
 ```
 
-The locally built archive is available at the path above. The comprehensive pack is published separately and is never embedded in the add-on archive.
+The locally built archive is available at the path above. The offline pronunciation pack is published separately and is never embedded in the add-on archive.
 
 In Anki, open the package through `Tools > Add-ons > Install from file...`, then restart Anki.
 
 ## How To Use
 
 1. Start reviewing cards in Anki.
-2. Reveal the answer.
-3. Right-click a medical term to hear it immediately and view pronunciation details.
-4. Alternatively, hold Option/Alt while clicking or selecting text, or press it after selecting.
-5. Use Shift + right-click when you need Anki's context menu or the native `PronounceIt` submenu.
+2. Hold Option/Alt while clicking or selecting a medical term, or press it after selecting text, to hear it.
+3. Use Control/Ctrl + left- or right-click, or select text and press Control/Ctrl for the quick pronunciation card with Play and Save actions.
+4. Use plain right-click for Anki’s standard context menu without PronounceIt actions.
 
-PronounceIt is answer-side by default so pronunciation help does not spoil a card before you reveal it.
+PronounceIt is available before answer reveal by default. You can disable pre-answer pronunciation on the Review tab.
 
 ## Saved Pronunciations
 
 Saved words are available from:
 
 ```text
-Tools > PronounceIt Settings... > Advanced > Saved List
+Caleb M. Add-ons Settings > PronounceIt settings > Tools > Saved pronunciations
 ```
 
 The saved list lets you:
@@ -52,38 +51,31 @@ Updates are written atomically, with the previous valid file retained as a `.bak
 
 ## Tools Menu
 
-PronounceIt adds three Tools menu items:
+PronounceIt adds one item under the shared Tools submenu:
 
-- `Pronounce Word or Selection`: play selected text or the last word under the pointer.
-- `PronounceIt Settings...`: open settings and Advanced tools.
-- `PronounceIt Audio Diagnostics...`: inspect recent playback attempts, backend failures, and data-loading warnings.
+- `Caleb M. Add-ons Settings > PronounceIt settings`: open settings and Advanced tools.
 
-Advanced tools include selected-text pronunciation, manual lookup, saved words, custom pronunciation corrections, dictionary audit, audio diagnostics, local file shortcuts, and support.
+Advanced tools include selected-text playback, pronunciation search, saved pronunciations, custom pronunciation corrections, a pronunciation-library check, playback troubleshooting, local file shortcuts, and support.
 
 ## Settings
 
-Open settings from:
+Open **Caleb M. Add-ons Settings > PronounceIt settings**. The dialog has three tabs:
 
-```text
-Tools > PronounceIt Settings...
-```
+- **Review:** enable PronounceIt, choose playback and quick-card keys, control before-answer behavior and Save visibility, and select Light or Dark appearance.
+- **Audio:** choose recordings with computer-voice fallback, recordings only, or computer voice only. Manage the optional offline pack here; Voice options contains the voice name and speaking speed.
+- **Tools:** search, saved pronunciations, custom corrections, library checks, and audio troubleshooting. File shortcuts are under Files.
 
-Common settings include:
+Search shows a written guide and explicit Play and Save actions in one window. Closing a result does not start playback. The quick card has the same compact actions, a close control, and a Details disclosure for its audio source. Long terms wrap inside the reviewer window.
 
-- Activation modifier: defaults to Option/Alt and can be changed or disabled.
-- Default: Right-click, or hold Option/Alt while selecting text (or press it after selecting), to play audio. Shift + right-click opens Anki’s context menu.
-- Native PronounceIt actions remain available inside the Shift + right-click menu.
-- Theme: `system`, `clinical_light`, `slate`, or `high_contrast`.
+Audio sources are **Custom audio**, **Recorded audio**, and **Computer voice**. Recordings include bundled clips and the optional offline pack. In recordings-only mode, terms without a recording have a disabled Play action.
 
-Advanced settings include audio behavior, pre-answer lookup, popup auto-close, native-menu Save visibility, fallback voice/speed/volume, utility actions, and shortcuts to local PronounceIt files.
+### Offline pronunciation pack
 
-### Comprehensive Audio Pack
-
-Open `Tools > PronounceIt Settings... > Advanced > Audio` and choose `Download` to install the separately versioned comprehensive pack. Downloads never start without this explicit action. Downloading continues in the background after Settings closes, so Anki remains available for normal review; reopening Settings reconnects to live progress and pause/resume controls. Pack shards and extracted cache files live under `user_files/`, survive add-on upgrades, and are checksum-validated before use.
+The first-run prompt offers an optional background download once. Audio settings shows the current state and relevant actions: Download or Resume, Pause, Cancel download, Update, Check files, and Remove. Downloads continue when Settings closes. Downloaded files stay under `user_files/`, survive add-on updates, and are checked before use.
 
 ## Custom Pronunciations
 
-Use `Tools > PronounceIt Settings... > Advanced > Custom Pronunciation` for local corrections.
+Use `Caleb M. Add-ons Settings > PronounceIt settings > Tools > Add custom pronunciation` for local corrections.
 
 PronounceIt stores custom corrections in:
 
@@ -93,9 +85,11 @@ user_files/custom_pronunciations.json
 
 These files stay local to your Anki profile and are preserved during add-on upgrades.
 
+Enter the term and one readable pronunciation in the same editor. Additional options lets you change the text read aloud. Cancel discards the draft; a failed save keeps your input available. Existing custom files with a `syllables` field continue to load, but syllables are no longer displayed separately.
+
 ## License
 
-PronounceIt is released under the MIT License. See `LICENSE` for details.
+PronounceIt code is released under the MIT License. Written dictionary data has separate attribution and license terms in `data/written-guide-attribution.md`.
 
 ## For Developers
 
@@ -110,7 +104,9 @@ The sections below are for local development, release checks, and pronunciation 
 - `data/medical_pronunciations.json`: bundled pronunciation corpus.
 - `audio/`: bundled high-yield AIFF or MP3 audio clips.
 - `user_files/`: Anki-preserved local user data.
-- `scripts/`: build, audit, import, generation, and corpus maintenance scripts.
+- `scripts/release/`: add-on build, audio-pack publication, and local pack server scripts.
+- `scripts/audio/`: Azure-native audio generation, review, and pack-build scripts.
+- `scripts/corpus/`: pronunciation audit and source-lexicon import scripts.
 - `tests/`: unit tests.
 - `dist/pronounceit.ankiaddon`: built Anki add-on archive.
 
@@ -120,12 +116,12 @@ The sections below are for local development, release checks, and pronunciation 
 2. Go to `Tools > Add-ons > View Files`.
 3. Copy or symlink this repository folder into `addons21/pronounceit`.
 4. Restart Anki.
-5. Review a card, reveal the answer, and test right-click playback, Option/Alt selection gestures, and the Shift + right-click menu.
+5. Review a card and test pre-answer playback, Option/Alt selection gestures, plain right-click, and every Control/Ctrl quick-card gesture.
 
 ### Build
 
 ```bash
-python3 scripts/build_ankiaddon.py
+python3 scripts/release/build_ankiaddon.py
 ```
 
 The archive is written to:
@@ -140,10 +136,10 @@ Run before distribution:
 
 ```bash
 python3 -m unittest discover -s tests
-python3 scripts/audit_pronunciations.py
+python3 scripts/corpus/audit_pronunciations.py
 node --check web/pronounceit.js
 PYTHONPYCACHEPREFIX=/private/tmp/pronounceit_pycache python3 -m compileall __init__.py pronounceit scripts tests
-python3 scripts/build_ankiaddon.py
+python3 scripts/release/build_ankiaddon.py
 unzip -l dist/pronounceit.ankiaddon
 ```
 
@@ -163,45 +159,44 @@ v1.1.0
 
 Release focus:
 
-- Makes plain right-click play immediately with pronunciation details and Save.
+- Restores plain right-click to Anki and opens PronounceIt’s quick pronunciation card with Control/Ctrl activation.
 - Adds one customizable modifier for click, drag-selection, and selected-text playback.
-- Keeps Anki's context menu and native PronounceIt actions available through Shift + right-click.
-- Replaces the multi-key shortcut with one customizable activation modifier and a discoverable Tools action.
+- Adds a separate Control/Ctrl-default modifier for the quick pronunciation card.
+- Enables pronunciation before answer reveal by default.
+- Adds one-time offline-pack onboarding and permanently visible pack controls.
+- Replaces the old theme presets with neutral Light and Dark themes.
+- Replaces the multi-key shortcut with one customizable playback modifier and a discoverable Tools action.
 - Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.
 - Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
-- Refreshes README and config wording around the native-menu and saved-word workflow.
+- Refreshes README and config wording around the quick pronunciation card and saved-word workflow.
 
 See `RELEASE_NOTES.md` for the PR and release summary.
 
 ### Corpus Maintenance
 
-PronounceIt favors readable medical-student pronunciations over formal IPA. Stress is marked with capital letters, for example:
+The UI shows one readable pronunciation field, with primary stress in capitals. Long phrases may wrap. Written guides use Wiktionary first, CMUdict second, then fully referenced phrase components and documented corrections. US English is preferred; other standard variants are accepted. Written guides do not need to match the audio exactly.
 
 ```text
-agranulocytosis -> uh-GRAN-yoo-loh-sy-TOH-sis
+clozapine -> KLOH-zuh-peen
 ```
 
-When updating the bundled database from the source lexicon, run:
+Rebuild the text from the pinned local snapshots, then audit it:
 
 ```bash
-python3 scripts/import_source_lexicon.py
+.venv-generation/bin/python scripts/corpus/build_written_guides.py
+python3 scripts/corpus/audit_pronunciations.py
 ```
 
-To expand from a larger word list, install generation-only dependencies and run:
+`data/written_pronunciations.json` records each selected reference or generation method, its phonetics, conversion, and internal status. `build/written-guides/coverage.json` reports coverage and generation counts. Source hashes are verified before building. Dictionary references take priority; remaining terms use US lexicon estimates, medical word-part composition, AI-authored clinical guides, and local US pronunciation rules. These records are marked `AI Generated` internally and have no additional interface label. Full-library linguistic accuracy has not been measured. `data/medical_pronunciations.json` retains legacy audio inputs; the display overlay does not change those inputs or the downloadable pack.
 
-```bash
-python3 -m pip install -r requirements-generation.txt
-python3 scripts/generate_wordlist_pronunciations.py \
-  --wordlist-file /path/to/wordlist.txt \
-  --allow-generated \
-  --merge
-python3 scripts/audit_pronunciations.py
-```
+Generation uses the existing `.venv-generation` environment and the packages pinned in `scripts/corpus/requirements-written-guides.txt`. No model or pronunciation-generation dependency is required in Anki. Use `--references-only` with a separate `--output` and `--report` to measure published-reference coverage without filling gaps. AI-authored clinical adjustments live in `data/written-guide-ai-overrides.json`; source-backed corrections live in `data/written-guide-corrections.json`.
+
+The additional reference pass uses NCI's Dictionary of Cancer Terms and the public-domain Moby Pronunciator II. Run `python3 scripts/corpus/fetch_written_sources.py` once to save their checksummed snapshots under `build/written-guide-sources/`. Subsequent builds use those snapshots offline. The rebuild also expects the existing pinned Wiktionary and CMUdict files under `build/kokoro-source-snapshots/`.
 
 Estimate the neural generation job without credentials:
 
 ```bash
-python3 scripts/generate_neural_audio.py --dry-run
+python3 scripts/audio/generate_neural_audio.py --dry-run
 ```
 
 Generate the pilot, record the checksum-bound owner approval, and then generate the full corpus. Uncorrected terms use Azure's native pronunciation; only explicit corrections use SAPI phonemes:
@@ -209,17 +204,17 @@ Generate the pilot, record the checksum-bound owner approval, and then generate 
 ```bash
 export AZURE_SPEECH_KEY=...
 export AZURE_SPEECH_REGION=...
-python3 scripts/generate_neural_audio.py --scope high-yield --workers 4
-python3 scripts/generate_neural_audio.py --scope curated --workers 4
-python3 scripts/generate_neural_audio.py --scope generated-sample --workers 4
-python3 scripts/review_audio.py approve-method \
+python3 scripts/audio/generate_neural_audio.py --scope high-yield --workers 4
+python3 scripts/audio/generate_neural_audio.py --scope curated --workers 4
+python3 scripts/audio/generate_neural_audio.py --scope generated-sample --workers 4
+python3 scripts/audio/review_audio.py approve-method \
   --reviewer owner \
   --statement "The Azure-native pronunciations sound high quality."
-python3 scripts/review_audio.py status
+python3 scripts/audio/review_audio.py status
 
 # Reuses pilot clips whose SSML sidecar hash still matches.
-python3 scripts/generate_neural_audio.py --scope all --workers 4
-python3 scripts/build_audio_pack.py \
+python3 scripts/audio/generate_neural_audio.py --scope all --workers 4
+python3 scripts/audio/build_audio_pack.py \
   --pack-version 2 \
   --base-url https://github.com/caleblee789/PronounceIt/releases/download/audio-pack-v2 \
   --install-high-yield

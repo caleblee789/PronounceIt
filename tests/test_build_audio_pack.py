@@ -5,8 +5,8 @@ from tempfile import TemporaryDirectory
 
 from pronounceit.audio_pack import audio_asset_id, dictionary_sha256, file_sha256, validate_manifest
 from pronounceit.audio_review import method_binding_sha256
-from scripts.build_audio_pack import build_pack, validate_release_reviews
-from scripts.generate_neural_audio import _metadata, build_jobs, build_pilot_binding
+from scripts.audio.build_audio_pack import build_pack, validate_release_reviews
+from scripts.audio.generate_neural_audio import _metadata, build_jobs, build_pilot_binding
 
 
 def valid_mp3_bytes() -> bytes:

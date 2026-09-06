@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "pilotId": "pronounceit-pro-voice-v1",
+  "voice": "Cove",
+  "language": "English (United States)",
+  "intelligence": "High",
+  "termsPerSession": 10,
+  "minimumProWinRate": 0.8,
+  "sessions": [
+    {
+      "id": 1,
+      "category": "Common medications",
+      "terms": [
+        "acetaminophen",
+        "adalimumab",
+        "amiodarone",
+        "azithromycin",
+        "buprenorphine",
+        "ceftriaxone",
+        "hydrochlorothiazide",
+        "levetiracetam",
+        "rivaroxaban",
+        "semaglutide"
+      ]
+    },
+    {
+      "id": 2,
+      "category": "Additional medications",
+      "terms": [
+        "clozapine",
+        "dexamethasone",
+        "doxycycline",
+        "enoxaparin",
+        "fluoxetine",
+        "levothyroxine",
+        "metronidazole",
+        "ondansetron",
+        "quetiapine",
+        "spironolactone"
+      ]
+    },
+    {
+      "id": 3,
+      "category": "Organisms",
+      "terms": [
+        "Borrelia burgdorferi",
+        "Candida albicans",
+        "Clostridioides difficile",
+        "Escherichia coli",
+        "Helicobacter pylori",
+        "Klebsiella pneumoniae",
+        "Naegleria fowleri",
+        "Pseudomonas aeruginosa",
+        "Staphylococcus aureus",
+        "Treponema pallidum"
+      ]
+    },
+    {
+      "id": 4,
+      "category": "Pathology and clinical findings",
+      "terms": [
+        "agranulocytosis",
+        "choledocholithiasis",
+        "bronchiectasis",
+        "cachexia",
+        "dysarthria",
+        "glomerulonephritis",
+        "hematochezia",
+        "rhabdomyolysis",
+        "thrombocytopenia",
+        "thyrotoxicosis"
+      ]
+    },
+    {
+      "id": 5,
+      "category": "Anatomy and procedures",
+      "terms": [
+        "abdominal aortic aneurysm",
+        "basilic vein",
+        "bronchoscopy",
+        "calcaneus",
+        "femoroacetabular impingement",
+        "laparoscopic cholecystectomy",
+        "lithotripsy",
+        "ophthalmology",
+        "sternocleidomastoid",
+        "vesicoureteral reflux"
+      ]
+    },
+    {
+      "id": 6,
+      "category": "Eponyms, abbreviations, and multiword terms",
+      "terms": [
+        "Babinski sign",
+        "Wernicke encephalopathy",
+        "Crohn disease",
+        "Hashimoto thyroiditis",
+        "Addison disease",
+        "Alzheimer disease",
+        "Guillain-Barre syndrome",
+        "Charcot triad",
+        "QRS prolongation",
+        "Glasgow Coma Scale"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "terms": [
+    {
+      "term": "quadrigemina",
+      "pronunciation": "kwahd-ruh-JEM-uh-nuh",
+      "references": [
+        "https://www.merriam-webster.com/medical/corpora%20quadrigemina"
+      ],
+      "reason": "Changes JEM-uh to jih-MEEN; this includes vowel changes beyond stress placement. Reference supplies the word within corpora quadrigemina."
+    },
+    {
+      "term": "campeachy",
+      "pronunciation": "kam-PEE-chee",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/campeachy%20hat"
+      ],
+      "reason": "Substitutes K for CH and changes the middle vowel. Reference supplies campeachy in the compound headword."
+    },
+    {
+      "term": "phendimetrazine",
+      "pronunciation": "fen-dye-MET-ruh-zeen",
+      "references": [
+        "https://medlineplus.gov/druginfo/meds/a626013.html"
+      ],
+      "reason": "Several consonants and vowels are wrong; the ending ZAYM-eez does not match zeen."
+    },
+    {
+      "term": "antiseborrheic",
+      "pronunciation": "an-tee-seb-uh-REE-ik",
+      "references": [
+        "https://www.merriam-webster.com/medical/antiseborrheic"
+      ],
+      "reason": "The ending ih-chuhl replaces the reference's ree-ik sound sequence."
+    },
+    {
+      "term": "deoxycorticosterone",
+      "pronunciation": "dee-ok-sih-kor-tih-KOS-tuh-rohn",
+      "references": [
+        "https://en.wiktionary.org/wiki/deoxycorticosterone"
+      ],
+      "reason": "Multiple portions are lost or changed; the AKSH-uhn ending is especially wrong. Checked against the pinned General American IPA /diˌɑk.sɪˌkɔɹ.tɪˈkɑ.stəˌɹoʊn/."
+    },
+    {
+      "term": "posttransfusion",
+      "pronunciation": "pohst-trans-FYOO-zhun",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/posttransfusion"
+      ],
+      "reason": "The guide's NTSFAWS-uhn does not preserve the transfusion sound sequence."
+    },
+    {
+      "term": "sphygmomanometer",
+      "pronunciation": "sfig-moh-muh-NAH-muh-ter",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/sphygmomanometer"
+      ],
+      "reason": "Restores missing sounds and removes the incorrect stern ending."
+    },
+    {
+      "term": "Cushing disease",
+      "pronunciation": "KUSH-ing dih-ZEEZ",
+      "references": [
+        "https://github.com/cmusphinx/cmudict/blob/74790861f652b15e4ac49015a90074ad62a27690/cmudict.dict"
+      ],
+      "reason": "Restores the omitted disease word. Components Cushing and disease/syndrome checked against the pinned CMUdict."
+    },
+    {
+      "term": "Cushing syndrome",
+      "pronunciation": "KUSH-ing SIN-drohm",
+      "references": [
+        "https://github.com/cmusphinx/cmudict/blob/74790861f652b15e4ac49015a90074ad62a27690/cmudict.dict"
+      ],
+      "reason": "Restores the omitted syndrome word. Components Cushing and disease/syndrome checked against the pinned CMUdict."
+    },
+    {
+      "term": "antirachitic",
+      "pronunciation": "an-tee-ruh-KIT-ik",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/antirachitic"
+      ],
+      "reason": "Fresh sample: replaces the incorrect CH with K in the local estimate."
+    },
+    {
+      "term": "undecylenic",
+      "pronunciation": "un-dee-sil-EN-ik",
+      "references": [
+        "https://publications.aap.org/pediatriccare/drug-monograph/18/5398/Undecylenic-Acid-and-Derivatives"
+      ],
+      "reason": "Fresh sample: restores the missing syllable and corrects the long-I substitution, using the AAP medication pronunciation."
+    },
+    {
+      "term": "isoenzymatic",
+      "pronunciation": "eye-soh-en-zuh-MAT-ik",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/isoenzyme"
+      ],
+      "reason": "Fresh sample: restores the missing en vowel from the estimate. The dictionary includes isoenzymatic under isoenzyme."
+    },
+    {
+      "term": "hypomanic",
+      "pronunciation": "hye-puh-MAN-ik",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/hypomania"
+      ],
+      "reason": "Supplemental sample: Moby encodes the stressed vowel as schwa; Merriam-Webster supplies the short-a vowel in hypomanic."
+    },
+    {
+      "term": "oligocythemia",
+      "pronunciation": "ah-lih-goh-sye-THEE-mee-uh",
+      "references": [
+        "https://www.merriam-webster.com/medical/oligocythemia",
+        "https://www.collinsdictionary.com/dictionary/english/oligocythaemia"
+      ],
+      "reason": "Supplemental sample: restores the missing final schwa from the Moby transcription; complete pronunciation checked against Collins."
+    },
+    {
+      "term": "acyclovir",
+      "pronunciation": "ay-SYE-kloh-veer",
+      "references": [
+        "https://medlineplus.gov/druginfo/meds/a681045.html"
+      ],
+      "overrideReference": true,
+      "reason": "Use the MedlinePlus medication pronunciation; the CMU entry uses a short stressed vowel instead of the accepted long-I sound."
+    },
+    {
+      "term": "appendicitis",
+      "pronunciation": "uh-pen-duh-SYE-tis",
+      "references": [
+        "https://www.merriam-webster.com/dictionary/appendicitis"
+      ],
+      "overrideReference": true,
+      "reason": "Use Merriam-Webster primary stress on SYE; the selected historical Wiktionary snapshot places primary stress on PEN."
+    }
+  ]
+}

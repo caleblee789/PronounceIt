@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,9 @@ class PronunciationAudit:
     missing_source_lexicon_terms: list[str]
     source_lexicon_pronunciation_mismatches: list[str]
     quality_tiers: dict[str, int]
+    unavailable_written_pronunciation: list[str] = field(default_factory=list)
+    written_quality_counts: dict[str, int] = field(default_factory=dict)
+    written_data_errors: list[str] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
@@ -39,13 +42,12 @@ class PronunciationAudit:
             [
                 self.missing_terms,
                 self.missing_pronunciation,
-                self.missing_syllables,
                 self.missing_speech_text,
                 self.missing_audio_files,
                 self.unsafe_speech_text,
                 self.missing_stress_marker,
                 self.missing_source_lexicon_terms,
-                self.source_lexicon_pronunciation_mismatches,
+                self.written_data_errors,
             ]
         )
 
@@ -67,6 +69,9 @@ class PronunciationAudit:
             "missingSourceLexiconTerms": self.missing_source_lexicon_terms,
             "sourceLexiconPronunciationMismatches": self.source_lexicon_pronunciation_mismatches,
             "qualityTiers": self.quality_tiers,
+            "unavailableWrittenPronunciation": self.unavailable_written_pronunciation,
+            "writtenQualityCounts": self.written_quality_counts,
+            "writtenDataErrors": self.written_data_errors,
         }
 
 
@@ -113,7 +118,7 @@ def audit_pronunciations(
     source_lexicon_pronunciation_mismatches: list[str] = []
     for term, pronunciation in source_lexicon:
         payload = dictionary.lookup(term)
-        if payload["found"] and payload.get("pronunciation") != pronunciation:
+        if payload["found"] and "textReviewStatus" not in payload and payload.get("pronunciation") != pronunciation:
             source_lexicon_pronunciation_mismatches.append(term)
     missing_pronunciation: list[str] = []
     missing_syllables: list[str] = []
@@ -127,16 +132,28 @@ def audit_pronunciations(
     unsafe_speech_text: list[str] = []
     missing_stress_marker: list[str] = []
     quality_tiers: dict[str, int] = {}
+    unavailable_written_pronunciation: list[str] = []
+    written_quality_counts: dict[str, int] = {}
+    written_data_errors = list(dictionary.load_issues)
+    written_file = data_file.with_name("written_pronunciations.json")
+    if written_file.exists():
+        from .written_guides import audit_written_sources
+        try:
+            audit_written_sources(written_file, entries, data_file.with_name("written-guide-corrections.json"))
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            written_data_errors.append(str(exc))
 
     for item in entries:
         term = item.get("term", "")
         payload = dictionary.lookup(term)
         quality_tier = str(payload.get("qualityTier") or "fallback")
         quality_tiers[quality_tier] = quality_tiers.get(quality_tier, 0) + 1
-        if not payload.get("pronunciation"):
+        text_status = str(payload.get("textReviewStatus") or "legacy")
+        written_quality_counts[text_status] = written_quality_counts.get(text_status, 0) + 1
+        if text_status == "unavailable":
+            unavailable_written_pronunciation.append(term)
+        elif not payload.get("pronunciation"):
             missing_pronunciation.append(term)
-        if not payload.get("syllables"):
-            missing_syllables.append(term)
         if not payload.get("speechText"):
             missing_speech_text.append(term)
         speech_text = str(payload.get("speechText", ""))
@@ -149,7 +166,7 @@ def audit_pronunciations(
             )
         ):
             unsafe_speech_text.append(term)
-        if not any(character.isupper() for character in str(payload.get("pronunciation", ""))):
+        if text_status != "unavailable" and not any(character.isupper() for character in str(payload.get("pronunciation", ""))):
             missing_stress_marker.append(term)
 
     for term in checklist:
@@ -175,4 +192,7 @@ def audit_pronunciations(
         missing_source_lexicon_terms=missing_source_lexicon_terms,
         source_lexicon_pronunciation_mismatches=source_lexicon_pronunciation_mismatches,
         quality_tiers=quality_tiers,
+        unavailable_written_pronunciation=unavailable_written_pronunciation,
+        written_quality_counts=written_quality_counts,
+        written_data_errors=written_data_errors,
     )

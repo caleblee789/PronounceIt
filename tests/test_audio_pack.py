@@ -32,6 +32,16 @@ class AudioPackTests(unittest.TestCase):
                 "http://127.0.0.1:8765/pack-manifest.json",
             )
 
+    def test_candidate_uses_its_matching_pack_address_and_keeps_explicit_override(self) -> None:
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {"PRONOUNCEIT_AUDIO_PACK_MANIFEST_URL": ""}):
+            root = Path(tmp)
+            (root / "data").mkdir()
+            url = "https://example.com/audio-pack-v3/pack-manifest.json"
+            (root / "data/audio-pack-release.json").write_text(json.dumps({"schemaVersion": 3, "manifestUrl": url}))
+            self.assertEqual(AudioPackManager(root).manifest_url, url)
+            self.assertEqual(AudioPackManager(root, manifest_url="http://127.0.0.1/pack.json").manifest_url,
+                             "http://127.0.0.1/pack.json")
+
     def test_download_rejects_insufficient_free_space_before_fetching_shards(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -152,9 +162,48 @@ class AudioPackTests(unittest.TestCase):
             (manager.pack_root / "experimental").mkdir()
             status = manager.status()
             self.assertFalse(status.installed)
-            self.assertEqual(status.message, "Audio pack is not installed.")
+            self.assertEqual(status.message, "Offline pronunciation pack is not installed.")
             manager.remove()
             self.assertFalse(manager.state_path.exists())
+
+    def test_partial_download_manifest_is_discovered_after_restart(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data_dir = root / "data"
+            data_dir.mkdir()
+            dictionary = data_dir / "medical_pronunciations.json"
+            dictionary.write_text('{"terms": []}\n', encoding="utf-8")
+            manager = AudioPackManager(root)
+            version_dir = manager.pack_root / "2-test"
+            version_dir.mkdir(parents=True)
+
+            shards = []
+            for shard_id in "0123456789abcdef":
+                shard_path = version_dir / f"shard-{shard_id}.zip"
+                if shard_id == "0":
+                    shard_path.write_bytes(b"complete shard")
+                shards.append(
+                    {
+                        "id": shard_id,
+                        "file": shard_path.name,
+                        "sha256": file_sha256(shard_path) if shard_path.exists() else "0" * 64,
+                        "size": shard_path.stat().st_size if shard_path.exists() else 1,
+                    }
+                )
+            manifest = {
+                "schemaVersion": 2,
+                "packVersion": "2-test",
+                "dictionarySha256": dictionary_sha256(dictionary),
+                "reviewLedgerSha256": "1" * 64,
+                "synthesisStrategyCounts": {"azure-native": 1, "manual-sapi": 0},
+                "shards": shards,
+            }
+            (version_dir / "pack-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+            status = manager.status()
+            self.assertFalse(status.installed)
+            self.assertEqual((status.downloaded_shards, status.total_shards), (1, 16))
+            self.assertEqual(status.message, "Offline pronunciation pack download is incomplete (1/16 files).")
 
 
 if __name__ == "__main__":

@@ -159,7 +159,7 @@ class CustomPronunciations:
         self,
         term: str,
         pronunciation: str,
-        syllables: str,
+        syllables: str = "",
         speech_text: str = "",
         notes: str = "Added from PronounceIt.",
     ) -> dict[str, Any]:
@@ -168,9 +168,10 @@ class CustomPronunciations:
         record = {
             "term": term,
             "pronunciation": pronunciation,
-            "syllables": syllables,
             "notes": notes,
         }
+        if syllables:
+            record["syllables"] = syllables
         if speech_text:
             record["speechText"] = speech_text
         target = term.casefold()
@@ -198,13 +199,11 @@ def format_saved_entries(items: list[dict[str, Any]]) -> str:
     for index, item in enumerate(items, start=1):
         term = item.get("term") or item.get("requestedText") or "Unknown term"
         pronunciation = item.get("pronunciation") or "Pronunciation unavailable"
-        syllables = item.get("syllables") or "Syllables unavailable"
         created = item.get("createdAt") or "Unknown date"
         lines.extend(
             [
                 f"{index}. {term}",
                 f"   Pronunciation: {pronunciation}",
-                f"   Syllables: {syllables}",
                 f"   Saved: {created}",
                 "",
             ]

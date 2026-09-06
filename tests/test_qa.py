@@ -20,6 +20,10 @@ class PronunciationQaTests(unittest.TestCase):
         self.assertEqual(audit.unsafe_speech_text, [])
         self.assertEqual(sum(audit.quality_tiers.values()), audit.dictionary_terms)
         self.assertEqual(audit.quality_tiers["verified"], 155)
+        self.assertEqual(sum(audit.written_quality_counts.values()), audit.dictionary_terms)
+        self.assertEqual(audit.missing_syllables, [])
+        self.assertEqual(audit.missing_pronunciation, [])
+        self.assertEqual(audit.written_data_errors, [])
 
     def test_source_lexicon_is_substantial_and_parseable(self) -> None:
         entries = load_source_lexicon()

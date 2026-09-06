@@ -28,7 +28,7 @@ jobs:
         run: python3 -m unittest discover -s tests
 
       - name: Run pronunciation audit
-        run: python3 scripts/audit_pronunciations.py
+        run: python3 scripts/corpus/audit_pronunciations.py
 
       - name: Check reviewer JavaScript syntax
         run: node --check web/pronounceit.js
@@ -39,7 +39,7 @@ jobs:
           PYTHONPYCACHEPREFIX: /tmp/pronounceit_pycache
 
       - name: Build and validate add-on archive
-        run: python3 scripts/build_ankiaddon.py
+        run: python3 scripts/release/build_ankiaddon.py
 
       - name: Upload candidate add-on
         uses: actions/upload-artifact@v4

@@ -23,6 +23,7 @@ let selectionText = "";
 let selectionStart = 0;
 let selectionEnd = 0;
 let selectionRect = { left: 2, top: 2, right: 12, bottom: 12, width: 10, height: 10 };
+let selectionRangeOverride = null;
 
 class Element {
   constructor(tag) {
@@ -42,6 +43,12 @@ class Element {
     child.parentElement = this;
     this.children.push(child);
     return child;
+  }
+  replaceChildren(...children) {
+    for (const child of this.children) child.parentElement = null;
+    this.children = [];
+    this.childNodes = this.children;
+    for (const child of children) this.appendChild(child);
   }
   remove() {
     if (!this.parentElement) return;
@@ -120,16 +127,19 @@ const sandbox = {
       return {
         rangeCount: 1,
         toString() { return selectionText; },
-        getRangeAt() { return selectionRange(); },
+        getRangeAt() { return selectionRangeOverride || selectionRange(); },
       };
     },
   },
   document: {
     body,
     createElement(tag) { return new Element(tag); },
-    addEventListener(type, callback) {
+    addEventListener(type, callback, options) {
       listeners[type] = listeners[type] || [];
-      listeners[type].push(callback);
+      listeners[type].push({
+        callback,
+        capture: options === true || Boolean(options && options.capture),
+      });
     },
     caretRangeFromPoint() {
       if (!pointEnabled) return null;
@@ -169,7 +179,11 @@ function emit(type, overrides) {
     preventDefault() { this.defaultPrevented = true; },
     stopPropagation() { this.propagationStopped = true; },
   }, overrides || {});
-  for (const callback of listeners[type] || []) callback(event);
+  const registered = listeners[type] || [];
+  for (const listener of registered.filter((item) => item.capture)) listener.callback(event);
+  if (!event.stopBeforeBubble) {
+    for (const listener of registered.filter((item) => !item.capture)) listener.callback(event);
+  }
   return event;
 }
 
@@ -200,14 +214,16 @@ class WebAssetTests(unittest.TestCase):
         if completed.returncode:
             self.fail(completed.stderr or completed.stdout)
 
-    def test_javascript_uses_native_context_bridge_and_no_custom_menu_or_hotkey_parser(self) -> None:
+    def test_javascript_uses_immediate_quick_card_and_no_legacy_hotkey_parser(self) -> None:
         js = (ROOT / "web" / "pronounceit.js").read_text(encoding="utf-8")
 
-        self.assertIn("playContextTarget", js)
-        self.assertIn("showContextDetails", js)
-        self.assertIn("saveContextTarget", js)
+        self.assertIn("openQuickCard", js)
+        self.assertIn("audioSourceLabel", js)
+        self.assertIn("contextMenuModifier", js)
         self.assertIn('send("saveLookup", request)', js)
-        self.assertNotIn("function showMenu", js)
+        self.assertNotIn("showContextMenu", js)
+        self.assertNotIn("pronounceit-menu", js)
+        self.assertNotIn("event.shiftKey ? rememberPointerRequest", js)
         self.assertNotIn("function hotkeyMatches", js)
         self.assertNotIn('send("menu"', js)
 
@@ -285,6 +301,174 @@ if (messages.filter((message) => message.startsWith("pronounceit:audioLookup:"))
 """
         )
 
+    def test_modifier_tap_after_plain_selection_works_for_option_and_platform_mod(self) -> None:
+        self.run_node(
+            r"""
+emit("pointerdown", { clientX: 10, clientY: 10 });
+emit("pointermove", { clientX: 80, clientY: 30 });
+selectionText = "right bundle";
+selectionStart = source.indexOf("right");
+selectionEnd = selectionStart + selectionText.length;
+selectionRect = { left: 8, top: 1, right: 90, bottom: 40, width: 82, height: 39 };
+emit("pointerup", { clientX: 80, clientY: 30 });
+emit("keydown", { key: "Alt", altKey: true });
+selectionText = "";
+selectionStart = selectionEnd;
+emit("keyup", { key: "Alt" });
+let lookups = messages.filter((message) => message.startsWith("pronounceit:audioLookup:"));
+if (lookups.length !== 1) throw new Error(`Option after selection did not play once: ${JSON.stringify(messages)}`);
+if (payload("pronounceit:audioLookup:").text !== "right bundle") throw new Error("Option lost the completed selection");
+
+messages.length = 0;
+selectionText = "bundle";
+selectionStart = source.indexOf("bundle");
+selectionEnd = selectionStart + selectionText.length;
+sandbox.window.PronounceIt.configure({ directClickModifier: "mod", platformModifier: "meta" });
+emit("keydown", { key: "Meta", metaKey: true });
+emit("keyup", { key: "Meta" });
+lookups = messages.filter((message) => message.startsWith("pronounceit:audioLookup:"));
+if (lookups.length !== 1) throw new Error(`Platform modifier after selection did not play once: ${JSON.stringify(messages)}`);
+"""
+        )
+
+    def test_modifier_tap_uses_settled_double_click_selection(self) -> None:
+        self.run_node(
+            r"""
+emit("pointerdown", { clientX: 34, clientY: 14 });
+emit("pointerup", { clientX: 34, clientY: 14 });
+selectionText = "bundle";
+selectionStart = source.indexOf("bundle");
+selectionEnd = selectionStart + selectionText.length;
+selectionRect = { left: 20, top: 1, right: 80, bottom: 24, width: 60, height: 23 };
+emit("dblclick", { clientX: 34, clientY: 14 });
+flushTimers();
+
+selectionText = "";
+selectionStart = selectionEnd;
+emit("keydown", { key: "Alt", altKey: true });
+emit("keyup", { key: "Alt" });
+const lookups = messages.filter((message) => message.startsWith("pronounceit:audioLookup:"));
+if (lookups.length !== 1) throw new Error(`Double-click selection did not play once: ${JSON.stringify(messages)}`);
+const request = payload("pronounceit:audioLookup:");
+if (request.text !== "bundle" || request.contextText.slice(request.contextOffsetStart, request.contextOffsetEnd) !== "bundle") {
+  throw new Error(`Double-click selection lost context: ${JSON.stringify(request)}`);
+}
+"""
+        )
+
+    def test_plain_pointer_clears_cached_selection(self) -> None:
+        self.run_node(
+            r"""
+selectionText = "bundle";
+selectionStart = source.indexOf("bundle");
+selectionEnd = selectionStart + selectionText.length;
+emit("selectionchange");
+emit("pointerdown", { clientX: 5, clientY: 5 });
+selectionText = "";
+selectionStart = selectionEnd;
+emit("selectionchange");
+emit("keydown", { key: "Alt", altKey: true });
+emit("keyup", { key: "Alt" });
+if (messages.some((message) => message.startsWith("pronounceit:audioLookup:"))) {
+  throw new Error(`Collapsed selection replayed stale text: ${JSON.stringify(messages)}`);
+}
+"""
+        )
+
+    def test_capture_phase_modifier_handles_amboss_wrapped_selection(self) -> None:
+        self.run_node(
+            r"""
+const before = { nodeType: 3, textContent: "ECG shows ", parentElement: wrapper };
+const amboss = new Element("span");
+const underline = new Element("u");
+const ambossText = { nodeType: 3, textContent: "bundle", parentElement: underline };
+const after = { nodeType: 3, textContent: " today.", parentElement: wrapper };
+underline.textContent = "bundle";
+underline.childNodes = [ambossText];
+underline.children = [];
+amboss.appendChild(underline);
+amboss.textContent = "bundle";
+amboss.parentElement = wrapper;
+wrapper.textContent = "ECG shows bundle today.";
+wrapper.childNodes = [before, amboss, after];
+wrapper.children = [amboss];
+selectionText = "bundle";
+selectionRangeOverride = {
+  startContainer: ambossText,
+  endContainer: ambossText,
+  startOffset: 0,
+  endOffset: 6,
+  commonAncestorContainer: ambossText,
+  getBoundingClientRect() { return selectionRect; },
+  getClientRects() { return [selectionRect]; },
+};
+
+emit("keydown", { key: "Alt", altKey: true, stopBeforeBubble: true });
+emit("keyup", { key: "Alt", stopBeforeBubble: true });
+const request = payload("pronounceit:audioLookup:");
+if (request.text !== "bundle" || !request.contextText.includes("ECG shows bundle today.")) {
+  throw new Error(`AMBOSS-wrapped selection was not preserved: ${JSON.stringify(request)}`);
+}
+"""
+        )
+
+    def test_modifier_selection_spanning_nested_markup_keeps_context_offsets(self) -> None:
+        self.run_node(
+            r"""
+const before = { nodeType: 3, textContent: "right ", parentElement: wrapper };
+const amboss = new Element("span");
+const ambossText = { nodeType: 3, textContent: "bundle", parentElement: amboss };
+const after = { nodeType: 3, textContent: " branch", parentElement: wrapper };
+amboss.textContent = "bundle";
+amboss.childNodes = [ambossText];
+amboss.children = [];
+amboss.parentElement = wrapper;
+wrapper.textContent = "right bundle branch";
+wrapper.childNodes = [before, amboss, after];
+wrapper.children = [amboss];
+selectionText = "right bundle";
+selectionRangeOverride = {
+  startContainer: before,
+  endContainer: ambossText,
+  startOffset: 0,
+  endOffset: 6,
+  commonAncestorContainer: wrapper,
+  getBoundingClientRect() { return selectionRect; },
+  getClientRects() { return [selectionRect]; },
+};
+
+emit("selectionchange");
+emit("keydown", { key: "Alt", altKey: true });
+emit("keyup", { key: "Alt" });
+const request = payload("pronounceit:audioLookup:");
+if (request.text !== "right bundle") throw new Error(`Nested selection changed text: ${JSON.stringify(request)}`);
+if (request.contextText.slice(request.contextOffsetStart, request.contextOffsetEnd) !== "right bundle") {
+  throw new Error(`Nested selection has bad context offsets: ${JSON.stringify(request)}`);
+}
+
+// Adjacent paragraphs must not concatenate into an unknown multiword term.
+const paragraph = new Element("p");
+const preceding = new Element("p");
+const earlier = { nodeType: 3, textContent: "myocardial infarction", parentElement: preceding };
+preceding.childNodes = [earlier];
+paragraph.childNodes = [before, amboss, after];
+before.parentElement = paragraph;
+amboss.parentElement = paragraph;
+after.parentElement = paragraph;
+paragraph.parentElement = wrapper;
+preceding.parentElement = wrapper;
+wrapper.childNodes = [preceding, paragraph];
+selectionRangeOverride.commonAncestorContainer = wrapper;
+messages.length = 0;
+emit("selectionchange");
+emit("keydown", { key: "Alt", altKey: true });
+emit("keyup", { key: "Alt" });
+const blocks = payload("pronounceit:audioLookup:");
+if (!blocks.contextText.includes("infarction\nright bundle")) throw new Error("Block boundary was lost");
+if (blocks.contextText.slice(blocks.contextOffsetStart, blocks.contextOffsetEnd) !== "right bundle") throw new Error("Block offsets changed the selection");
+"""
+        )
+
     def test_modifier_tap_requires_selection_and_is_cancelled_by_another_key(self) -> None:
         self.run_node(
             r"""
@@ -346,32 +530,118 @@ if (request.text !== "right bundle" || request.contextText.slice(request.context
 """
         )
 
-    def test_plain_right_click_autoplays_details_and_shift_preserves_native_menu(self) -> None:
+    def test_ctrl_gestures_open_loading_quick_card_and_preserve_context(self) -> None:
         self.run_node(
             r"""
-const event = emit("contextmenu");
-if (!event.defaultPrevented || !event.propagationStopped) throw new Error("Plain right-click was not captured");
-const automatic = payload("pronounceit:lookup:");
-if (!automatic.autoPlay || automatic.text !== "bundle") {
-  throw new Error(`Right-click did not autoplay pointed term: ${JSON.stringify(automatic)}`);
+const plainRightClick = emit("contextmenu");
+if (plainRightClick.defaultPrevented || plainRightClick.propagationStopped) {
+  throw new Error("Plain right-click was suppressed");
 }
-const shiftEvent = emit("contextmenu", { shiftKey: true });
-if (shiftEvent.defaultPrevented || shiftEvent.propagationStopped) throw new Error("Shift-right-click was suppressed");
-if (messages.filter((message) => message.startsWith("pronounceit:lookup:")).length !== 1) {
-  throw new Error(`Shift-right-click triggered lookup: ${JSON.stringify(messages)}`);
+if (messages.length) throw new Error(`Plain right-click triggered pronunciation: ${JSON.stringify(messages)}`);
+
+const ctrlRightClick = emit("contextmenu", { ctrlKey: true });
+if (!ctrlRightClick.defaultPrevented || !ctrlRightClick.propagationStopped) {
+  throw new Error("Ctrl-right-click did not open the quick card");
 }
-sandbox.window.PronounceIt.playContextTarget();
-sandbox.window.PronounceIt.showContextDetails();
-sandbox.window.PronounceIt.saveContextTarget();
-const play = payload("pronounceit:audioLookup:");
-const details = payload("pronounceit:lookup:", 1);
-const save = payload("pronounceit:saveLookup:");
-for (const request of [play, details, save]) {
-  if (request.text !== "bundle" || !request.contextText.includes("right bundle branch block")) {
-    throw new Error(`Context bridge drifted: ${JSON.stringify(request)}`);
+let popup = body.querySelector(".pronounceit-popup");
+if (!popup || popup.getAttribute("data-loading") !== "true") {
+  throw new Error("Ctrl-right-click did not show an immediate loading card");
+}
+if (body.querySelector(".pronounceit-menu")) throw new Error("Legacy compact menu was shown");
+let play = popup.querySelector(".pronounceit-play-button");
+let save = popup.querySelector(".pronounceit-save-button");
+if (!play.disabled || !save.disabled) throw new Error("Loading card actions should be disabled");
+let request = payload("pronounceit:lookup:");
+if (request.text !== "bundle" || request.autoPlay !== false) {
+  throw new Error(`Ctrl-right-click did not preserve the request: ${JSON.stringify(request)}`);
+}
+if (messages.some((message) => message.startsWith("pronounceit:audioLookup:"))) {
+  throw new Error(`Quick card played automatically: ${JSON.stringify(messages)}`);
+}
+
+sandbox.window.PronounceIt.show({
+  term: "bundle",
+  pronunciation: "BUN-dul",
+  audioSource: "azure",
+  audioSourceLabel: "Recorded audio",
+  audioAvailable: true,
+  request,
+  rect: request.rect,
+});
+popup = body.querySelector(".pronounceit-popup");
+if (popup.getAttribute("data-loading") !== "false") throw new Error("Lookup did not populate the existing card");
+play = popup.querySelector(".pronounceit-play-button");
+save = popup.querySelector(".pronounceit-save-button");
+if (play.disabled || save.disabled) throw new Error("Loaded quick card actions should be enabled");
+play.listeners.click({});
+save.listeners.click({});
+for (const action of [payload("pronounceit:audioLookup:"), payload("pronounceit:saveLookup:")]) {
+  if (action.text !== "bundle" || !action.contextText.includes("right bundle branch block")) {
+    throw new Error(`Quick card action lost context: ${JSON.stringify(action)}`);
   }
 }
-if (details.autoPlay !== false) throw new Error(`Details must not autoplay: ${JSON.stringify(details)}`);
+
+emit("keydown", { key: "Escape" });
+messages.length = 0;
+selectionText = "right bundle";
+selectionStart = source.indexOf("right");
+selectionEnd = selectionStart + selectionText.length;
+emit("selectionchange");
+emit("keydown", { key: "Control", ctrlKey: true });
+emit("keyup", { key: "Control" });
+popup = body.querySelector(".pronounceit-popup");
+if (!popup || popup.getAttribute("data-loading") !== "true") {
+  throw new Error("Control after selection did not open the loading card");
+}
+request = payload("pronounceit:lookup:");
+if (request.text !== "right bundle") throw new Error(`Selection target lost: ${JSON.stringify(request)}`);
+
+emit("keydown", { key: "Escape" });
+messages.length = 0;
+emit("pointerdown", { ctrlKey: true, clientX: 34, clientY: 14 });
+emit("pointerup", { ctrlKey: true, clientX: 34, clientY: 14 });
+popup = body.querySelector(".pronounceit-popup");
+if (!popup || popup.getAttribute("data-loading") !== "true") {
+  throw new Error("Ctrl-left-click did not open the loading card");
+}
+request = payload("pronounceit:lookup:");
+if (request.text !== "right bundle") throw new Error(`Ctrl-left-click lost selection context: ${JSON.stringify(request)}`);
+"""
+        )
+
+    def test_context_modifier_quick_card_can_be_disabled(self) -> None:
+        self.run_node(
+            r"""
+sandbox.window.PronounceIt.configure({ showNativeContextMenu: false });
+emit("pointerdown", { ctrlKey: true, clientX: 34, clientY: 14 });
+emit("pointerup", { ctrlKey: true, clientX: 34, clientY: 14 });
+if (body.querySelector(".pronounceit-popup")) throw new Error("Disabled context path opened a quick card from Ctrl-click");
+if (messages.length) throw new Error(`Disabled context path sent bridge messages from Ctrl-click: ${JSON.stringify(messages)}`);
+selectionText = "right bundle";
+selectionStart = source.indexOf("right");
+selectionEnd = selectionStart + selectionText.length;
+emit("selectionchange");
+emit("keydown", { key: "Control", ctrlKey: true });
+emit("keyup", { key: "Control" });
+if (body.querySelector(".pronounceit-popup")) throw new Error("Disabled context path opened a quick card from selection");
+if (messages.length) throw new Error(`Disabled context path sent bridge messages: ${JSON.stringify(messages)}`);
+"""
+        )
+
+    def test_context_modifier_quick_card_wins_when_modifiers_overlap(self) -> None:
+        self.run_node(
+            r"""
+sandbox.window.PronounceIt.configure({ directClickModifier: "ctrl", contextMenuModifier: "ctrl" });
+selectionText = "right bundle";
+selectionStart = source.indexOf("right");
+selectionEnd = selectionStart + selectionText.length;
+emit("selectionchange");
+emit("keydown", { key: "Control", ctrlKey: true });
+emit("keyup", { key: "Control" });
+if (!body.querySelector(".pronounceit-popup")) throw new Error("Overlapping modifier did not open quick card");
+if (messages.some((message) => message.startsWith("pronounceit:audioLookup:"))) {
+  throw new Error(`Overlapping modifier played audio: ${JSON.stringify(messages)}`);
+}
 """
         )
 
@@ -410,7 +680,9 @@ sandbox.window.PronounceIt.show({
 });
 const popup = body.querySelector(".pronounceit-popup");
 const save = popup && popup.querySelector(".pronounceit-save-button");
-if (!save || save.disabled || save.textContent !== "Save pronunciation") {
+const play = popup && popup.querySelector(".pronounceit-play-button");
+if (!play || play.textContent !== "Play") throw new Error("Play action was not simplified");
+if (!save || save.disabled || save.textContent !== "Save") {
   throw new Error("Save action missing from details popup");
 }
 save.listeners.click();
@@ -437,6 +709,57 @@ sandbox.window.PronounceIt.show({
 });
 const popup = body.querySelector(".pronounceit-popup");
 if (popup.querySelector(".pronounceit-save-button")) throw new Error("Disabled Save action was shown");
+"""
+        )
+
+    def test_popup_uses_friendly_source_labels_and_updates_after_fallback(self) -> None:
+        self.run_node(
+            r"""
+sandbox.window.PronounceIt.show({
+  term: "clozapine",
+  pronunciation: "KLOH-zuh-peen",
+  found: true,
+  audioSource: "azure",
+  audioAvailable: true,
+  request: { text: "clozapine", rect: {} },
+  rect: {},
+});
+const popup = body.querySelector(".pronounceit-popup");
+const badge = popup && popup.querySelector(".pronounceit-source");
+if (!badge || badge.textContent !== "Recorded audio") {
+  throw new Error("Recorded audio was not shown");
+}
+sandbox.window.PronounceIt.spoken({
+  ok: true,
+  audioSource: "live",
+  audioSourceLabel: "Computer voice",
+  term: "clozapine",
+});
+if (badge.textContent !== "Computer voice" || !badge.className.includes("live")) {
+  throw new Error(`Actual fallback source was not shown: ${badge.textContent}`);
+}
+sandbox.window.PronounceIt.show({
+  term: "unknown",
+  pronunciation: "Unavailable",
+  audioSource: "generated",
+  audioAvailable: true,
+  request: { text: "unknown", rect: {} },
+  rect: {},
+});
+if (body.querySelector(".pronounceit-source").textContent !== "Computer voice") {
+  throw new Error("Generated audio did not use the standard text-to-speech label");
+}
+sandbox.window.PronounceIt.show({
+  term: "custom",
+  pronunciation: "KUS-tum",
+  audioSource: "custom",
+  audioAvailable: true,
+  request: { text: "custom", rect: {} },
+  rect: {},
+});
+if (body.querySelector(".pronounceit-source").textContent !== "Custom audio") {
+  throw new Error("Custom audio label was not shown");
+}
 """
         )
 
@@ -491,8 +814,8 @@ emit("pointerdown", { altKey: true });
 emit("pointerup", { altKey: true });
 sandbox.window.PronounceIt.spoken({ ok: false, reason: "Reveal the answer before using PronounceIt." });
 notice = body.querySelector(".pronounceit-notice");
-if (!notice || !notice.textContent.includes("Reveal the answer") || notice.getAttribute("data-state") !== "error") {
-  throw new Error(`Missing failure status: ${notice && notice.textContent}`);
+if (!notice || notice.textContent !== "Reveal the answer before playing pronunciation." || notice.getAttribute("data-state") !== "info") {
+  throw new Error(`Missing answer-side guidance: ${notice && notice.textContent}`);
 }
 """
         )
@@ -510,15 +833,52 @@ if (context.contextText.slice(context.contextOffsetStart, context.contextOffsetE
 """
         )
 
-    def test_css_contains_popup_and_stateful_notice_without_custom_menu(self) -> None:
+    def test_css_contains_quick_card_and_stateful_notice_styles(self) -> None:
         css = (ROOT / "web" / "pronounceit.css").read_text(encoding="utf-8")
 
         self.assertIn(".pronounceit-popup", css)
         self.assertIn(".pronounceit-notice", css)
         self.assertIn('[data-state="loading"]', css)
         self.assertIn('[data-state="success"]', css)
+        self.assertIn('[data-state="info"]', css)
         self.assertIn('[data-state="error"]', css)
+        self.assertIn(".pronounceit-source.azure", css)
+        self.assertIn(".pronounceit-source.loading", css)
+        self.assertIn(".pronounceit-theme-light", css)
+        self.assertIn(".pronounceit-theme-dark", css)
+        self.assertNotIn(".pronounceit-theme-clinical_light", css)
+        self.assertNotIn(".pronounceit-theme-slate", css)
+        self.assertNotIn(".pronounceit-theme-high_contrast", css)
         self.assertNotIn(".pronounceit-menu", css)
+
+    def test_runtime_theme_tokens_are_applied_to_popup(self) -> None:
+        self.run_node(
+            r"""
+sandbox.window.PronounceIt.configure({
+  theme: "dark",
+  themeTokens: { bg: "#111827", accent: "#2563eb" },
+});
+sandbox.window.PronounceIt.show({
+  found: true,
+  term: "clozapine",
+  pronunciation: "KLOH-zuh-peen",
+  syllables: "clo-za-pine",
+  textSource: "ai-generated",
+  textReviewStatus: "ai-generated",
+  audioAvailable: true,
+  autoPlay: false,
+});
+const popup = body.querySelector(".pronounceit-popup");
+if (!popup || popup.getAttribute("data-theme") !== "dark") throw new Error("Dark theme was not applied");
+if (popup.style["--pronounceit-bg"] !== "#111827") throw new Error("Shared background token was not applied");
+if (popup.style["--pronounceit-accent"] !== "#2563eb") throw new Error("Shared accent token was not applied");
+if (popup.querySelector(".pronounceit-pronunciation").textContent !== "KLOH-zuh-peen") throw new Error("Guide missing");
+sandbox.window.PronounceIt.show({ found: true, term: "unresolved", pronunciation: "", audioAvailable: true,
+  audioStatus: "Computer voice ready", autoPlay: false });
+if (body.querySelector(".pronounceit-pronunciation").textContent !== "Pronunciation unavailable") throw new Error("Audio status replaced missing guide");
+if (body.querySelector(".pronounceit-play-button").disabled) throw new Error("Missing guide disabled playback");
+"""
+        )
 
 
 if __name__ == "__main__":

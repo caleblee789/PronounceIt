@@ -80,7 +80,10 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
 
         manager.release.set()
         self.wait_for(lambda: controller.snapshot().installed)
-        self.assertEqual(notices, [("Audio pack download completed.", False)])
+        self.assertEqual(
+            notices,
+            [("Offline pronunciation pack download completed.", False)],
+        )
 
     def test_pause_resume_and_cancel_are_process_lifetime_operations(self) -> None:
         manager = FakeAudioPackManager()
@@ -95,8 +98,15 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
         self.assertFalse(controller.snapshot().paused)
         self.assertFalse(manager.paused)
         self.assertTrue(controller.cancel())
-        self.wait_for(lambda: controller.snapshot().phase == "failed")
-        self.assertIn("cancelled", controller.snapshot().error)
+        self.assertEqual(controller.snapshot().phase, "cancelling")
+        self.assertFalse(controller.cancel())
+        self.wait_for(lambda: controller.snapshot().phase == "cancelled")
+        self.assertEqual(controller.snapshot().error, "")
+        self.assertIn("resume later", controller.snapshot().message)
+        self.assertEqual(controller.snapshot().done_bytes, 100)
+        self.assertEqual(controller.snapshot().total_bytes, 800)
+        self.assertEqual(controller.refresh().phase, "cancelled")
+        self.assertIn("resume later", controller.refresh().message)
 
     def test_verify_and_remove_refresh_shared_state(self) -> None:
         manager = FakeAudioPackManager()
