@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import json
 import os
 import tempfile
 import zipfile
@@ -13,15 +12,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pronounceit.qa import audit_pronunciations
-from pronounceit.audio import aiff_bytes_have_audio, audio_file_has_content, mp3_bytes_have_audio
-from pronounceit.dictionary import PronunciationDictionary
-from pronounceit.qa import load_checklist
-from pronounceit.audio_pack import file_sha256
 
 
 DIST = ROOT / "dist"
 OUT = DIST / "pronounceit.ankiaddon"
-INCLUDE_DIRS = ["pronounceit", "web", "data", "audio", "user_files", "pronunciation_licenses"]
+INCLUDE_DIRS = ["pronounceit", "web", "data", "user_files", "pronunciation_licenses"]
 INCLUDE_FILES = [
     "__init__.py",
     "config.json",
@@ -34,12 +29,17 @@ INCLUDE_FILES = [
 ]
 EXCLUDED_PARTS = {"__pycache__", ".pytest_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
-EXCLUDED_FILES = {"data/audio_review_ledger.json"}
+DATA_FILES = {
+    "data/audio_pronunciations.json", "data/written_pronunciations.json",
+    "data/written-pronunciation-sources.json", "data/audio-pack-release.json",
+    "data/written-guide-attribution.md", "data/written-guide-CMUdict-LICENSE.txt",
+    "data/written-guide-Moby-NOTICE.txt", "data/written-guide-Misaki-LICENSE.txt",
+}
 ALLOWED_USER_FILES = {
     "user_files/README.txt",
     "user_files/custom_pronunciations.sample.json",
 }
-FORBIDDEN_ARCHIVE_PREFIXES = ("tests/", "scripts/", ".git/", "dist/")
+FORBIDDEN_ARCHIVE_PREFIXES = ("tests/", "scripts/", ".git/", "dist/", "quality/", "audio/")
 REQUIRED_ARCHIVE_FILES = {
     "__init__.py",
     "config.json",
@@ -60,7 +60,6 @@ REQUIRED_ARCHIVE_FILES = {
     "pronounceit/ui.py",
     "pronounceit/theme.py",
     "pronounceit/written_guides.py",
-    "pronounceit/written_phonetics.py",
     "pronounceit/assets/buy_me_a_coffee.png",
     "pronounceit/assets/spin_up_light.svg",
     "pronounceit/assets/spin_down_light.svg",
@@ -68,27 +67,15 @@ REQUIRED_ARCHIVE_FILES = {
     "pronounceit/assets/spin_down_dark.svg",
     "web/pronounceit.js",
     "web/pronounceit.css",
-    "data/medical_pronunciations.json",
-    "data/written_pronunciations.json",
-    "data/written-guide-corrections.json",
-    "data/written-guide-attribution.md",
-    "data/written-guide-CMUdict-LICENSE.txt",
-    "data/written-guide-Moby-NOTICE.txt",
-    "data/written-guide-Misaki-LICENSE.txt",
-    "data/written-guide-ai-overrides.json",
-    "data/audio-pack-release.json",
-    "data/bundled_audio_provenance.json",
     "pronunciation_licenses/ATTRIBUTION.md",
     "pronunciation_licenses/CMUdict-LICENSE",
     "pronunciation_licenses/Misaki-LICENSE",
-    "data/high_yield_checklist.json",
-    "data/medical_pronunciation_lexicon_for_codex.txt",
     "user_files/README.txt",
-}
+} | DATA_FILES
 
 
 def should_include(path: Path) -> bool:
-    if path.as_posix() in EXCLUDED_FILES:
+    if path.as_posix().startswith(FORBIDDEN_ARCHIVE_PREFIXES):
         return False
     if any(part.startswith(".") for part in path.parts):
         return False
@@ -98,93 +85,53 @@ def should_include(path: Path) -> bool:
         return False
     if path.suffix in EXCLUDED_SUFFIXES:
         return False
-    if path.parts and path.parts[0] == "audio" and path.suffix.casefold() in {".aiff", ".mp3"}:
-        return audio_file_has_content(ROOT / path)
+    if path.parts and path.parts[0] == "data" and path.as_posix() not in DATA_FILES:
+        return False
     return True
 
 
-def required_audio_files() -> set[str]:
-    dictionary = PronunciationDictionary.bundled()
-    return {
-        str(dictionary.lookup(term).get("audioFile") or "")
-        for term in load_checklist()
-        if dictionary.lookup(term).get("audioFile")
-    }
-
-
-def validate_release_quality() -> None:
-    release = json.loads((ROOT / "data/audio-pack-release.json").read_text(encoding="utf-8"))
-    if (release.get("schemaVersion") != 3
-            or release.get("dictionarySha256") != file_sha256(ROOT / "data/medical_pronunciations.json")):
-        raise SystemExit("The add-on dictionary does not match its version 3 audio release")
-    audit = audit_pronunciations()
+def validate_release_quality(root: Path = ROOT) -> None:
+    audit = audit_pronunciations(root / "data/audio_pronunciations.json")
     if not audit.passed:
-        raise SystemExit(
-            "Pronunciation audit failed; refusing to build release archive:\n"
-            f"{audit.as_dict()}"
-        )
-    if audit.unavailable_written_pronunciation:
-        raise SystemExit("Written pronunciation inventory is incomplete; refusing to build the full package.")
-    required = required_audio_files()
-    bundled = {
-        path.relative_to(ROOT).as_posix()
-        for path in (ROOT / "audio").iterdir()
-        if path.is_file()
-        and path.suffix.casefold() in {".aiff", ".mp3"}
-        and audio_file_has_content(path)
-    }
-    if len(required) != 155 or bundled != required:
-        raise SystemExit(
-            "Bundled audio set must contain exactly the 155 high-yield clips: "
-            f"required={len(required)} bundled={len(bundled)}"
-        )
+        raise SystemExit(f"Pronunciation audit failed; refusing to build release archive: {audit.as_dict()}")
 
 
 def validate_archive(path: Path) -> None:
     with zipfile.ZipFile(path) as archive:
-        names = set(archive.namelist())
-        invalid_audio = sorted(
-            name
-            for name in names
-            if name.startswith("audio/") and (
-                (name.casefold().endswith(".aiff") and not aiff_bytes_have_audio(archive.read(name)))
-                or (name.casefold().endswith(".mp3") and not mp3_bytes_have_audio(archive.read(name)))
-            )
-        )
-
-    required_audio = required_audio_files()
-    archive_audio = {
-        name
-        for name in names
-        if name.startswith("audio/") and name.casefold().endswith((".aiff", ".mp3"))
-    }
-    missing = sorted((REQUIRED_ARCHIVE_FILES | required_audio) - names)
-    extra_audio = sorted(archive_audio - required_audio)
-    forbidden = sorted(
-        name
-        for name in names
-        if name.startswith(FORBIDDEN_ARCHIVE_PREFIXES)
-        or (name.startswith("user_files/") and name not in ALLOWED_USER_FILES)
-        or name in EXCLUDED_FILES
-        or "__pycache__" in name
-        or any(part.startswith(".") for part in Path(name).parts)
-    )
-    if missing or forbidden or invalid_audio or extra_audio or len(archive_audio) != 155:
-        raise SystemExit(
-            "Archive validation failed:\n"
-            f"missing={missing}\n"
-            f"forbidden={forbidden}\n"
-            f"invalid_audio={invalid_audio}"
-            f"\nextra_audio={extra_audio}"
-        )
+        entries = archive.namelist()
+        names = set(entries)
+        corrupt = archive.testzip()
+    missing = sorted(REQUIRED_ARCHIVE_FILES - names)
+    forbidden = sorted(name for name in names if not should_include(Path(name)))
+    if missing or forbidden or corrupt or len(names) != len(entries):
+        raise SystemExit(f"Archive validation failed: missing={missing}, forbidden={forbidden}, corrupt={corrupt}")
 
 
-def add_file(archive: zipfile.ZipFile, name: str) -> None:
+def add_file(archive: zipfile.ZipFile, name: str, root: Path = ROOT) -> None:
     info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
     info.create_system = 3
     info.external_attr = 0o100644 << 16
-    archive.writestr(info, (ROOT / name).read_bytes())
+    archive.writestr(info, (root / name).read_bytes())
+
+
+def build_archive(root: Path, output: Path) -> None:
+    validate_release_quality(root)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=output.parent, prefix=f".{output.name}.", suffix=".tmp", delete=False) as handle:
+        temporary = Path(handle.name)
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for file_name in INCLUDE_FILES:
+                add_file(archive, file_name, root)
+            for dir_name in INCLUDE_DIRS:
+                for path in sorted((root / dir_name).rglob("*")):
+                    if path.is_file() and should_include(path.relative_to(root)):
+                        add_file(archive, path.relative_to(root).as_posix(), root)
+        validate_archive(temporary)
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -192,24 +139,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build and validate a PronounceIt add-on archive")
     parser.add_argument("--output", type=Path, default=OUT)
     args = parser.parse_args()
-    validate_release_quality()
-    output = args.output
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=output.parent, prefix=f".{output.name}.", suffix=".tmp", delete=False) as handle:
-        temporary = Path(handle.name)
-    try:
-        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for file_name in INCLUDE_FILES:
-                add_file(archive, file_name)
-            for dir_name in INCLUDE_DIRS:
-                for path in sorted((ROOT / dir_name).rglob("*")):
-                    if path.is_file() and should_include(path.relative_to(ROOT)):
-                        add_file(archive, path.relative_to(ROOT).as_posix())
-        validate_archive(temporary)
-        os.replace(temporary, output)
-    finally:
-        temporary.unlink(missing_ok=True)
-    print(f"Created {output}")
+    build_archive(ROOT, args.output)
+    print(f"Created {args.output}")
 
 
 if __name__ == "__main__":

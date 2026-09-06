@@ -40,11 +40,8 @@ SUPPORT_IMAGE_NAME = "buy_me_a_coffee.png"
 CALEB_ADDONS_MENU_TITLE = "Caleb M. Add-ons Settings"
 CALEB_ADDONS_MENU_OBJECT_NAME = "caleb_m_addons_menu"
 _AUDIO_SOURCE_LABELS = {
-    "custom": "Custom audio",
-    "azure": "Recorded audio",
-    "recorded": "Recorded audio",
-    "generated": "Computer voice",
-    "live": "Computer voice",
+    "audio": "Audio pronunciation",
+    "computer": "Computer voice",
 }
 
 _addon_module = ""
@@ -206,11 +203,11 @@ def _notify_audio_pack(message: str, error: bool = False) -> None:
 
     if error:
         _record_runtime_diagnostic(message)
-        feedback("Could not finish the pack operation. Open Troubleshoot audio for details.", error=True)
+        feedback("Could not finish the audio library operation. Open Troubleshoot audio for details.", error=True)
     elif "cancel" in message.casefold():
         feedback("Download cancelled. Resume it in Audio settings.")
     else:
-        feedback("Pronunciation pack is ready." if _audio_pack_download and _audio_pack_download.snapshot().installed else "Pronunciation pack updated.")
+        feedback("Audio library is ready." if _audio_pack_download and _audio_pack_download.snapshot().installed else "Audio library updated.")
 
 
 def _current_anki_theme() -> str:
@@ -597,12 +594,11 @@ def _current_saved_entry(item: dict[str, Any]) -> dict[str, Any]:
     """Refresh display text in memory without rewriting saved files or audio fields."""
     term = str(item.get("term") or item.get("requestedText") or "")
     payload = _lookup_payload(term)
-    if item.get("source") == "user-override":
-        if "useTextOverride" not in item and payload.get("source") == "user-override":
+    if (item.get("custom") or item.get("source") == "user-override"):
+        if "useTextOverride" not in item and (payload.get("custom") or payload.get("source") == "user-override"):
             return {**item, "useTextOverride": bool(payload.get("useTextOverride"))}
         return item
-    return {**item, "pronunciation": payload.get("pronunciation", ""),
-            "textSource": payload.get("textSource", ""), "textReviewStatus": payload.get("textReviewStatus", "")}
+    return {**item, "pronunciation": payload.get("pronunciation", "")}
 
 
 def _saved_entry_search_text(item: dict[str, Any]) -> str:
@@ -610,7 +606,6 @@ def _saved_entry_search_text(item: dict[str, Any]) -> str:
         item.get("term"),
         item.get("requestedText"),
         item.get("pronunciation"),
-        item.get("source"),
         item.get("deckName"),
     ]
     return " ".join(str(part) for part in parts if part).casefold()
@@ -618,10 +613,7 @@ def _saved_entry_search_text(item: dict[str, Any]) -> str:
 
 def _saved_entry_details(item: dict[str, Any]) -> str:
     details = []
-    source = {"wiktionary": "Wiktionary", "cmudict": "CMUdict", "nci": "NCI",
-              "moby": "Moby", "composed-guide": "Referenced words", "documented-correction": "Reference correction"}.get(item.get("textSource"))
-    if item.get("source") == "user-override":
-        source = "Custom pronunciation"
+    source = "Custom pronunciation" if item.get("custom") or item.get("source") == "user-override" else ""
     deck_name = item.get("deckName")
     if source:
         details.append(f"Source: {source}")
@@ -844,9 +836,6 @@ def _format_playback_diagnostics() -> str:
         audio_file = str(item.get("audioFile") or "")
         if audio_file:
             lines.append(f"   Audio file: {audio_file}")
-        quality_tier = str(item.get("qualityTier") or "")
-        if quality_tier:
-            lines.append(f"   Quality tier: {quality_tier}")
         reason = str(item.get("reason") or "")
         if reason:
             lines.append(f"   Reason: {reason}")
@@ -1019,12 +1008,11 @@ def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
             _record_runtime_diagnostic(str(exc))
     recorded = (local or pack) and config.audio_backend != "system_tts" and not override
     if recorded:
-        # A written correction can retain bundled audio; it is not a user recording.
-        result["audioSource"] = "custom" if local and (audio_file.startswith("user_files/") or not (_addon_dir() / audio_file).is_file()) else "recorded" if result.get("audioProvider") == "kokoro-local" else "azure"
-        result["audioStatus"] = "Custom audio ready" if result["audioSource"] == "custom" else "Recorded audio ready"
+        result["audioSource"] = "audio"
+        result["audioStatus"] = "Audio pronunciation ready"
         result["audioHelp"] = "Play this recording."
     else:
-        result["audioSource"] = "live" if config.audio_backend == "system_tts" else "generated"
+        result["audioSource"] = "computer"
         result["audioStatus"] = "Computer voice ready" if config.audio_backend != "local_audio" else "No recording available"
         result["audioHelp"] = "Play using your computer voice." if config.audio_backend != "local_audio" else "Choose a mode with computer voice in Audio settings to hear this term."
     result["audioSourceLabel"] = _audio_source_label(result["audioSource"]) if recorded or config.audio_backend != "local_audio" else "No recording available"
@@ -1191,16 +1179,13 @@ def _playback_payload_from_lookup(result: dict[str, Any]) -> dict[str, Any]:
     audio_source = str(result.get("audioSource") or "")
     override = bool(result.get("useTextOverride"))
     text = result.get("speechText") if override else result.get("synthesisText")
-    if audio_source not in {"custom", "azure", "recorded"} or not _audio_file_is_available(audio_file):
+    if not _audio_file_is_available(audio_file):
         audio_file = ""
     return {
         "text": text or result.get("term") or result.get("requestedText") or "",
         "term": result.get("term") or result.get("requestedText") or "",
         "audioFile": audio_file,
         "useTextOverride": override,
-        "qualityTier": result.get("qualityTier", "fallback"),
-        "synthesisStrategy": result.get("synthesisStrategy", "azure-native"),
-        "audioReviewStatus": result.get("audioReviewStatus", "unreviewed"),
         "audioSource": audio_source,
         "audioSourceLabel": _audio_source_label(audio_source),
     }
@@ -1212,18 +1197,6 @@ def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
         return False
     text = display_term(str(payload.get("text") or payload.get("term") or ""))
     config = _config()
-    audio_source = str(payload.get("audioSource") or "")
-    if audio_source not in {"custom", "azure", "recorded", "generated", "live"}:
-        audio_source = (
-            "custom"
-            if payload.get("source") == "user-override"
-            and _audio_file_is_available(str(payload.get("audioFile") or ""))
-            else "azure"
-            if _audio_file_is_available(str(payload.get("audioFile") or ""))
-            else "live"
-            if config.audio_backend == "system_tts"
-            else "generated"
-        )
     settings = TtsSettings(
         voice=config.tts_voice,
         rate=config.tts_rate,
@@ -1232,10 +1205,6 @@ def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
         audio_file=str(payload.get("audioFile") or ""),
         term=display_term(str(payload.get("term") or "")),
         use_text_override=bool(payload.get("useTextOverride")),
-        quality_tier=str(payload.get("qualityTier") or ""),
-        synthesis_strategy=str(payload.get("synthesisStrategy") or "azure-native"),
-        audio_review_status=str(payload.get("audioReviewStatus") or "unreviewed"),
-        audio_source_hint=audio_source,
     )
     result = _tts.speak_result(text, settings)
     _record_playback_diagnostic(text, settings, result)
@@ -1251,9 +1220,6 @@ def _record_playback_diagnostic(text: str, settings: TtsSettings, result: Any) -
             "term": settings.term,
             "audioBackend": settings.audio_backend,
             "audioFile": settings.audio_file,
-            "qualityTier": settings.quality_tier,
-            "synthesisStrategy": settings.synthesis_strategy,
-            "audioReviewStatus": settings.audio_review_status,
             "audioSource": str(getattr(result, "audio_source", "") or ""),
             "ok": bool(getattr(result, "ok", False)),
             "reason": str(getattr(result, "reason", "")),

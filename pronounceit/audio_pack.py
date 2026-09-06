@@ -44,6 +44,12 @@ class AudioPackStatus:
     message: str = "Offline pronunciation pack is not installed."
 
 
+def manifest_content_sha256(manifest: dict[str, Any]) -> str:
+    """Bind a release independently of installed JSON whitespace."""
+    return hashlib.sha256(json.dumps(manifest, ensure_ascii=False, sort_keys=True,
+                                     separators=(",", ":")).encode()).hexdigest()
+
+
 def audio_asset_id(term: str) -> str:
     normalized = normalize_term(term)
     value = f"{AUDIO_ASSET_NAMESPACE}\0{normalized}"
@@ -161,7 +167,10 @@ class AudioPackManager:
         cache_bytes: int = DEFAULT_CACHE_BYTES,
     ) -> None:
         self.addon_root = addon_root
-        self.dictionary_path = addon_root / "data" / "medical_pronunciations.json"
+        self.dictionary_path = addon_root / "data" / "audio_pronunciations.json"
+        # Older add-ons and standalone pack tooling used the original dictionary.
+        if not self.dictionary_path.exists():
+            self.dictionary_path = addon_root / "data" / "medical_pronunciations.json"
         self.pack_root = addon_root / "user_files" / "audio_packs"
         self.cache_root = addon_root / "user_files" / "audio_cache"
         self.manifest_url = (
@@ -176,6 +185,8 @@ class AudioPackManager:
         self._cancel_event = threading.Event()
         self._dictionary_hash: str | None = None
         self._dictionary_stamp: tuple[int, int, int] | None = None
+        self._compatibility_manifest: dict[str, Any] | None = None
+        self._compatibility_manifest_hash = ""
         self._manifest_cache: tuple[Path, int, int, dict[str, Any]] | None = None
 
     def _candidate_manifest_url(self) -> str:
@@ -355,11 +366,9 @@ class AudioPackManager:
     def playback_metadata(self, term: str) -> dict[str, str]:
         manifest = self._load_local_manifest()
         if manifest and self._dictionary_is_compatible(manifest) and manifest["schemaVersion"] == 3:
-            asset = manifest["assets"].get(audio_asset_id(term), {})
-            return {"source": "recorded", "provider": manifest["generation"]["provider"],
-                    "reviewStatus": asset.get("clipReviewStatus", "unreviewed"),
+            return {"provider": manifest["generation"]["provider"],
                     "packVersion": manifest["packVersion"]}
-        return {"source": "azure", "provider": "azure-speech", "reviewStatus": "passed"}
+        return {"provider": "azure-speech"}
 
     def _fetch_manifest(self) -> dict[str, Any]:
         try:
@@ -426,8 +435,19 @@ class AudioPackManager:
             if self._dictionary_hash is None or stamp != self._dictionary_stamp:
                 self._dictionary_hash = dictionary_sha256(self.dictionary_path)
                 self._dictionary_stamp = stamp
-            return self._dictionary_hash == manifest["dictionarySha256"]
-        except OSError:
+            if self.dictionary_path.name == "medical_pronunciations.json":
+                return self._dictionary_hash == manifest["dictionarySha256"]
+            release = json.loads((self.addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
+            if self._compatibility_manifest is not manifest:
+                self._compatibility_manifest_hash = manifest_content_sha256(manifest)
+                self._compatibility_manifest = manifest
+            return (
+                release.get("schemaVersion") == 3
+                and self._dictionary_hash == release.get("audioLibrarySha256")
+                and manifest["dictionarySha256"] == release.get("dictionarySha256")
+                and self._compatibility_manifest_hash == release.get("packManifestContentSha256")
+            )
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
             return False
 
     def _shard_path(self, manifest: dict[str, Any], shard: dict[str, Any]) -> Path:

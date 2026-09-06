@@ -1175,7 +1175,7 @@
     term.textContent = word;
 
     const badge = document.createElement("div");
-    badge.className = "pronounceit-source " + (options.sourceKey || "generated");
+    badge.className = "pronounceit-source " + (options.sourceKey || "computer");
     badge.textContent = source;
 
     header.appendChild(term);
@@ -1193,13 +1193,14 @@
 
     const label = document.createElement("div");
     label.className = "pronounceit-pronunciation-label";
-    label.textContent = "Pronunciation";
+    label.textContent = "Written pronunciation";
 
     const pronunciation = document.createElement("div");
     pronunciation.className = "pronounceit-pronunciation" + (!options.found && !options.loading ? " unavailable" : "");
     pronunciation.textContent = options.pronunciation || "Pronunciation unavailable";
 
 
+    pronunciationBlock.appendChild(label);
     pronunciationBlock.appendChild(pronunciation);
 
     const actions = document.createElement("div");
@@ -1253,18 +1254,15 @@
       return explicit;
     }
     const labels = {
-      custom: "Custom audio",
-      azure: "Recorded audio",
-      recorded: "Recorded audio",
-      generated: "Computer voice",
-      live: "Computer voice",
+      audio: "Audio pronunciation",
+      computer: "Computer voice",
     };
     return labels[String(payload.audioSource || "").toLowerCase()] || "Computer voice";
   }
 
   function sourceKey(payload) {
     const value = String(payload.audioSource || "").toLowerCase();
-    return ["custom", "azure", "recorded", "generated", "live"].includes(value) ? value : "loading";
+    return ["audio", "computer"].includes(value) ? value : "loading";
   }
 
   function updateStatus(text, state) {

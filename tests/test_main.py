@@ -168,7 +168,7 @@ class MainMessageTests(unittest.TestCase):
         script = reviewer.web.scripts[0]
         self.assertIn("window.PronounceIt.show", script)
         self.assertIn('"pronunciation": ' + json.dumps(main._dictionary.lookup("agranulocytosis")["pronunciation"]), script)
-        self.assertIn("ay gran yuh loh sy toh sis", script)
+        self.assertIn('"speechText": "agranulocytosis"', script)
 
     def test_lookup_message_uses_longest_context_phrase(self) -> None:
         reviewer = FakeReviewer()
@@ -315,7 +315,6 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(fake_tts.calls), 1)
         self.assertEqual(fake_tts.calls[0][0], "agranulocytosis")
         self.assertEqual(fake_tts.calls[0][1].term, "agranulocytosis")
-        self.assertEqual(fake_tts.calls[0][1].quality_tier, "generated")
         self.assertIn('"ok": true', reviewer.web.scripts[0])
         self.assertIn('"term": "agranulocytosis"', reviewer.web.scripts[0])
 
@@ -892,21 +891,21 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertTrue(payload["found"])
         self.assertEqual(payload["term"], "Glasgow Coma Scale")
-        self.assertEqual(payload["speechText"], "glas goh koh muh skayl")
-        self.assertEqual(payload["audioSource"], "recorded")
-        self.assertEqual(payload["audioSourceLabel"], "Recorded audio")
+        self.assertEqual(payload["speechText"], "Glasgow Coma Scale")
+        self.assertEqual(payload["audioSource"], "computer")
+        self.assertEqual(payload["audioSourceLabel"], "Computer voice")
         self.assertFalse(payload["alreadySaved"])
 
     def test_lookup_payload_for_unknown_word_is_playable_generated_audio(self) -> None:
         payload = main._lookup_payload("notarealmedicalword")
 
         self.assertFalse(payload["found"])
-        self.assertEqual(payload["audioSource"], "generated")
+        self.assertEqual(payload["audioSource"], "computer")
         self.assertEqual(payload["audioSourceLabel"], "Computer voice")
         self.assertEqual(payload["audioStatus"], "Computer voice ready")
         self.assertTrue(payload["audioAvailable"])
 
-    def test_lookup_payload_does_not_label_missing_bundled_audio_ready(self) -> None:
+    def test_lookup_payload_does_not_label_missing_audio_ready(self) -> None:
         with TemporaryDirectory() as tmp:
             original_root = main._addon_root
             original_config = main._config
@@ -928,11 +927,11 @@ class MainMessageTests(unittest.TestCase):
                 main._addon_root = original_root
                 main._config = original_config
 
-        self.assertEqual(payload["audioSource"], "generated")
+        self.assertEqual(payload["audioSource"], "computer")
         self.assertEqual(payload["audioSourceLabel"], "Computer voice")
-        self.assertNotEqual(payload["audioStatus"], "Recorded audio ready")
+        self.assertNotEqual(payload["audioStatus"], "Audio pronunciation ready")
 
-    def test_lookup_payload_classifies_playable_user_audio_as_custom(self) -> None:
+    def test_lookup_payload_recognizes_playable_custom_audio(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             audio_file = root / "user_files" / "audio" / "example.wav"
@@ -957,9 +956,9 @@ class MainMessageTests(unittest.TestCase):
                 main._addon_root = original_root
                 main._config = original_config
 
-        self.assertEqual(payload["audioSource"], "custom")
-        self.assertEqual(payload["audioSourceLabel"], "Custom audio")
-        self.assertEqual(payload["audioStatus"], "Custom audio ready")
+        self.assertEqual(payload["audioSource"], "audio")
+        self.assertEqual(payload["audioSourceLabel"], "Audio pronunciation")
+        self.assertEqual(payload["audioStatus"], "Audio pronunciation ready")
 
     def test_lookup_payload_classifies_pack_and_system_tts_sources(self) -> None:
         class InstalledStatus:
@@ -984,9 +983,9 @@ class MainMessageTests(unittest.TestCase):
             main._audio_pack = original_pack
             main._config = original_config
 
-        self.assertEqual(pack_payload["audioSource"], "azure")
-        self.assertEqual(pack_payload["audioSourceLabel"], "Recorded audio")
-        self.assertEqual(live_payload["audioSource"], "live")
+        self.assertEqual(pack_payload["audioSource"], "audio")
+        self.assertEqual(pack_payload["audioSourceLabel"], "Audio pronunciation")
+        self.assertEqual(live_payload["audioSource"], "computer")
         self.assertEqual(live_payload["audioSourceLabel"], "Computer voice")
 
     def test_handle_save_includes_reviewer_origin_metadata(self) -> None:
@@ -1053,7 +1052,7 @@ class MainMessageTests(unittest.TestCase):
         original_tts = main._tts
         try:
             main._tts = FakeTts(
-                TtsResult(True, "playing local audio", audio_source="azure")
+                TtsResult(True, "playing local audio", audio_source="audio")
             )
             ok = main._handle_speak(
                 {"text": "kloh zuh peen", "term": "clozapine", "audioFile": "audio/clozapine.aiff"},
@@ -1066,8 +1065,8 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(reviewer.web.scripts), 1)
         self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
         self.assertIn('"ok": true', reviewer.web.scripts[0])
-        self.assertIn('"audioSource": "azure"', reviewer.web.scripts[0])
-        self.assertIn('"audioSourceLabel": "Recorded audio"', reviewer.web.scripts[0])
+        self.assertIn('"audioSource": "audio"', reviewer.web.scripts[0])
+        self.assertIn('"audioSourceLabel": "Audio pronunciation"', reviewer.web.scripts[0])
 
     def test_handle_speak_sends_failure_callback(self) -> None:
         reviewer = FakeReviewer()
@@ -1097,7 +1096,7 @@ class MainMessageTests(unittest.TestCase):
                     "term": "clozapine",
                     "audioBackend": "local_audio_then_tts",
                     "audioFile": "audio/clozapine.aiff",
-                    "audioSource": "azure",
+                    "audioSource": "audio",
                     "ok": False,
                     "reason": "local audio unavailable",
                     "attempts": ["local-audio-file: local audio unavailable"],
@@ -1114,7 +1113,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertIn("FAILED: kloh zuh peen", text)
         self.assertIn("Term: clozapine", text)
         self.assertIn("Playback mode: local_audio_then_tts", text)
-        self.assertIn("Source: Recorded audio", text)
+        self.assertIn("Source: Audio pronunciation", text)
         self.assertIn("Audio file: audio/clozapine.aiff", text)
         self.assertIn("Reason: local audio unavailable", text)
         self.assertIn("local-audio-file: local audio unavailable", text)
@@ -1174,7 +1173,7 @@ class MainMessageTests(unittest.TestCase):
         from unittest.mock import patch
         item = {"term": "test", "pronunciation": "old", "audioFile": "old.mp3", "speechText": "original"}
         with patch.object(main, "_lookup_payload", return_value={"pronunciation": ""}):
-            self.assertEqual(main._current_saved_entry(item), {**item, "pronunciation": "", "textSource": "", "textReviewStatus": ""})
+            self.assertEqual(main._current_saved_entry(item), {**item, "pronunciation": ""})
             custom = {**item, "source": "user-override"}
             self.assertEqual(main._current_saved_entry(custom), custom)
         with patch.object(main, "_lookup_payload", return_value={"source": "user-override", "useTextOverride": True}):
@@ -1207,7 +1206,7 @@ class MainMessageTests(unittest.TestCase):
                 main._dictionary = original_dictionary
 
         self.assertEqual(record["pronunciation"], "LOCAL-KLOH-zuh-peen")
-        self.assertEqual(payload["source"], "user-override")
+        self.assertTrue(payload["custom"])
         self.assertEqual(payload["speechText"], "custom audio kloh zuh peen")
 
 

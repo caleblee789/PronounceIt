@@ -562,8 +562,8 @@ if (messages.some((message) => message.startsWith("pronounceit:audioLookup:"))) 
 sandbox.window.PronounceIt.show({
   term: "bundle",
   pronunciation: "BUN-dul",
-  audioSource: "azure",
-  audioSourceLabel: "Recorded audio",
+  audioSource: "audio",
+  audioSourceLabel: "Audio pronunciation",
   audioAvailable: true,
   request,
   rect: request.rect,
@@ -719,29 +719,29 @@ sandbox.window.PronounceIt.show({
   term: "clozapine",
   pronunciation: "KLOH-zuh-peen",
   found: true,
-  audioSource: "azure",
+  audioSource: "audio",
   audioAvailable: true,
   request: { text: "clozapine", rect: {} },
   rect: {},
 });
 const popup = body.querySelector(".pronounceit-popup");
 const badge = popup && popup.querySelector(".pronounceit-source");
-if (!badge || badge.textContent !== "Recorded audio") {
+if (!badge || badge.textContent !== "Audio pronunciation") {
   throw new Error("Recorded audio was not shown");
 }
 sandbox.window.PronounceIt.spoken({
   ok: true,
-  audioSource: "live",
+  audioSource: "computer",
   audioSourceLabel: "Computer voice",
   term: "clozapine",
 });
-if (badge.textContent !== "Computer voice" || !badge.className.includes("live")) {
+if (badge.textContent !== "Computer voice" || !badge.className.includes("computer")) {
   throw new Error(`Actual fallback source was not shown: ${badge.textContent}`);
 }
 sandbox.window.PronounceIt.show({
   term: "unknown",
   pronunciation: "Unavailable",
-  audioSource: "generated",
+  audioSource: "computer",
   audioAvailable: true,
   request: { text: "unknown", rect: {} },
   rect: {},
@@ -749,17 +749,7 @@ sandbox.window.PronounceIt.show({
 if (body.querySelector(".pronounceit-source").textContent !== "Computer voice") {
   throw new Error("Generated audio did not use the standard text-to-speech label");
 }
-sandbox.window.PronounceIt.show({
-  term: "custom",
-  pronunciation: "KUS-tum",
-  audioSource: "custom",
-  audioAvailable: true,
-  request: { text: "custom", rect: {} },
-  rect: {},
-});
-if (body.querySelector(".pronounceit-source").textContent !== "Custom audio") {
-  throw new Error("Custom audio label was not shown");
-}
+
 """
         )
 
@@ -842,7 +832,7 @@ if (context.contextText.slice(context.contextOffsetStart, context.contextOffsetE
         self.assertIn('[data-state="success"]', css)
         self.assertIn('[data-state="info"]', css)
         self.assertIn('[data-state="error"]', css)
-        self.assertIn(".pronounceit-source.azure", css)
+        self.assertIn(".pronounceit-source.audio", css)
         self.assertIn(".pronounceit-source.loading", css)
         self.assertIn(".pronounceit-theme-light", css)
         self.assertIn(".pronounceit-theme-dark", css)
@@ -863,8 +853,6 @@ sandbox.window.PronounceIt.show({
   term: "clozapine",
   pronunciation: "KLOH-zuh-peen",
   syllables: "clo-za-pine",
-  textSource: "ai-generated",
-  textReviewStatus: "ai-generated",
   audioAvailable: true,
   autoPlay: false,
 });

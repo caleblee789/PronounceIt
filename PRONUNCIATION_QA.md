@@ -1,79 +1,40 @@
-# Pronunciation QA
+# Pronunciation validation
 
-PronounceIt shows one readable pronunciation field. Display text lives in `data/written_pronunciations.json`, independently of the legacy audio corpus. Each text record retains the canonical term, a guide, an internal review status, and provenance. Published references take priority; unresolved terms use generated estimates marked `AI Generated` only in the data. Unknown lookups or damaged text data can still report unavailable text without disabling playback.
+The application uses one term library with audio pronunciations and written pronunciations. Term categories and quality tiers are not part of its runtime model.
 
-The legacy audio corpus continues to include:
+## Runtime data
 
-- `term`: the selected card text to match.
-- `pronunciation`: retained legacy input for audio compatibility; not the bundled display authority.
-- Optional `syllables`: accepted for legacy compatibility; no longer displayed or required.
-- Optional `speechText`: exact audio-generation and TTS-friendly text when the generated audio needs a manual override.
-- Optional `audioFile`: relative path to a bundled or user-provided audio clip.
-- Runtime `qualityTier`: `verified`, `curated`, `generated`, or `fallback`.
-- Optional `sapiPhonemes`: reviewed Azure en-US SAPI phonemes for corrected single-word terms.
-- Optional `sapiSegments`: reviewed `{text, sapi}` segments for corrected multiword terms.
-- Optional `aliases`: common abbreviations, alternate spellings, or plural forms when automatic plural fallback is not enough.
+- `data/audio_pronunciations.json` contains canonical terms, aliases, and stable audio asset IDs.
+- `data/written_pronunciations.json` contains the corresponding written pronunciations in the same canonical order. Its identity checksum binds both terms and aliases.
+- `data/audio-pack-release.json` binds the audio inventory to the exact complete audio-library manifest. The existing v1.3.0 audio is unchanged; its original dictionary checksum is retained as a compatibility identifier.
+- `data/written-pronunciation-sources.json` preserves the references required for attribution. Source selection, conversion, and review evidence live in `quality/pronunciation_sources/` and are not term labels.
 
-## Audio Rule
+Written pronunciation changes never feed speech or cache keys. Computer voice reads the canonical term unless the user supplies an explicit **Text read aloud** override. Custom recordings take precedence over the audio library; an explicit speech override takes precedence over both and requires computer voice to be enabled. Old saved/custom JSON remains readable without rewriting the user's files during an upgrade.
 
-The 155 high-yield checklist terms are bundled locally. The separately downloaded comprehensive pack contains one fluent neural MP3 for every dictionary term.
-
-- Display: `uh-gran-yoo-loh-sy-TOH-sis`
-- Legacy phonetic speech text: `uh gran yoo loh sy toh sis`
-- Fluent fallback input: `agranulocytosis`
-
-The current version 3 audio pack uses Kokoro-82M with phoneme input, the American English `af_heart` voice, speed 0.95, and 24 kHz mono MP3 encoding at 48 kbps. Ten exact pilot clips and the generation method were accepted. Every other recording remains individually unreviewed; reference-backed pronunciation inputs and generated estimates are reported separately.
-
-Audio metadata is independent of the displayed guide. Version 1.3.0 preserves the published v1.2.1 written guides while replacing only audio assets and associated provenance. Raw canonical term spelling remains the default system TTS fallback; space-separated respellings are used only for explicit user overrides. Custom recordings are preferred when referenced by an entry. An explicit user speech override bypasses recordings; a written-only correction leaves normal audio available.
-
-The historical version 2 Azure pipeline uses raw-term SSML and manually reviewed SAPI corrections. Its approval cannot approve a version 3 Kokoro pack. Both manifest versions are supported only when the dictionary checksum matches.
-
-The audit reports any zero-frame AIFF placeholders and the package builder excludes them. An AIFF is shippable only when its header reports at least one frame and its sound-data chunk is non-empty; release-ready checkouts should contain none.
-
-Use explicit `sapiPhonemes` for reviewed synthesis corrections. Existing `speechText` remains supported for compatibility and explicit user overrides but is not the default fallback input.
-
-## Adding Terms
-
-1. Add the term to `data/medical_pronunciations.json`.
-2. Add high-yield terms to `data/high_yield_checklist.json`.
-3. Include aliases for abbreviations such as `GERD`, `TMJ`, or organism shorthand.
-4. If updating from the source lexicon, run `python3 scripts/corpus/import_source_lexicon.py`.
-5. Rebuild the written-guide inventory and matching audio-pack metadata before packaging. The current Kokoro workflow is described in `OVERNIGHT_AUDIO_REBUILD.md`; the Azure scripts are historical tooling and must not overwrite the current release.
-6. Run:
+## Automated checks
 
 ```bash
-python3 scripts/corpus/audit_pronunciations.py
 python3 -m unittest discover -s tests
+python3 scripts/corpus/audit_pronunciations.py
 python3 scripts/release/build_ankiaddon.py
 ```
 
-## Acceptance Criteria
+The runtime audit verifies unique audio asset IDs, canonical term and alias integrity, complete written coverage, and the released audio binding. It reports two counts: audio pronunciations and written pronunciations. A damaged written file is reported while audio lookup remains usable. Packaging requires both complete inventories.
 
-- The audit reports `passed: true`.
-- The bundled dictionary contains at least 590 unique terms.
-- The high-yield checklist contains at least 155 terms and has no missing terms.
-- Every term in `data/medical_pronunciation_lexicon_for_codex.txt` resolves in the runtime dictionary.
-- Every canonical term and alias survives the written-guide rebuild.
-- Every dictionary-backed guide has a documented reference and matches its selected phonetics after conversion; composed guides cover every component.
-- Every generated guide has explicit internal generation provenance, preserved input spelling, a checksummed generation manifest, and a reproducible phonetic conversion. AI-authored respellings retain their separate input file and checksum.
-- Every canonical term has a nonempty written guide in the complete package. Unsupported reference symbols are rejected before trying later sources or generation. Generated output is not evidence that a dictionary attests that pronunciation.
-- No generated/estimated status, separate syllable row, or speech-text row appears in pronunciation results. Advanced custom speech overrides remain editable.
-- Automated completeness and phonetic-conversion checks do not measure linguistic accuracy; retain the actual sample-review inventory and findings separately.
-- The audit separates unavailable text from malformed/missing text data. Invalid written-data files fail packaging while runtime audio remains usable.
-- Source attribution and license notices are included in the add-on.
-- Every high-yield checklist term has validated, playable AIFF or MP3 audio in `audio/`.
-- The comprehensive manifest contains 95,902 collision-free assets across 16 checksum-validated shards.
-- The built archive contains no audio-pack shards, generation credentials, build reports, invalid audio, or private `user_files` data.
-- TTS speech text must be lowercase, hyphen-free, and must not include alternate-pronunciation wording such as `or`.
-- Accepted written variants may differ from audio. The original dictionary, audio files, synthesis inputs, and audio identifiers must remain unchanged during text-only updates.
-- The historical Azure-native method approval is bound to the 1,092 pilot MP3 checksums, SSML hashes, dictionary hash, voice, rate, and output format.
-- The approval covers the synthesis method and pilot quality; it does not claim individual review of all 95,902 clips.
-- Any pilot re-synthesis or SSML change invalidates the method approval automatically.
-- The pack builder refuses release unless the method approval is current and every asset, sidecar, checksum, duration, and identifier validates.
-- Regionally variable pronunciations should prefer common US medical-school usage and can be overridden through `user_files/custom_pronunciations.json`.
+The source exporter, `scripts/corpus/build_library.py`, additionally validates written-source evidence with `scripts/corpus/written_sources.py`: selected source phonetics must reproduce their guides, corrections must retain their references, and generation inputs must match their recorded checksums. It verifies every canonical audio ID against the published manifest before binding the compact inventory. This preserves the full existing download without regenerating recordings.
 
-## Local Corrections
+The deterministic package builder includes required runtime modules, both inventories, and attribution notices. It rejects pronunciation audio, legacy subsets, private user files, caches, scripts, and quality records inside the add-on archive. Every recording is supplied through the one separate library download or the user's custom files.
 
-Use Caleb M. Add-ons Settings > PronounceIt settings > Tools > Add custom pronunciation when a term needs a local correction before the bundled dictionary is updated. Custom entries are stored in `user_files/custom_pronunciations.json` and override bundled entries immediately after saving.
+## Audio generation and historical evidence
 
-Document broadly useful text corrections with their references in `data/written-guide-corrections.json`, then rebuild written guides. The source dictionaries normally take precedence; set `overrideReference` only for a documented source error. AI-authored corrections belong in `data/written-guide-ai-overrides.json` and only fill remaining gaps. Do not modify the legacy audio corpus to change display text.
+The current complete audio library contains 95,902 Kokoro-82M recordings using phoneme input, the American English `af_heart` voice, speed 0.95, and 24 kHz mono MP3 encoding at 48 kbps. The ten exact pilot recordings and generation method were accepted. The other recordings have not been individually listened to. The released library is about 1.03 GiB.
+
+Kokoro preparation and candidate generation cover the complete library. Source provenance, unresolved-input records, pilot acceptance, per-clip checksums, and generation bindings remain developer validation records. They do not create separate term groups. Audio changes require a new matching manifest; published recordings and release evidence must not be overwritten by a written-only update.
+
+The retired subset's original clips and records are preserved under `quality/legacy_bundled_audio/`. Historical releases retain their original manifests and reports. Old version 2 download compatibility remains for older dictionary-based installations, but the obsolete Azure generation and subset-packaging scripts have been retired.
+
+## Acceptance boundaries
+
+Structural validation proves file integrity, coverage, source reproducibility, and compatibility. It does not measure linguistic or clinical correctness. Source-backed entries, generated estimates, and accepted pilot clips remain distinguishable in developer evidence, without appearing as user-facing categories.
+
+Native playback, layout, settings persistence, reviewer behavior, and human acceptance require the separate disposable-profile smoke test in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Anki was not launched during this source review and simplification. No audio was regenerated or publicly released.

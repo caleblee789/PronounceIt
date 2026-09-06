@@ -11,17 +11,19 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.audio.build_audio_pack import DEFAULT_OUTPUT_DIR, verify_pack
+from pronounceit.audio_pack import validate_manifest
+from scripts.audio.kokoro_pack import verify_pack
 
 
 DEFAULT_REPOSITORY = "caleblee789/PronounceIt"
-DEFAULT_TAG = "audio-pack-v2"
 
 
 def release_files(directory: Path) -> list[Path]:
-    expected = {"pack-manifest.json", "SHA256SUMS"} | {
-        f"pronounceit-audio-2-{shard}.zip" for shard in "0123456789abcdef"
-    }
+    manifest = json.loads((directory / "pack-manifest.json").read_text(encoding="utf-8"))
+    shards = [str(shard["file"]) for shard in manifest["shards"]]
+    if len(set(shards)) != 16 or any(Path(name).name != name or not name.endswith(".zip") for name in shards):
+        raise SystemExit("Audio release manifest must name 16 distinct shard files")
+    expected = {"pack-manifest.json", "SHA256SUMS", *shards}
     actual = {path.name for path in directory.iterdir() if path.is_file()}
     if actual != expected:
         raise SystemExit(
@@ -29,8 +31,7 @@ def release_files(directory: Path) -> list[Path]:
             f"missing={sorted(expected - actual)} extra={sorted(actual - expected)}"
         )
     return [directory / "pack-manifest.json", directory / "SHA256SUMS"] + [
-        directory / f"pronounceit-audio-2-{shard}.zip"
-        for shard in "0123456789abcdef"
+        directory / name for name in shards
     ]
 
 
@@ -69,8 +70,8 @@ def publish(
         raise SystemExit(f"Could not confirm that release {tag} is absent: {existing.stderr.strip()}")
 
     notes = (
-        "First public PronounceIt comprehensive audio pack.\n\n"
-        "Contains 95,902 checksum-verified MP3 assets in 16 deterministic shards. "
+        "PronounceIt audio pronunciation library.\n\n"
+        "The complete library is delivered in 16 checksum-verified download files. "
         "Install it from PronounceIt Settings; do not extract these files manually."
     )
     run_checked(
@@ -84,7 +85,7 @@ def publish(
             "--target",
             target,
             "--title",
-            "PronounceIt Audio Pack 2",
+            "PronounceIt Audio Library",
             "--notes",
             notes,
             "--latest=false",
@@ -114,23 +115,26 @@ def publish(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify and publish the audio-pack release.")
-    parser.add_argument("--artifacts", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--repo", default=DEFAULT_REPOSITORY)
-    parser.add_argument("--tag", default=DEFAULT_TAG)
+    parser.add_argument("--tag")
     parser.add_argument("--target", default="main")
     parser.add_argument("--publish", action="store_true")
     args = parser.parse_args()
 
-    summary = verify_pack(output_dir=args.artifacts)
+    manifest = validate_manifest(json.loads((args.artifacts / "pack-manifest.json").read_text(encoding="utf-8")))
+    if manifest["schemaVersion"] != 3:
+        raise SystemExit("Only the current audio library format can be published")
+    verify_pack(args.artifacts, manifest, set(manifest["assets"]))
     files = release_files(args.artifacts)
     output: dict[str, object] = {
-        **summary,
+        "assetCount": manifest["assetCount"],
         "releaseFiles": len(files),
         "releaseBytes": sum(path.stat().st_size for path in files),
         "publishRequested": args.publish,
     }
     if args.publish:
-        output["release"] = publish(files, args.repo, args.tag, args.target)
+        output["release"] = publish(files, args.repo, args.tag or "audio-pack-v" + manifest["packVersion"], args.target)
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0
 

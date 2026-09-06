@@ -1,199 +1,64 @@
+"""Integrity checks for the complete audio and written pronunciation library."""
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .audio import aiff_has_audio, audio_file_has_content
-from .dictionary import DATA_FILE, PronunciationDictionary, normalize_term
-
-
-CHECKLIST_FILE = Path(__file__).resolve().parent.parent / "data" / "high_yield_checklist.json"
-SOURCE_LEXICON_FILE = (
-    Path(__file__).resolve().parent.parent / "data" / "medical_pronunciation_lexicon_for_codex.txt"
-)
+from .audio_pack import audio_asset_id, file_sha256
+from .dictionary import DATA_FILE
+from .written_guides import canonical_terms_sha256, load_written_guides
 
 
 @dataclass(frozen=True)
 class PronunciationAudit:
     dictionary_terms: int
-    checklist_terms: int
-    missing_terms: list[str]
-    missing_pronunciation: list[str]
-    missing_syllables: list[str]
-    missing_speech_text: list[str]
-    missing_audio_files: list[str]
-    excluded_audio_placeholders: int
-    excluded_audio_placeholder_examples: list[str]
-    unsafe_speech_text: list[str]
-    missing_stress_marker: list[str]
-    source_lexicon_terms: int
-    missing_source_lexicon_terms: list[str]
-    source_lexicon_pronunciation_mismatches: list[str]
-    quality_tiers: dict[str, int]
-    unavailable_written_pronunciation: list[str] = field(default_factory=list)
-    written_quality_counts: dict[str, int] = field(default_factory=dict)
-    written_data_errors: list[str] = field(default_factory=list)
+    audio_terms: int
+    written_terms: int
+    errors: list[str]
 
     @property
     def passed(self) -> bool:
-        return not any(
-            [
-                self.missing_terms,
-                self.missing_pronunciation,
-                self.missing_speech_text,
-                self.missing_audio_files,
-                self.unsafe_speech_text,
-                self.missing_stress_marker,
-                self.missing_source_lexicon_terms,
-                self.written_data_errors,
-            ]
-        )
+        return not self.errors
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "passed": self.passed,
-            "dictionaryTerms": self.dictionary_terms,
-            "checklistTerms": self.checklist_terms,
-            "missingTerms": self.missing_terms,
-            "missingPronunciation": self.missing_pronunciation,
-            "missingSyllables": self.missing_syllables,
-            "missingSpeechText": self.missing_speech_text,
-            "missingAudioFiles": self.missing_audio_files,
-            "excludedAudioPlaceholders": self.excluded_audio_placeholders,
-            "excludedAudioPlaceholderExamples": self.excluded_audio_placeholder_examples,
-            "unsafeSpeechText": self.unsafe_speech_text,
-            "missingStressMarker": self.missing_stress_marker,
-            "sourceLexiconTerms": self.source_lexicon_terms,
-            "missingSourceLexiconTerms": self.missing_source_lexicon_terms,
-            "sourceLexiconPronunciationMismatches": self.source_lexicon_pronunciation_mismatches,
-            "qualityTiers": self.quality_tiers,
-            "unavailableWrittenPronunciation": self.unavailable_written_pronunciation,
-            "writtenQualityCounts": self.written_quality_counts,
-            "writtenDataErrors": self.written_data_errors,
-        }
+        return {"passed": self.passed, "terms": self.dictionary_terms,
+                "audioPronunciations": self.audio_terms,
+                "writtenPronunciations": self.written_terms, "errors": self.errors}
 
 
-def load_checklist(path: Path = CHECKLIST_FILE) -> list[str]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    terms: list[str] = []
-    for category in raw.get("categories", []):
-        for term in category.get("terms", []):
-            if isinstance(term, str) and term.strip():
-                terms.append(term.strip())
-    return terms
-
-
-def load_source_lexicon(path: Path = SOURCE_LEXICON_FILE) -> list[tuple[str, str]]:
-    entries: list[tuple[str, str]] = []
-    if not path.exists():
-        return entries
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if "|" not in line or line.lower().startswith("term |"):
-            continue
-        term, pronunciation = [part.strip() for part in line.split("|", 1)]
-        if term and pronunciation:
-            entries.append((term, pronunciation))
-    return entries
-
-
-def audit_pronunciations(
-    data_file: Path = DATA_FILE,
-    checklist_file: Path = CHECKLIST_FILE,
-    source_lexicon_file: Path = SOURCE_LEXICON_FILE,
-    audio_root: Path | None = None,
-) -> PronunciationAudit:
-    dictionary = PronunciationDictionary.bundled(data_file=data_file)
-    root = audio_root or Path(__file__).resolve().parent.parent
-    checklist = load_checklist(checklist_file)
-    source_lexicon = load_source_lexicon(source_lexicon_file)
-    raw = json.loads(data_file.read_text(encoding="utf-8"))
-    entries = raw.get("terms", [])
-
-    missing_terms = [term for term in checklist if not dictionary.lookup(term)["found"]]
-    missing_source_lexicon_terms = [
-        term for term, _pronunciation in source_lexicon if not dictionary.lookup(term)["found"]
-    ]
-    source_lexicon_pronunciation_mismatches: list[str] = []
-    for term, pronunciation in source_lexicon:
-        payload = dictionary.lookup(term)
-        if payload["found"] and "textReviewStatus" not in payload and payload.get("pronunciation") != pronunciation:
-            source_lexicon_pronunciation_mismatches.append(term)
-    missing_pronunciation: list[str] = []
-    missing_syllables: list[str] = []
-    missing_speech_text: list[str] = []
-    missing_audio_files: list[str] = []
-    invalid_audio_files = sorted(
-        str(path.relative_to(root))
-        for path in (root / "audio").glob("*.aiff")
-        if not aiff_has_audio(path)
-    ) if (root / "audio").exists() else []
-    unsafe_speech_text: list[str] = []
-    missing_stress_marker: list[str] = []
-    quality_tiers: dict[str, int] = {}
-    unavailable_written_pronunciation: list[str] = []
-    written_quality_counts: dict[str, int] = {}
-    written_data_errors = list(dictionary.load_issues)
-    written_file = data_file.with_name("written_pronunciations.json")
-    if written_file.exists():
-        from .written_guides import audit_written_sources
-        try:
-            audit_written_sources(written_file, entries, data_file.with_name("written-guide-corrections.json"))
-        except (OSError, ValueError, KeyError, TypeError) as exc:
-            written_data_errors.append(str(exc))
-
-    for item in entries:
-        term = item.get("term", "")
-        payload = dictionary.lookup(term)
-        quality_tier = str(payload.get("qualityTier") or "fallback")
-        quality_tiers[quality_tier] = quality_tiers.get(quality_tier, 0) + 1
-        text_status = str(payload.get("textReviewStatus") or "legacy")
-        written_quality_counts[text_status] = written_quality_counts.get(text_status, 0) + 1
-        if text_status == "unavailable":
-            unavailable_written_pronunciation.append(term)
-        elif not payload.get("pronunciation"):
-            missing_pronunciation.append(term)
-        if not payload.get("speechText"):
-            missing_speech_text.append(term)
-        speech_text = str(payload.get("speechText", ""))
-        if (
-            "-" in speech_text
-            or any(character.isupper() for character in speech_text)
-            or (
-                " or " in str(payload.get("pronunciation", "")).lower()
-                and " or " not in f" {normalize_term(term)} "
-                and " or " in f" {speech_text} "
-            )
-        ):
-            unsafe_speech_text.append(term)
-        if text_status != "unavailable" and not any(character.isupper() for character in str(payload.get("pronunciation", ""))):
-            missing_stress_marker.append(term)
-
-    for term in checklist:
-        payload = dictionary.lookup(term)
-        audio_file = str(payload.get("audioFile", ""))
-        audio_path = root / audio_file
-        if not audio_file or not audio_file_has_content(audio_path):
-            missing_audio_files.append(term)
-
-    return PronunciationAudit(
-        dictionary_terms=dictionary.count(),
-        checklist_terms=len(checklist),
-        missing_terms=missing_terms,
-        missing_pronunciation=missing_pronunciation,
-        missing_syllables=missing_syllables,
-        missing_speech_text=missing_speech_text,
-        missing_audio_files=missing_audio_files,
-        excluded_audio_placeholders=len(invalid_audio_files),
-        excluded_audio_placeholder_examples=invalid_audio_files[:10],
-        unsafe_speech_text=unsafe_speech_text,
-        missing_stress_marker=missing_stress_marker,
-        source_lexicon_terms=len(source_lexicon),
-        missing_source_lexicon_terms=missing_source_lexicon_terms,
-        source_lexicon_pronunciation_mismatches=source_lexicon_pronunciation_mismatches,
-        quality_tiers=quality_tiers,
-        unavailable_written_pronunciation=unavailable_written_pronunciation,
-        written_quality_counts=written_quality_counts,
-        written_data_errors=written_data_errors,
-    )
+def audit_pronunciations(data_file: Path = DATA_FILE) -> PronunciationAudit:
+    audio_terms = written_terms = count = 0
+    errors: list[str] = []
+    try:
+        raw = json.loads(data_file.read_text(encoding="utf-8"))
+        items = raw["terms"]
+        if raw.get("schemaVersion") != 1 or not isinstance(items, list) or not items:
+            raise ValueError("invalid audio-pronunciation inventory")
+        count = len(items)
+        identifiers = set()
+        for item in items:
+            if (not isinstance(item.get("term"), str) or not item["term"].strip()
+                    or item.get("assetId") != audio_asset_id(item["term"])
+                    or item["assetId"] in identifiers):
+                raise ValueError("invalid or duplicate audio term")
+            aliases = item.get("aliases", [])
+            if not isinstance(aliases, list) or any(not isinstance(a, str) or not a.strip() for a in aliases):
+                raise ValueError("invalid pronunciation alias")
+            identifiers.add(item["assetId"])
+        if raw.get("canonicalTermsSha256") != canonical_terms_sha256(items):
+            raise ValueError("audio term or alias inventory changed")
+        audio_terms = len(identifiers)
+        guides = load_written_guides(data_file.with_name("written_pronunciations.json"), items)
+        written_terms = sum(bool(record["pronunciation"].strip()) for record in guides.values())
+        if written_terms != count:
+            errors.append("The written-pronunciation inventory is incomplete.")
+        release = json.loads(data_file.with_name("audio-pack-release.json").read_text(encoding="utf-8"))
+        if (release.get("schemaVersion") != 3 or release.get("audioLibrarySha256") != file_sha256(data_file)
+                or any(len(str(release.get(key, ""))) != 64 for key in (
+                    "dictionarySha256", "packManifestSha256", "packManifestContentSha256"))):
+            errors.append("The audio inventory does not match its library download.")
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        errors.append(str(exc))
+    return PronunciationAudit(count, audio_terms, written_terms, errors)

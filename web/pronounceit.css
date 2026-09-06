@@ -84,7 +84,7 @@
 .pronounceit-details { color: var(--pronounceit-muted); font-size: 12px; }
 .pronounceit-details summary { cursor: pointer; width: fit-content; }
 .pronounceit-source { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--pronounceit-muted); }
-.pronounceit-source.azure, .pronounceit-source.loading { color: var(--pronounceit-muted); }
+.pronounceit-source.audio, .pronounceit-source.loading { color: var(--pronounceit-muted); }
 .pronounceit-status { font-size: 12px; line-height: 1.45; margin: 0 16px 12px; color: var(--pronounceit-status); }
 .pronounceit-status[data-empty="true"] { display: none; }
 .pronounceit-notice { max-width: min(340px, calc(100vw - 20px)); padding: 10px 12px; pointer-events: none; }

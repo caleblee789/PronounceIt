@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pronounceit.written_guides import canonical_terms_sha256, load_written_guides
-from pronounceit.written_phonetics import from_arpabet, from_ipa, from_moby, render, render_respelling
+from scripts.corpus.written_sources import canonical_terms_sha256, load_written_guides
+from scripts.corpus.written_phonetics import from_arpabet, from_ipa, from_moby, render, render_respelling
 
 MEDICAL = ("medicine", "medical", "anatom", "patholog", "pharmacol", "physiol", "surgery")
 EXCLUDED = ("obsolete", "archaic", "nonstandard", "non-standard", "mispronunciation")
@@ -245,12 +245,12 @@ def build(data: Path, sources: Path, corrections_path: Path, output: Path, repor
               "sourceLock": {"files": source_files, "wiktionaryDumpDate": lock["wiktionaryDumpDate"],
                              "wiktextractExtractionDate": lock["wiktextractExtractionDate"],
                              "wiktextractRevision": lock["wiktextractRevision"], "cmudictRevision": lock["cmudictRevision"]},
-              "correctionsSha256": sha(corrections_path), "converterSha256": sha(ROOT / "pronounceit/written_phonetics.py"),
+              "correctionsSha256": sha(corrections_path), "converterSha256": sha(ROOT / "scripts/corpus/written_phonetics.py"),
               "builderSha256": sha(Path(__file__)), "supplementalSourceLock": supplemental_lock,
               "generationLock": generator.lock if generator else None, "terms": records}
     write(output, result)
     load_written_guides(output, items)
-    from pronounceit.written_guides import audit_written_sources
+    from scripts.corpus.written_sources import audit_written_sources
     audit_written_sources(output, items, corrections_path)
     summary = {"termCount": len(records), "counts": dict(counts),
                "available": len(records) - len(unresolved), "unavailable": len(unresolved),
@@ -266,10 +266,10 @@ def build(data: Path, sources: Path, corrections_path: Path, output: Path, repor
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", type=Path, default=ROOT / "data/medical_pronunciations.json")
+    parser.add_argument("--data", type=Path, default=ROOT / "data/audio_pronunciations.json")
     parser.add_argument("--sources", type=Path, default=ROOT / "build/kokoro-source-snapshots")
     parser.add_argument("--corrections", type=Path, default=ROOT / "data/written-guide-corrections.json")
-    parser.add_argument("--output", type=Path, default=ROOT / "data/written_pronunciations.json")
+    parser.add_argument("--output", type=Path, default=ROOT / "quality/pronunciation_sources/written.json")
     parser.add_argument("--report", type=Path, default=ROOT / "build/written-guides/coverage.json")
     parser.add_argument("--index", type=Path, default=ROOT / "build/written-guides/wiktionary-index.json")
     parser.add_argument("--supplemental", type=Path, default=ROOT / "build/written-guide-sources")

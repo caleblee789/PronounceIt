@@ -9,7 +9,7 @@ from scripts.corpus.kokoro_sources import arpabet_to_kokoro, ipa_to_kokoro, word
 
 class PhoneticsTests(unittest.TestCase):
     def test_written_conversion_preserves_reference_sounds_and_rejects_unknowns(self) -> None:
-        from pronounceit.written_phonetics import from_arpabet, from_ipa, from_moby, render, render_respelling
+        from scripts.corpus.written_phonetics import from_arpabet, from_ipa, from_moby, render, render_respelling
         for words in (from_arpabet("T EH1 S T"), from_ipa("/ˈtɛst/"), from_moby("'t/E/st")):
             guide = render(words)
             self.assertEqual(guide["pronunciation"], "TEHST")

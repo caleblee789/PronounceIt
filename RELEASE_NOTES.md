@@ -1,10 +1,13 @@
 # Unreleased
 
-This development update retains the released v1.3.0 recordings and matching pack while integrating the written-guide overlay and three-tab settings interface.
+This development update simplifies PronounceIt to audio pronunciations and written pronunciations for all 95,902 terms. The complete audio library remains one separate download, using the existing v1.3.0 audio unchanged.
 
-- Keeps one written guide per term, with source attribution and internal generation provenance separate from audio inputs.
+- Removes high-yield groups, term quality tiers, and the 155-clip bundled subset from the runtime and package.
+- Stores compact audio and written inventories; preserves attribution and source-review evidence separately.
+- Retains compatibility with already downloaded v1.3.0 audio through an exact manifest and inventory binding.
+- Applies canonical custom corrections to their aliases.
 - Makes search playback explicit and keeps saved words, custom corrections, and long quick-card results usable in the revised interface.
-- Honors recordings-only playback and explicit custom speech corrections, including saved corrections.
+- Honors audio-only playback and explicit custom speech corrections, including saved corrections.
 - Refreshes computer-speech caches when text, voice, or speed changes; restores default Qt voice and speed correctly.
 - Recovers interrupted and corrupt pack downloads, preserves cancellation, and removes partial packs when requested.
 - Reports settings write failures instead of claiming success and permits enabling reviewer integration without a webview reload.

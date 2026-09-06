@@ -5,5 +5,7 @@
   "addonVersion": "1.3.0",
   "dictionarySha256": "15a6ed1890c2fde3b4adc3e7910b400313b6bfcc94d68e1d1f4de4831a87fbba",
   "packManifestSha256": "cca975a5008a6e694c03d3ff3caa6f03bab7ee4243d9b5ac000a53d30b14456f",
-  "packBytes": 1107753744
+  "packBytes": 1107753744,
+  "audioLibrarySha256": "3f8aa141f917800b742d4c9cc7f2123795bc0e98ff7668ae88990cf899367c33",
+  "packManifestContentSha256": "e1612ab3579b4c5dcbe1d877f341f85b4a964e51dbd99c9b72ca098a9695b382"
 }

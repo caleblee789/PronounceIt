@@ -26,9 +26,11 @@ from scripts.corpus.phoneme_lexicon import validate_model_input
 WORK = ROOT / "build/kokoro-rebuild"
 RUN = WORK / "run-2026-09-05"
 ENGINE_FILES = [Path(__file__), ROOT / "scripts/audio/kokoro_pack.py", ROOT / "scripts/corpus/kokoro_sources.py",
-                ROOT / "scripts/release/build_ankiaddon.py", ROOT / "Start Overnight Audio Rebuild.command"]
-STAGE_INPUTS = [ROOT / name for name in ("pronounceit", "web", "data/high_yield_checklist.json",
-    "data/medical_pronunciation_lexicon_for_codex.txt", "manifest.json", "config.json", "__init__.py",
+                ROOT / "scripts/release/build_ankiaddon.py", ROOT / "scripts/corpus/build_library.py",
+                ROOT / "Start Overnight Audio Rebuild.command"]
+STAGE_INPUTS = [ROOT / name for name in ("pronounceit", "web", "data/audio_pronunciations.json", "data/written_pronunciations.json", "data/written-pronunciation-sources.json",
+    "data/audio-pack-release.json", "data/written-guide-attribution.md", "pronunciation_licenses",
+    "manifest.json", "config.json", "__init__.py",
     "config.md", "LICENSE", "README.md", "PRONUNCIATION_QA.md", "quality/kokoro_rebuild",
     "user_files/README.txt", "user_files/custom_pronunciations.sample.json")]
 
@@ -171,7 +173,7 @@ def pilot_parity(engine: ApprovedEngine, pilot: dict) -> dict:
 
 def operational_preflight(engine: ApprovedEngine, pilot: dict, prepared: dict, records: list[dict]) -> dict:
     """A bounded trial of difficult lengths, resume, packaging, and pack loading."""
-    from scripts.audio.kokoro_pack import candidate_dictionary, stage_addon, write_pack
+    from scripts.audio.kokoro_pack import candidate_library, stage_addon, write_pack
     from pronounceit.audio_pack import AudioPackManager
     identifiers = {entry["assetId"] for entry in pilot["entries"]}
     by_length = sorted(records, key=lambda r: len(r["phonemes"]))
@@ -204,11 +206,12 @@ def operational_preflight(engine: ApprovedEngine, pilot: dict, prepared: dict, r
     method = pilot["inputBinding"]["method"]
     generation = {"provider": "kokoro-local", "model": method["modelRepo"], "modelRevision": method["modelRevision"],
                   "voice": method["voice"], "speed": method["speed"], "bindingSha256": binding}
-    terms = {r["term"] for r in selected}
-    dictionary = candidate_dictionary(original, selected, reports, terms, generation)
-    archive = stage_addon(directory / "addon", dictionary, directory / "audio", terms, selected)
-    manifest = write_pack(directory / "pack", directory / "addon/data/medical_pronunciations.json",
+    dictionary = candidate_library(original, selected)
+    library_path = directory / "audio_pronunciations.json"
+    atomic_json(library_path, dictionary)
+    manifest = write_pack(directory / "pack", library_path,
                           directory / "audio", selected, reports, generation, prepared, pilot)
+    archive = stage_addon(directory / "addon", dictionary, directory / "pack/pack-manifest.json")
     manager = AudioPackManager(directory / "addon", manifest_url=(directory / "pack/pack-manifest.json").as_uri())
     if not manager.download().installed:
         raise ValueError("Preflight pack could not be installed")

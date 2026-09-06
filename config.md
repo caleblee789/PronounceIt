@@ -18,7 +18,7 @@ The settings dialog has Review, Audio, and Tools tabs. The bundled `config.json`
 
 - `theme`: `light` or `dark`. On first initialization, PronounceIt chooses one from Anki’s current appearance and then keeps the explicit selection. Legacy `clinical_light`, `slate`, `high_contrast`, and `system` values are migrated once.
 
-## Offline pronunciation pack
+## Audio library
 
 - The Audio tab shows pack status and only the actions relevant to its current state: Download/Update, Pause/Resume, Cancel download, Check files, and Remove.
 - `audio_pack_prompt_seen`: internal one-time onboarding state. Reset to defaults does not clear it.
@@ -26,7 +26,7 @@ The settings dialog has Review, Audio, and Tools tabs. The bundled `config.json`
 
 ## Audio and review behavior
 
-- `audio_backend`: playback mode. The default is `local_audio_then_tts`, which uses Custom audio first, then Recorded audio, followed by Computer voice when needed. Recorded audio covers bundled and downloaded recordings.
+- `audio_backend`: playback mode. The default is `local_audio_then_tts`, which uses custom recordings first, then the downloaded audio library, followed by computer voice when needed. Written pronunciations remain available independently of audio.
   - `local_audio_then_tts`: use local audio, then system voice if needed.
   - `local_audio`: use recordings only; never generate computer speech.
   - `system_tts`: use system voice only.

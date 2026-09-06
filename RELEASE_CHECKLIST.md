@@ -12,11 +12,11 @@ PYTHONPYCACHEPREFIX=/tmp/pronounceit_pycache python3 -m compileall -q __init__.p
 python3 scripts/release/build_ankiaddon.py
 ```
 
-- Verify 95,902 canonical terms, all aliases, 155 high-yield terms, and complete written-guide coverage.
-- Keep the released dictionary, `data/audio-pack-release.json`, and bundled recordings consistent. Display-only updates must not change the audio dictionary checksum.
+- Verify 95,902 audio pronunciations, 95,902 written pronunciations, and all canonical terms and aliases.
+- Verify the compact audio inventory and exact complete manifest against `data/audio-pack-release.json`. Written-only updates must preserve the audio binding. Confirm an already downloaded v1.3.0 library still resolves audio.
 - Validate referenced written-guide conversions, generated-guide provenance, and the checked-in corrections. Passing an audit does not establish linguistic accuracy.
-- Require all Python/UI/web dependencies, written-guide data, audio provenance, and both sets of source attribution and license notices in the archive.
-- Verify the archive contains exactly the 155 expected playable bundled recordings and excludes private user files, backups, caches, credentials, scripts, and build reports.
+- Require all runtime dependencies, the two pronunciation inventories, per-term source references, and both sets of attribution and license notices in the archive.
+- Verify the archive contains no pronunciation audio or old subset data and excludes private user files, backups, caches, credentials, scripts, and quality records.
 - Build a second archive with `--output` and confirm the package bytes match when source files are unchanged.
 - Record the tested commit and candidate checksum. Preserve earlier packages and evidence.
 
@@ -31,7 +31,7 @@ Run only when authorized. Use a fresh disposable Anki base/profile, disable sync
 5. Open all three settings tabs and owned dialogs in Light and Dark, at normal and compact sizes. Check keyboard navigation, scrolling, wrapping, and focus. Capture native acceptance screenshots.
 6. Confirm Search plays only after Play. Save a word, filter the saved list, play it, open its original card in Browse, and remove it.
 7. Add a written-only custom correction and confirm normal recordings still play. Add explicit text read aloud and confirm it overrides recordings, survives saving, and changes when edited. Clear it to restore normal audio.
-8. Confirm Recordings only never invokes computer speech, including modifier playback and saved words. Test computer-only and mixed modes; change and reset voice, speed, and volume where supported.
+8. Confirm Audio only never invokes computer speech, including modifier playback and saved words. Test computer-only and mixed modes; change and reset voice, speed, and volume where supported.
 9. Save and cancel settings drafts. Test a save failure, then retry. Disable and re-enable pronunciation while reviewing.
 10. Download the matching pack, close/reopen Settings, pause, resume, and cancel. Restart and resume partial files. Test corrupt downloads, Check files, low-space errors, and Remove after both completed and cancelled downloads.
 11. Confirm the full pack resolves uncached terms, reports the actual playback source, and respects the extraction-cache limit. Verify custom recordings and system-voice fallback independently.
@@ -43,7 +43,7 @@ A Range-capable local server can exercise interruption and corruption before tes
 
 - Obtain native acceptance for the exact release candidate before a new public release.
 - Retain immutable existing release tags and assets. Do not overwrite v1.3.0 or its matching audio pack.
-- A source-only change can continue using the existing version 3 pack when the audio dictionary checksum is unchanged.
+- A source-only change can continue using the existing version 3 library when the audio inventory and exact manifest remain bound by the release metadata.
 - Audio changes require their own pilot approval, provenance, full decoding/checksum validation, matching dictionary and pack metadata, and explicit publication authorization. Historical Azure approval does not approve Kokoro audio.
 - Publish a new immutable pack only when needed, verify anonymous downloads, then tag the approved add-on version. A version tag triggers `.github/workflows/release-addon.yml`.
 - AnkiWeb publication requires a separate request. A merge, passing CI, or a valid archive does not establish native or human acceptance.

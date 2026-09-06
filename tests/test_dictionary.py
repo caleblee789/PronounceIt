@@ -5,31 +5,14 @@ from tempfile import TemporaryDirectory
 
 from pronounceit.dictionary import (
     PronunciationDictionary,
-    audio_slug,
-    default_audio_file,
     display_term,
     is_plausible_selection,
     lookup_variants,
     normalize_term,
-    pronunciation_to_speech_text,
 )
 
 
 class DictionaryTests(unittest.TestCase):
-    def test_import_keeps_approved_corrections_and_unknown_audio_metadata(self) -> None:
-        from scripts.corpus.import_source_lexicon import merge_lexicon
-        with TemporaryDirectory() as tmp:
-            data, lexicon = Path(tmp) / "data.json", Path(tmp) / "source.txt"
-            protected = {"term": "test", "pronunciation": "accepted", "syllables": "accepted",
-                         "aliases": ["alias"], "audioReviewStatus": "accepted", "audioFile": "test.mp3",
-                         "futureMetadata": {"enabled": False}, "sapiPhonemes": "t eh 1 s t"}
-            data.write_text(json.dumps({"terms": [protected, {"term": "another", "pronunciation": "old", "syllables": "old"}]}))
-            lexicon.write_text("alias | stale\nanother | NEW\n")
-            merge_lexicon(data, lexicon)
-            actual = json.loads(data.read_text())["terms"]
-            self.assertEqual(actual[0], protected)
-            self.assertEqual(actual[1]["syllables"], "new")
-
     def make_dictionary(self) -> PronunciationDictionary:
         entries = {}
         items = [
@@ -71,7 +54,7 @@ class DictionaryTests(unittest.TestCase):
                 "syllables": "wolff par-kin-son white",
             },
         ]
-        PronunciationDictionary._merge_entries(entries, items, "test")
+        PronunciationDictionary._merge_entries(entries, items, False)
         return PronunciationDictionary(entries)
 
     def test_normalize_term_trims_card_punctuation(self) -> None:
@@ -225,12 +208,12 @@ class DictionaryTests(unittest.TestCase):
 
     def test_pronunciation_entries_have_required_fields(self) -> None:
         dictionary = PronunciationDictionary.bundled()
-        data_path = Path(__file__).resolve().parent.parent / "data" / "medical_pronunciations.json"
+        data_path = Path(__file__).resolve().parent.parent / "data" / "audio_pronunciations.json"
         self.assertTrue(data_path.exists())
         for term in ["myocardial infarction", "acetaminophen", "meningococcemia"]:
             payload = dictionary.lookup(term)
             self.assertTrue(payload["term"])
-            self.assertEqual(bool(payload["pronunciation"]), payload["textReviewStatus"] != "unavailable")
+            self.assertTrue(payload["pronunciation"])
             self.assertTrue(payload["synthesisText"])
             self.assertTrue(payload["found"])
 
@@ -242,15 +225,13 @@ class DictionaryTests(unittest.TestCase):
             data_file.write_text(json.dumps({"terms": [item]}))
             original = PronunciationDictionary.bundled(data_file).lookup("alias")
             written_file = data_file.with_name("written_pronunciations.json")
-            for guide, status in (("TEHST", "reference-backed"), ("TEHST", "ai-generated"), ("", "unavailable")):
-                written_file.write_text(json.dumps({"schemaVersion": 2,
+            for guide in ("TEHST", "", "NEW TEHST"):
+                written_file.write_text(json.dumps({"schemaVersion": 3,
                     "canonicalTermsSha256": canonical_terms_sha256([item]), "terms": [
-                        {"term": "test", "pronunciation": guide, "reviewStatus": status,
-                         "provenance": {"kind": status, "label": "AI Generated", "method": "test-fixture",
-                                        "references": ["https://en.wiktionary.org/wiki/test"] if status == "reference-backed" else []}}]}))
+                        {"term": "test", "pronunciation": guide}]}))
                 payload = PronunciationDictionary.bundled(data_file).lookup("alias")
                 self.assertEqual(payload["pronunciation"], guide)
-                self.assertEqual({k: v for k, v in payload.items() if k not in {"pronunciation", "syllables", "textReviewStatus", "textSource"}},
+                self.assertEqual({k: v for k, v in payload.items() if k not in {"pronunciation", "syllables"}},
                                  {k: v for k, v in original.items() if k not in {"pronunciation", "syllables"}})
             written_file.write_text("broken JSON")
             dictionary = PronunciationDictionary.bundled(data_file)
@@ -266,7 +247,7 @@ class DictionaryTests(unittest.TestCase):
                     {
                         "terms": [
                             {
-                                "term": "clozapine",
+                                "term": "Glasgow Coma Scale",
                                 "pronunciation": "LOCAL-KLOH-zuh-peen",
                                 "syllables": "clo-za-pine",
                             }
@@ -276,12 +257,15 @@ class DictionaryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             dictionary = PronunciationDictionary.bundled(user_file=user_file)
-            payload = dictionary.lookup("clozapine")
+            payload = dictionary.lookup("Glasgow Coma Scale")
             self.assertEqual(payload["pronunciation"], "LOCAL-KLOH-zuh-peen")
-            self.assertEqual(payload["source"], "user-override")
-            self.assertEqual(payload["speechText"], "local kloh zuh peen")
+            self.assertTrue(payload["custom"])
+            self.assertEqual(payload["speechText"], "Glasgow Coma Scale")
             self.assertFalse(payload["useTextOverride"])
-            self.assertEqual(payload["synthesisText"], "clozapine")
+            self.assertEqual(payload["synthesisText"], "Glasgow Coma Scale")
+            alias = dictionary.lookup("GCS")
+            self.assertEqual(alias["pronunciation"], payload["pronunciation"])
+            self.assertTrue(alias["custom"])
 
     def test_user_dictionary_can_override_speech_text(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -343,40 +327,16 @@ class DictionaryTests(unittest.TestCase):
             self.assertTrue(dictionary.lookup("agranulocytosis")["found"])
             self.assertEqual(len(dictionary.load_issues), 1)
 
-    def test_sol_entry_uses_phonetic_guide_and_bundled_audio(self) -> None:
+    def test_library_entries_use_the_same_playback_contract(self) -> None:
         dictionary = PronunciationDictionary.bundled()
-        payload = dictionary.lookup("agranulocytosis")
-        self.assertEqual(payload["speechText"], "ay gran yuh loh sy toh sis")
-        self.assertNotEqual(payload["speechText"], "agranulocytosis")
-        self.assertEqual(payload["synthesisText"], "agranulocytosis")
-        self.assertEqual(payload["qualityTier"], "generated")
-        self.assertEqual(payload["audioFile"], "audio/agranulocytosis.mp3")
+        for term in ("agranulocytosis", "aardwolf"):
+            payload = dictionary.lookup(term)
+            self.assertEqual(payload["speechText"], term)
+            self.assertEqual(payload["synthesisText"], term)
+            self.assertEqual(payload["audioFile"], "")
+            self.assertTrue(payload["pronunciation"])
 
-    def test_generated_entries_disclose_generated_quality(self) -> None:
-        payload = PronunciationDictionary.bundled().lookup("aardwolf")
-
-        self.assertEqual(payload["qualityTier"], "generated")
-        self.assertEqual(payload["synthesisText"], "aardwolf")
-
-    def test_reviewed_multiword_sapi_segments_are_preserved(self) -> None:
-        with TemporaryDirectory() as tmp:
-            data_file = Path(tmp) / "dictionary.json"
-            data_file.write_text(
-                '{"terms":[{"term":"test phrase","pronunciation":"TEST FRAYZ",'
-                '"syllables":"test phrase","sapiSegments":['
-                '{"text":"test","sapi":"t eh 1 s t"},'
-                '{"text":"phrase","sapi":"f r ey 1 z"}]}]}',
-                encoding="utf-8",
-            )
-            payload = PronunciationDictionary.bundled(data_file=data_file).lookup("test phrase")
-            self.assertEqual(len(payload["sapiSegments"]), 2)
-            self.assertEqual(payload["sapiSegments"][1]["text"], "phrase")
-
-    def test_default_audio_file_slugs_medical_terms(self) -> None:
-        self.assertEqual(audio_slug("Wolff-Parkinson-White"), "wolff_parkinson_white")
-        self.assertEqual(default_audio_file("piperacillin-tazobactam"), "")
-
-    def test_high_yield_medical_anchors_are_present(self) -> None:
+    def test_medical_terms_and_aliases_are_present(self) -> None:
         dictionary = PronunciationDictionary.bundled()
         expected = [
             "acetazolamide",
@@ -417,16 +377,10 @@ class DictionaryTests(unittest.TestCase):
         missing = [term for term in expected if not dictionary.lookup(term)["found"]]
         self.assertEqual(missing, [])
 
-    def test_phonetic_text_is_normalized_for_tts(self) -> None:
-        self.assertEqual(
-            pronunciation_to_speech_text("ghee-YAN bah-RAY SIN-drohm"),
-            "ghee yan bah ray sin drohm",
-        )
-
-    def test_all_bundled_entries_have_visible_stress_marker(self) -> None:
+    def test_written_pronunciations_have_visible_stress_marker(self) -> None:
         import json
 
-        data_path = Path(__file__).resolve().parent.parent / "data" / "medical_pronunciations.json"
+        data_path = Path(__file__).resolve().parent.parent / "data" / "written_pronunciations.json"
         data = json.loads(data_path.read_text(encoding="utf-8"))
         missing_stress = [
             item["term"]
@@ -435,17 +389,17 @@ class DictionaryTests(unittest.TestCase):
         ]
         self.assertEqual(missing_stress, [])
 
-    def test_all_bundled_entries_have_tts_friendly_speech_text(self) -> None:
+    def test_all_audio_terms_preserve_their_spelling_for_computer_voice(self) -> None:
         import json
 
-        data_path = Path(__file__).resolve().parent.parent / "data" / "medical_pronunciations.json"
+        data_path = Path(__file__).resolve().parent.parent / "data" / "audio_pronunciations.json"
         data = json.loads(data_path.read_text(encoding="utf-8"))
         dictionary = PronunciationDictionary.bundled()
         bad_terms = []
         for item in data["terms"]:
             payload = dictionary.lookup(item["term"])
             speech_text = payload["speechText"]
-            if not speech_text or "-" in speech_text or any(character.isupper() for character in speech_text):
+            if speech_text != item["term"]:
                 bad_terms.append(item["term"])
         self.assertEqual(bad_terms, [])
 

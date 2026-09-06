@@ -1,4 +1,5 @@
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,10 +11,11 @@ class PublishAudioPackTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name in {"pack-manifest.json", "SHA256SUMS"} | {
-                f"pronounceit-audio-2-{shard}.zip"
+                f"audio-{shard}.zip"
                 for shard in "0123456789abcdef"
             }:
                 (root / name).write_bytes(b"x")
+            (root / "pack-manifest.json").write_text(json.dumps({"shards": [{"file": f"audio-{s}.zip"} for s in "0123456789abcdef"]}))
             self.assertEqual(len(release_files(root)), 18)
             (root / "private.json").write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "exactly the 18"):

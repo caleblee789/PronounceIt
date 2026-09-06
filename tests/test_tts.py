@@ -114,39 +114,6 @@ class TtsTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertEqual(result.reason, "local audio unavailable")
 
-    def test_local_audio_reports_custom_and_azure_source_hints(self) -> None:
-        with TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            audio_file = root / "audio" / "clozapine.aiff"
-            audio_file.parent.mkdir()
-            audio_file.write_bytes(valid_aiff_bytes())
-            engine = LocalAudioFileEngine(root)
-
-            with (
-                patch("pronounceit.tts.platform.system", return_value="Darwin"),
-                patch("pronounceit.tts.shutil.which", return_value="/usr/bin/afplay"),
-                patch("pronounceit.tts.subprocess.Popen"),
-            ):
-                custom = engine.speak_result(
-                    "clozapine",
-                    TtsSettings(
-                        audio_backend="local_audio_then_tts",
-                        audio_file="audio/clozapine.aiff",
-                        audio_source_hint="custom",
-                    ),
-                )
-                azure = engine.speak_result(
-                    "clozapine",
-                    TtsSettings(
-                        audio_backend="local_audio_then_tts",
-                        audio_file="audio/clozapine.aiff",
-                        audio_source_hint="azure",
-                    ),
-                )
-
-        self.assertEqual(custom.audio_source, "custom")
-        self.assertEqual(azure.audio_source, "azure")
-
     def test_local_audio_file_engine_rejects_path_escape(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -235,7 +202,7 @@ class TtsTests(unittest.TestCase):
             result = engine.speak_result("clozapine", TtsSettings())
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.audio_source, "live")
+        self.assertEqual(result.audio_source, "computer")
 
     def test_audio_pack_engine_reports_azure_source(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -263,7 +230,7 @@ class TtsTests(unittest.TestCase):
                 ).ok)
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.audio_source, "azure")
+        self.assertEqual(result.audio_source, "audio")
 
     def test_local_audio_only_does_not_fall_back_to_tts(self) -> None:
         recording = RecordingEngine()
@@ -279,7 +246,7 @@ class TtsTests(unittest.TestCase):
             "local audio unavailable",
         )
 
-    def test_missing_bundled_audio_falls_back_in_mixed_mode(self) -> None:
+    def test_missing_audio_falls_back_in_mixed_mode(self) -> None:
         recording = RecordingEngine()
         engine = CompositeTtsEngine([LocalAudioFileEngine(Path("/missing")), recording])
 
@@ -414,7 +381,7 @@ class TtsTests(unittest.TestCase):
                 engine.speak_result("kloh zuh peen", TtsSettings(audio_backend="local_audio_then_tts", term="Clozapine", voice="Samantha", rate=2))
 
             self.assertTrue(result.ok)
-            self.assertEqual(result.audio_source, "generated")
+            self.assertEqual(result.audio_source, "computer")
             self.assertEqual(run.call_count, 3)
             self.assertIn("Samantha", run.call_args.args[0])
             self.assertIn("216", run.call_args.args[0])

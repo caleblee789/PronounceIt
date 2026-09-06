@@ -98,12 +98,11 @@ class SavedPronunciations:
             "syllables": payload.get("syllables", ""),
             "speechText": payload.get("speechText", ""),
             "audioFile": payload.get("audioFile", ""),
-            "source": payload.get("source", ""),
-            "qualityTier": payload.get("qualityTier", ""),
+            "custom": bool(payload.get("custom") or payload.get("source") == "user-override"),
             "found": bool(payload.get("found")),
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
-        for key in ("cardId", "noteId", "deckId", "deckName", "useTextOverride", "synthesisText", "audioProvider"):
+        for key in ("cardId", "noteId", "deckId", "deckName", "useTextOverride", "synthesisText"):
             if payload.get(key) not in (None, ""):
                 record[key] = payload[key]
         raw_items.append(record)

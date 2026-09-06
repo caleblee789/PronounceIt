@@ -1,48 +1,25 @@
-# Overnight audio rebuild
+# Audio library generation
 
-The full run is prepared and has not been started.
+The current full audio library is already published and remains compatible with the simplified runtime inventories. No audio regeneration is needed for this update. Existing prepared runs and acceptance records are historical evidence; they are bound to their original source files and must not be relabeled as approval for changed inputs.
 
-When ready, open the PronounceIt folder in Finder and double-click
-**Start Overnight Audio Rebuild.command**. Keep your Mac plugged in with the lid
-open. You can minimize its Terminal window. The launcher keeps the Mac awake
-while the rebuild is running; the display can turn off normally.
+## Future audio changes
 
-Allow roughly **12–14 hours**, including validation and packaging. This remains
-an estimate, and the live progress updates will refine it. The job uses four CPU
-threads at reduced priority. The bounded preflight used about **2 GB of memory**.
-It will use noticeable CPU, so warmth and fan activity are expected. All sources,
-model files, and dependencies are already local; no paid service or internet
-connection is needed for the run.
+Current tools prepare and generate the entire canonical inventory, then build one complete audio-library download and its matching add-on. There is no bundled clip subset.
 
-The job automatically generates all 95,902 clips, checks playback and checksums,
-replaces the 155 bundled recordings in a separate candidate, builds the 16
-download files, and writes a matching add-on package and quality report. The
-written guides and aliases are preserved. The current release stays available.
+- `scripts/corpus/kokoro_sources.py` prepares phoneme inputs, source provenance, and term/alias bindings.
+- `scripts/audio/kokoro_pilot.py` generates and verifies a bounded voice pilot.
+- `scripts/audio/kokoro_rebuild.py` checks preparation, readiness, resumability, decoding, and generation identities.
+- `scripts/audio/kokoro_pack.py` writes all 16 transport files, validates each asset and checksum, and stages the compact audio and written inventories with the exact new manifest binding.
+- `scripts/release/publish_audio_pack.py --artifacts /path/to/audio-pack` verifies the complete candidate. Publication requires its separate `--publish` option and authorization.
 
-**To stop:** press Control-C in the Terminal window. Double-click the same
-launcher again to resume. Completed clips are reused only when their inputs,
-voice settings, and checksums still match. A second launch cannot start a
-competing rebuild.
+Prepare a fresh run and verify its exact pilot and runtime bindings before using **Start Overnight Audio Rebuild.command**. Its `--check` option checks readiness without starting synthesis. Current source changes deliberately invalidate older readiness snapshots. Do not overwrite frozen runs or reuse old approval for changed inputs, voice settings, encoding, or generation code.
 
-**Progress:** `build/kokoro-rebuild/overnight.log` and
-`build/kokoro-rebuild/run-2026-09-05/progress.json`.
+The launcher keeps the Mac awake, limits CPU concurrency, records progress, and resumes only unchanged, checksum-valid clips. Control-C stops the run; completed outputs are preserved. Keep the Mac plugged in with its lid open and ensure adequate disk space. The previous full run's 12–14 hour estimate and roughly 2 GB preflight memory measurement are historical observations, not guarantees for a new run.
 
-**Finished files:**
-`build/kokoro-rebuild/run-2026-09-05/release-candidate/`.
-Look for `READ-ME-FIRST.md`, `quality-report.json`, the `.ankiaddon` file, and
-the `audio-pack` folder.
+The existing launcher defaults to `build/kokoro-rebuild/run-2026-09-05/`; a future rebuild must use a fresh prepared run directory. The finished candidate contains a `.ankiaddon` file, an `audio-pack/` directory, and separate pronunciation provenance and quality reports. It does not install into Anki or publish anything automatically.
 
-Leave the prepared generation files and project source unchanged during the
-run. The launcher checks their identities and stops if they change. It also
-checks free space and preserves completed output if a problem occurs. Keep at
-least 8 GiB free before starting.
+## Validation
 
-The ten pilot clips and voice were accepted. That approval does not establish
-an accuracy rate for the whole library. The quality report separates those ten
-clips, 15,922 other reference-backed inputs, and 79,970 unverified estimates.
-Four incomplete source name fragments are spoken as letter names and explicitly
-flagged for follow-up. Minor accepted variants are recorded without blocking
-the rebuild.
+The accepted Kokoro pilot contains ten exact recordings. This is not a measured accuracy rate for the full library. Source variants, generated estimates, unresolved inputs, checksums, and review records remain in developer evidence, outside the runtime term model.
 
-The finished candidate still needs the planned disposable-Anki checks and a
-release review. This launcher does not publish or install the new release.
+Any new complete audio candidate needs matching term and alias coverage, full decoding and checksum validation, current pilot acceptance, appropriate size approval, and the deferred native checks in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Preserve all previously published assets and reports.

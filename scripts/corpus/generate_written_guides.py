@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from pronounceit.written_phonetics import (
+from scripts.corpus.written_phonetics import (
     VOWELS, from_arpabet, from_ipa, from_moby, render, render_respelling,
 )
 

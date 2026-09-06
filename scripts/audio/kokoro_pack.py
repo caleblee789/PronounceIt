@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from copy import deepcopy
 import gzip
 import hashlib
 import json
@@ -12,8 +11,7 @@ import shutil
 import zipfile
 
 from pronounceit.audio_pack import DEFAULT_MANIFEST_URL, audio_asset_id, file_sha256, validate_manifest
-from pronounceit.dictionary import audio_slug, normalize_term
-from pronounceit.qa import load_checklist
+from scripts.corpus.build_library import audio_inventory, bind_release, export_written, write_json
 from scripts.audio.kokoro_pilot import atomic_json, digest, read_json
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,24 +19,13 @@ LIMIT = 1024**3
 NOTICES = ROOT / "quality/kokoro_rebuild/ATTRIBUTION.md"
 
 
-def candidate_dictionary(original: dict, records: list[dict], reports: dict[str, dict],
-                         bundled_terms: set[str], generation: dict) -> dict:
+def candidate_library(original: dict, records: list[dict]) -> dict:
     if [r["term"] for r in records] != [r["term"] for r in original["terms"]]:
-        raise ValueError("Candidate dictionary has different canonical terms")
-    result = deepcopy(original)
-    for item, record in zip(result["terms"], records):
-        if item.get("aliases", []) != record["aliases"]:
-            raise ValueError("Candidate dictionary has different aliases")
-        metadata = reports[record["assetId"]]
-        item.update(audioProvider="kokoro-local", audioReviewStatus=record["clipReviewStatus"],
-                    phonemeInputSha256=record["phonemeInputSha256"],
-                    audioMetadata={"sha256": metadata["sha256"], "generationBindingSha256": generation["bindingSha256"],
-                                   "pronunciationStatus": record["reviewStatus"]})
-        # Old bundled filenames must never select an obsolete recording.
-        item.pop("audio_file", None)
-        item["audioFile"] = f"audio/{audio_slug(item['term'])}.mp3" if item["term"] in bundled_terms else ""
-    result["audioRelease"] = {"schemaVersion": 3, **generation}
-    return result
+        raise ValueError("Candidate library has different canonical terms")
+    for item, record in zip(original["terms"], records):
+        if item.get("aliases", []) != record.get("aliases", []):
+            raise ValueError("Candidate library has different aliases")
+    return audio_inventory(original["terms"])
 
 
 def write_pack(output: Path, dictionary_path: Path, audio: Path, records: list[dict], reports: dict[str, dict],
@@ -107,45 +94,33 @@ def verify_pack(output: Path, manifest: dict, expected_ids: set[str]) -> None:
         raise ValueError("Pack does not contain exactly the requested terms")
 
 
-def stage_addon(stage: Path, dictionary: dict, audio: Path, bundled_terms: set[str], records: list[dict]) -> Path:
-    from scripts.release.build_ankiaddon import INCLUDE_FILES, ALLOWED_USER_FILES, REQUIRED_ARCHIVE_FILES
+def stage_addon(stage: Path, library: dict, manifest_path: Path) -> Path:
+    from scripts.release.build_ankiaddon import INCLUDE_FILES, INCLUDE_DIRS, should_include, build_archive
     stage.mkdir(parents=True, exist_ok=True)
     for name in INCLUDE_FILES:
         shutil.copy2(ROOT / name, stage / name)
-    for name in ("pronounceit", "web"):
-        shutil.copytree(ROOT / name, stage / name, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", ".DS_Store"))
-    for name in ("data/high_yield_checklist.json", "data/medical_pronunciation_lexicon_for_codex.txt", *sorted(ALLOWED_USER_FILES)):
-        target = stage / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / name, target)
-    atomic_json(stage / "data/medical_pronunciations.json", dictionary)
-    release_tag = "audio-pack-v3-" + dictionary["audioRelease"]["bindingSha256"][:16]
+    for name in INCLUDE_DIRS:
+        for path in sorted((ROOT / name).rglob("*")):
+            relative = path.relative_to(ROOT)
+            if path.is_file() and should_include(relative):
+                target = stage / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target)
+    library_path = stage / "data/audio_pronunciations.json"
+    write_json(library_path, library)
+    guides = {item["term"]: item for item in read_json(ROOT / "data/written_pronunciations.json")["terms"]}
+    for item in read_json(ROOT / "data/written-pronunciation-sources.json")["terms"]:
+        guides[item["term"]]["references"] = item["references"]
+    export_written(library["terms"], guides, stage / "data")
+    manifest = read_json(manifest_path)
+    release_tag = "audio-pack-v" + manifest["packVersion"]
     manifest_url = DEFAULT_MANIFEST_URL.rsplit("/audio-pack-v2/", 1)[0] + f"/{release_tag}/pack-manifest.json"
-    atomic_json(stage / "data/audio-pack-release.json", {"schemaVersion": 3,
-                "manifestUrl": manifest_url, "releaseTag": release_tag, "publicationStatus": "not-published"})
-    (stage / "audio").mkdir(exist_ok=True)
-    expected_audio = {f"audio/{audio_slug(term)}.mp3" for term in bundled_terms}
-    for term in bundled_terms:
-        shutil.copy2(audio / f"{audio_asset_id(term)}.mp3", stage / f"audio/{audio_slug(term)}.mp3")
-    if {p.relative_to(stage).as_posix() for p in (stage / "audio").iterdir() if p.is_file()} != expected_audio:
-        raise ValueError("Candidate contains stale or unexpected bundled audio")
-    shutil.copy2(NOTICES, stage / "PRONUNCIATION_ASSET_ATTRIBUTION.md")
-    shutil.copytree(NOTICES.parent, stage / "pronunciation_licenses", dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("README.md"))
-    atomic_json(stage / "data/bundled_audio_provenance.json", [r for r in records if r["term"] in bundled_terms])
+    release = {"schemaVersion": 3, "manifestUrl": manifest_url, "releaseTag": release_tag,
+               "addonVersion": read_json(ROOT / "data/audio-pack-release.json")["addonVersion"],
+               "packManifestSha256": file_sha256(manifest_path), "publicationStatus": "not-published"}
+    write_json(stage / "data/audio-pack-release.json", bind_release(release, library_path, manifest))
     archive_path = stage.parent / "pronounceit-kokoro-candidate.ankiaddon"
-    temporary = archive_path.with_suffix(".ankiaddon.tmp")
-    with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(stage.rglob("*")):
-            if path.is_file(): archive.write(path, path.relative_to(stage).as_posix())
-    with zipfile.ZipFile(temporary) as archive:
-        if not (REQUIRED_ARCHIVE_FILES | expected_audio).issubset(archive.namelist()) or archive.testzip():
-            raise ValueError("Candidate add-on archive validation failed")
-        for name in expected_audio | {"data/medical_pronunciations.json"}:
-            if archive.read(name) != (stage / name).read_bytes():
-                raise ValueError(f"Candidate archive mismatch: {name}")
-    os.replace(temporary, archive_path)
+    build_archive(stage, archive_path)
     return archive_path
 
 
@@ -170,21 +145,18 @@ def build_candidate(run: Path, prepared_dir: Path, records: list[dict], reports:
         if identifier in pilot_entries and metadata["sha256"] != pilot_entries[identifier]["sha256"]:
             raise ValueError("Generated pilot clip differs from the accepted audio")
         validate_decoding(path)
-    index = {normalize_term(term): item["term"] for item in original["terms"]
-             for term in (item["term"], *item.get("aliases", []))}
-    bundled = {index[normalize_term(term)] for term in load_checklist()}
-    if len(bundled) != 155 or len({audio_slug(term) for term in bundled}) != 155:
-        raise ValueError("The 155 bundled recordings differ or have colliding filenames")
     method = pilot["inputBinding"]["method"]
     generation = {"provider": "kokoro-local", "model": method["modelRepo"], "modelRevision": method["modelRevision"],
                   "voice": method["voice"], "speed": method["speed"], "bindingSha256": digest(binding),
                   "modelFiles": pilot["modelFiles"], "settings": method, "environment": pilot["environment"]}
     output = run / "release-candidate"
     output.mkdir(exist_ok=True)
-    dictionary = candidate_dictionary(original, records, by_id, bundled, generation)
-    archive = stage_addon(output / "addon", dictionary, run / "audio", bundled, records)
-    manifest = write_pack(output / "audio-pack", output / "addon/data/medical_pronunciations.json",
+    library = candidate_library(original, records)
+    library_path = output / "audio_pronunciations.json"
+    write_json(library_path, library)
+    manifest = write_pack(output / "audio-pack", library_path,
                           run / "audio", records, by_id, generation, prepared, pilot)
+    archive = stage_addon(output / "addon", library, output / "audio-pack/pack-manifest.json")
     provenance = output / "pronunciation-provenance"
     provenance.mkdir(exist_ok=True)
     for name in ("prepared.json", "pilot-spec.json", "pilot-manifest.json", "pilot-acceptance.json", "source-variants.json", "unresolved.json"):
@@ -198,14 +170,14 @@ def build_candidate(run: Path, prepared_dir: Path, records: list[dict], reports:
     follow_up = [{"term": record["term"], "word": word["text"], "reason": word["provenance"]["needsReview"]}
                  for record in records for word in record["words"] if word["provenance"].get("needsReview")]
     report = {"schemaVersion": 1, "canonicalTerms": len(records), "aliasesPreserved": True, "writtenGuidesPreserved": True,
-              "decodedClips": len(reports), "bundledClips": len(bundled), "shards": 16,
+              "decodedClips": len(reports), "shards": 16,
               "pilotClipsListeningAccepted": 10, "qualityCounts": prepared["qualityCounts"], "wordSourceCounts": dict(source_counts),
               "sourceVariantRecords": prepared["acceptedVariantRecords"], "estimatesNeedingFollowUp": follow_up,
               "packBytes": manifest["totalBytes"], "packSizeLimitBytes": LIMIT, "generationBindingSha256": generation["bindingSha256"],
               "archiveSha256": file_sha256(archive), "dictionarySha256": manifest["dictionarySha256"],
               "plannedPublication": read_json(output / "addon/data/audio-pack-release.json"),
               "qualityStatus": "generated-and-validated-awaiting-native-review", "releaseReady": False,
-              "unrunGates": ["Disposable Anki: bundled and downloaded audio, custom overrides, fallback, restart",
+              "unrunGates": ["Disposable Anki: audio library, custom overrides, fallback, restart",
                              "Whole-library listening accuracy is not measured", "Publication approval"],
               "artifacts": {"addon": str(archive), "packManifest": str(output / "audio-pack/pack-manifest.json"), "provenance": str(provenance)}}
     if runtime_hashes() != read_json(WORK / "launch-ready.json")["runtimeFiles"]:
@@ -213,7 +185,7 @@ def build_candidate(run: Path, prepared_dir: Path, records: list[dict], reports:
     atomic_json(output / "quality-report.json", report)
     (output / "READ-ME-FIRST.md").write_text(
         f"# PronounceIt audio candidate\n\nThe rebuild and file checks are complete. This candidate has not been published.\n\n"
-        f"{len(records):,} clips, 155 bundled recordings, 16 download files. The written guides and aliases are preserved.\n\n"
+        f"{len(records):,} audio pronunciations in one library download (16 transport files). The written guides and aliases are preserved.\n\n"
         "The ten pilot recordings were accepted. Other clips have not been individually listened to; source-backed inputs and estimates are separated in quality-report.json.\n\n"
         "The add-on and audio pack must be used together. Native Anki checks and publication approval are still required.\n", encoding="utf-8")
     return report

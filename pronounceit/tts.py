@@ -15,7 +15,7 @@ from .audio_pack import AudioPackManager
 
 
 AudioBackend = Literal["system_tts", "local_audio", "local_audio_then_tts"]
-AudioSource = Literal["custom", "azure", "recorded", "generated", "live"]
+AudioSource = Literal["audio", "computer"]
 
 
 @dataclass(frozen=True)
@@ -27,10 +27,6 @@ class TtsSettings:
     audio_file: str = ""
     term: str = ""
     use_text_override: bool = False
-    quality_tier: str = ""
-    synthesis_strategy: str = "azure-native"
-    audio_review_status: str = "unreviewed"
-    audio_source_hint: AudioSource | None = None
 
 
 @dataclass(frozen=True)
@@ -113,7 +109,7 @@ class QtTextToSpeechEngine(TtsEngine):
             engine.say(text)
         except Exception as exc:
             return TtsResult(False, "Qt TextToSpeech failed to speak", [str(exc)])
-        return TtsResult(True, "playing with Qt TextToSpeech", audio_source="live")
+        return TtsResult(True, "playing with Qt TextToSpeech", audio_source="computer")
 
 
 class CommandTtsEngine(TtsEngine):
@@ -161,7 +157,7 @@ class CommandTtsEngine(TtsEngine):
         failure = _immediate_process_failure(process)
         if failure:
             return TtsResult(False, "system TTS command failed to start", [failure])
-        return TtsResult(True, "playing with system TTS command", audio_source="live")
+        return TtsResult(True, "playing with system TTS command", audio_source="computer")
 
 
 class LocalAudioFileEngine(TtsEngine):
@@ -184,12 +180,7 @@ class LocalAudioFileEngine(TtsEngine):
         result = self.play_path(audio_path)
         if not result.ok:
             return result
-        source: AudioSource = (
-            settings.audio_source_hint
-            if settings.audio_source_hint in {"custom", "azure", "recorded"}
-            else "azure"
-        )
-        return TtsResult(True, result.reason, result.attempts, source)
+        return TtsResult(True, result.reason, result.attempts, "audio")
 
     def play_path(self, audio_path: Path) -> TtsResult:
         anki_result = self._play_with_anki(audio_path)
@@ -299,13 +290,11 @@ class GeneratedAudioFileEngine(TtsEngine):
                 audio_file=relative_path,
                 term=settings.term,
                 use_text_override=False,
-                quality_tier=settings.quality_tier,
-                audio_source_hint="generated",
             ),
         )
         if not result.ok:
             return TtsResult(False, result.reason or "generated audio playback failed", result.attempts)
-        return TtsResult(True, "playing generated audio", result.attempts, "generated")
+        return TtsResult(True, "playing generated audio", result.attempts, "computer")
 
     def _cache_path(self, speech_text: str, settings: TtsSettings) -> Path:
         identity = json.dumps([speech_text, settings.voice, settings.rate], ensure_ascii=False)
@@ -363,10 +352,9 @@ class AudioPackEngine(TtsEngine):
             *result.attempts,
             f"pack-version: {audio_path.parent.name}",
             f"asset: {audio_path.stem}",
-            f"audio-review: {metadata.get('reviewStatus', 'passed')}",
             f"provider: {metadata.get('provider', 'azure-speech')}",
         ]
-        return TtsResult(True, "playing offline pronunciation pack", details, metadata.get("source", "azure"))
+        return TtsResult(True, "playing offline pronunciation pack", details, "audio")
 
 
 class CompositeTtsEngine(TtsEngine):

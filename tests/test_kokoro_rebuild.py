@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 from pronounceit.audio_pack import AudioPackManager, audio_asset_id, validate_manifest
 from scripts.audio.kokoro_pilot import atomic_json
 from scripts.audio.kokoro_rebuild import ensure_asset
-from scripts.audio.kokoro_pack import candidate_dictionary, write_pack
+from scripts.audio.kokoro_pack import candidate_library, stage_addon, write_pack
 from tests.test_audio_pack import valid_mp3_bytes
 
 
@@ -49,14 +49,14 @@ class RebuildTests(unittest.TestCase):
             generation = {"provider": "kokoro-local", "model": "hexgrad/Kokoro-82M", "modelRevision": "revision",
                           "voice": "af_heart", "speed": 0.95, "bindingSha256": "a" * 64}
             original = {"terms": [{"term": "test", "pronunciation": "TEST", "syllables": "test", "aliases": ["sample alias"]}]}
-            dictionary = candidate_dictionary(original, records, reports, {"test"}, generation)
-            self.assertEqual(dictionary["terms"][0]["pronunciation"], "TEST")
-            self.assertEqual(dictionary["terms"][0]["audioReviewStatus"], "unreviewed")
-            target = root / "addon/data/medical_pronunciations.json"
-            target.parent.mkdir(parents=True)
+            dictionary = candidate_library(original, records)
+            target = root / "audio_pronunciations.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
             atomic_json(target, dictionary)
             manifest = write_pack(root / "pack", target, root / "audio", records, reports, generation,
                                   {"recordsSha256": "2" * 64}, {"bindingSha256": "3" * 64})
+            stage_addon(root / "addon", dictionary, root / "pack/pack-manifest.json")
+            target = root / "addon/data/audio_pronunciations.json"
             manager = AudioPackManager(root / "addon", manifest_url=(root / "pack/pack-manifest.json").as_uri())
             self.assertTrue(manager.download().installed)
             cached = manager.resolve("test")
@@ -65,8 +65,14 @@ class RebuildTests(unittest.TestCase):
             self.assertEqual(manager.resolve("test").read_bytes(), valid_mp3_bytes())
             restarted = AudioPackManager(root / "addon")
             self.assertEqual(restarted.resolve("test"), cached)
-            self.assertEqual(restarted.playback_metadata("test")["source"], "recorded")
-            self.assertEqual(restarted.playback_metadata("test")["reviewStatus"], "unreviewed")
+            self.assertEqual(restarted.playback_metadata("test")["provider"], "kokoro-local")
+            installed_manifest = restarted.pack_root / manifest["packVersion"] / "pack-manifest.json"
+            changed = deepcopy(manifest)
+            changed["assets"][records[0]["assetId"]]["sha256"] = "f" * 64
+            installed_manifest.write_text(json.dumps(changed))
+            self.assertIsNone(restarted.resolve("test"))
+            installed_manifest.write_text(json.dumps(manifest, sort_keys=True))
+            self.assertEqual(restarted.resolve("test"), cached)
             changed = deepcopy(manifest)
             changed["review"]["methodApproval"] = "azure-approved"
             with self.assertRaisesRegex(Exception, "approval"):

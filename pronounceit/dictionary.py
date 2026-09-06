@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
-DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "medical_pronunciations.json"
-HIGH_YIELD_FILE = Path(__file__).resolve().parent.parent / "data" / "high_yield_checklist.json"
+DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "audio_pronunciations.json"
 TERM_RE = re.compile(r"[^\s.,;!?{}\[\]<>\"`][^.,;!?{}\[\]<>\"`]{0,79}")
 CLOZE_RE = re.compile(r"\{\{c\d+::([^{}]*?)(?:::[^{}]*)?\}\}", re.IGNORECASE)
 CONTEXT_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\u2010-\u2015-]*")
@@ -22,57 +21,24 @@ class PronunciationEntry:
     syllables: str = ""
     speech_text: str = ""
     audio_file: str = ""
-    source: str = "bundled-medical"
+    custom: bool = False
     notes: str = ""
-    quality_tier: str = "curated"
-    sapi_phonemes: str = ""
-    sapi_segments: tuple[dict[str, str], ...] = ()
-    audio_provider: str = ""
-    audio_review_status: str = ""
-    phoneme_input_sha256: str = ""
-    written_pronunciation: str | None = None
-    written_status: str = ""
-    written_source: str = ""
 
     def as_payload(self, requested_text: str) -> dict[str, Any]:
-        payload = asdict(self)
-        for key in ("written_pronunciation", "written_status", "written_source"):
-            payload.pop(key, None)
-        payload.pop("speech_text", None)
-        payload.pop("audio_file", None)
-        payload.pop("sapi_segments", None)
-        for key in ("audio_provider", "audio_review_status", "phoneme_input_sha256"):
-            payload.pop(key, None)
-        payload["requestedText"] = requested_text
-        payload["speechText"] = self.speech_text or pronunciation_to_speech_text(self.pronunciation)
-        payload["useTextOverride"] = self.source == "user-override" and bool(self.speech_text)
-        payload["synthesisText"] = (
-            payload["speechText"] if payload["useTextOverride"] else self.term
-        )
-        payload["audioFile"] = self.audio_file or default_audio_file(self.term)
-        payload["qualityTier"] = self.quality_tier
-        payload["synthesisStrategy"] = (
-            "manual-sapi" if self.sapi_phonemes or self.sapi_segments else "azure-native"
-        )
-        payload["audioReviewStatus"] = "passed" if payload["audioFile"] else "unreviewed"
-        if self.audio_provider:
-            payload["audioProvider"] = self.audio_provider
-            payload["audioReviewStatus"] = self.audio_review_status or "unreviewed"
-            payload["phonemeInputSha256"] = self.phoneme_input_sha256
-            payload["synthesisStrategy"] = "kokoro-phonemes" if self.audio_provider == "kokoro-local" else payload["synthesisStrategy"]
-        if self.sapi_phonemes:
-            payload["sapiPhonemes"] = self.sapi_phonemes
-        if self.sapi_segments:
-            payload["sapiSegments"] = [dict(segment) for segment in self.sapi_segments]
-        # Resolve every playback input above from the original audio contract.
-        # Display data must never feed speechText, synthesisText, or cache keys.
-        if self.written_pronunciation is not None:
-            payload["pronunciation"] = self.written_pronunciation
-            payload["syllables"] = ""
-            payload["textReviewStatus"] = self.written_status
-            payload["textSource"] = self.written_source
-        payload["found"] = True
-        return payload
+        override = self.custom and bool(self.speech_text)
+        return {
+            "term": self.term,
+            "requestedText": requested_text,
+            "pronunciation": self.pronunciation,
+            "syllables": self.syllables,
+            "speechText": self.speech_text if override else self.term,
+            "synthesisText": self.speech_text if override else self.term,
+            "useTextOverride": override,
+            "audioFile": self.audio_file,
+            "custom": self.custom,
+            "notes": self.notes,
+            "found": True,
+        }
 
 
 def normalize_term(value: str) -> str:
@@ -113,21 +79,6 @@ def is_plausible_selection(value: str) -> bool:
     return bool(text) and word_count <= 4 and bool(TERM_RE.fullmatch(text))
 
 
-def _parse_sapi_segments(value: Any) -> tuple[dict[str, str], ...]:
-    if not isinstance(value, list):
-        return ()
-    segments: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            return ()
-        text = str(item.get("text") or "").strip()
-        sapi = str(item.get("sapi") or "").strip()
-        if not text or not sapi:
-            return ()
-        segments.append({"text": text, "sapi": sapi})
-    return tuple(segments)
-
-
 class PronunciationDictionary:
     def __init__(
         self,
@@ -156,25 +107,7 @@ class PronunciationDictionary:
                 issues.append(f"Written pronunciations unavailable: {exc}")
                 # Audio and term lookup still work when display data is damaged.
                 written = {}
-        verified_terms = _load_high_yield_terms()
-        for item in bundled_items:
-            if not isinstance(item, dict):
-                continue
-            aliases = item.get("aliases", [])
-            if isinstance(aliases, list) and any(
-                isinstance(alias, str) and normalize_term(alias) in verified_terms
-                for alias in aliases
-            ):
-                verified_terms.add(normalize_term(str(item.get("term") or "")))
-        cls._merge_entries(
-            entries,
-            bundled_items,
-            "bundled-medical",
-            issues,
-            strict=True,
-            verified_terms=verified_terms,
-            written_guides=written,
-        )
+        cls._merge_entries(entries, bundled_items, False, issues, written_guides=written)
         if user_file and user_file.exists():
             try:
                 user_items = _read_terms_file(user_file)
@@ -184,7 +117,7 @@ class PronunciationDictionary:
                 cls._merge_entries(
                     entries,
                     user_items,
-                    "user-override",
+                    True,
                     issues,
                     strict=False,
                 )
@@ -194,10 +127,9 @@ class PronunciationDictionary:
     def _merge_entries(
         entries: dict[str, PronunciationEntry],
         items: list[Any],
-        default_source: str,
+        custom: bool,
         issues: list[str] | None = None,
         strict: bool = True,
-        verified_terms: set[str] | None = None,
         written_guides: dict[str, dict] | None = None,
     ) -> None:
         load_issues = issues if issues is not None else []
@@ -208,9 +140,10 @@ class PronunciationDictionary:
                     raise ValueError(message)
                 load_issues.append(message)
                 continue
+            required = ("term", "pronunciation") if written_guides is None else ("term",)
             missing = [
                 key
-                for key in ("term", "pronunciation")
+                for key in required
                 if not isinstance(item.get(key), str) or not item.get(key, "").strip()
             ]
             if missing:
@@ -219,43 +152,21 @@ class PronunciationDictionary:
                     raise ValueError(message)
                 load_issues.append(message)
                 continue
-            source = item.get("source", default_source)
-            normalized_term = normalize_term(item["term"])
-            quality_tier = str(item.get("qualityTier") or "").strip().casefold()
-            if quality_tier not in {"verified", "curated", "generated", "fallback"}:
-                if source == "user-override" or normalized_term in (verified_terms or set()):
-                    quality_tier = "verified"
-                elif source == "generated-g2p-en":
-                    quality_tier = (
-                        "fallback"
-                        if "fallback from raw spelling" in str(item.get("notes") or "").casefold()
-                        else "generated"
-                    )
-                else:
-                    quality_tier = "curated"
             entry = PronunciationEntry(
                 term=item["term"],
-                pronunciation=item["pronunciation"],
-                syllables=str(item.get("syllables") or ""),
-                speech_text=item.get("speechText") or item.get("speech_text", ""),
-                audio_file=item.get("audioFile") or item.get("audio_file", ""),
-                source=source,
-                notes=item.get("notes", ""),
-                quality_tier=quality_tier,
-                sapi_phonemes=item.get("sapiPhonemes") or item.get("sapi_phonemes", ""),
-                sapi_segments=_parse_sapi_segments(
-                    item.get("sapiSegments") or item.get("sapi_segments", [])
-                ),
-                audio_provider=str(item.get("audioProvider") or ""),
-                audio_review_status=str(item.get("audioReviewStatus") or ""),
-                phoneme_input_sha256=str(item.get("phonemeInputSha256") or ""),
-                written_pronunciation=(written_guides.get(item["term"], {}).get("pronunciation", "")
-                                       if written_guides is not None else None),
-                written_status=(written_guides.get(item["term"], {}).get("reviewStatus", "unavailable")
-                                if written_guides is not None else ""),
-                written_source=(written_guides.get(item["term"], {}).get("provenance", {}).get("kind", "unavailable")
-                                if written_guides is not None else ""),
+                pronunciation=(written_guides.get(item["term"], {}).get("pronunciation", "")
+                               if written_guides is not None else item["pronunciation"]),
+                syllables=str(item.get("syllables") or "") if custom else "",
+                speech_text=str(item.get("speechText") or item.get("speech_text") or "") if custom else "",
+                audio_file=str(item.get("audioFile") or item.get("audio_file") or "") if custom else "",
+                custom=custom,
+                notes=str(item.get("notes") or "") if custom else "",
             )
+            previous = entries.get(normalize_term(entry.term))
+            if custom and previous and normalize_term(previous.term) == normalize_term(entry.term):
+                for alias, value in list(entries.items()):
+                    if value is previous:
+                        entries[alias] = entry
             entries[normalize_term(entry.term)] = entry
             aliases = item.get("aliases", [])
             if isinstance(aliases, list):
@@ -459,40 +370,12 @@ def unknown_payload(term: str, reason: str = "not-in-dictionary") -> dict[str, A
         "speechText": term,
         "synthesisText": term,
         "audioFile": "",
-        "source": "tts-only",
-        "qualityTier": "fallback",
-        "synthesisStrategy": "azure-native",
-        "audioReviewStatus": "unreviewed",
+        "custom": False,
+        "useTextOverride": False,
         "notes": "",
         "found": False,
         "reason": reason,
     }
-
-
-def pronunciation_to_speech_text(value: str) -> str:
-    text = value.lower()
-    text = re.sub(r"[-/]", " ", text)
-    text = re.sub(r"\([^)]*\)", "", text)
-    text = re.sub(r"[^a-z0-9' ]+", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def audio_slug(value: str) -> str:
-    slug = normalize_term(value)
-    slug = re.sub(r"[^a-z0-9]+", "_", slug)
-    return slug.strip("_")
-
-
-def default_audio_file(term: str) -> str:
-    slug = audio_slug(term)
-    if not slug:
-        return ""
-    mp3_path = Path(__file__).resolve().parent.parent / "audio" / f"{slug}.mp3"
-    if mp3_path.is_file():
-        return f"audio/{slug}.mp3"
-    aiff_path = Path(__file__).resolve().parent.parent / "audio" / f"{slug}.aiff"
-    return f"audio/{slug}.aiff" if aiff_path.is_file() else ""
 
 
 def _read_terms_file(path: Path) -> list[Any]:
@@ -504,18 +387,3 @@ def _read_terms_file(path: Path) -> list[Any]:
     if not isinstance(terms, list):
         raise ValueError("expected 'terms' to be a JSON list")
     return terms
-
-
-def _load_high_yield_terms(path: Path = HIGH_YIELD_FILE) -> set[str]:
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return set()
-    verified: set[str] = set()
-    for category in raw.get("categories", []):
-        if not isinstance(category, dict):
-            continue
-        for term in category.get("terms", []):
-            if isinstance(term, str):
-                verified.update(lookup_variants(term))
-    return verified

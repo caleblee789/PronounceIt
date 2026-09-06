@@ -212,6 +212,7 @@ class Result(QWidget):
         term = str(payload.get("term") or payload.get("requestedText") or "")
         self.layout.addWidget(label(term, "title"))
         pronunciation = str(payload.get("pronunciation") or "")
+        self.layout.addWidget(label("Written pronunciation", "secondary"))
         self.layout.addWidget(label(pronunciation or "No pronunciation guide found", "pronunciation" if pronunciation else "secondary"))
         if not pronunciation and payload.get("audioAvailable"):
             self.layout.addWidget(label("You can still listen using the available audio.", "secondary"))
@@ -232,7 +233,7 @@ class Result(QWidget):
         self.layout.addWidget(self.message)
         details, dl = column()
         dl.addWidget(label("Audio: " + str(payload.get("audioSourceLabel") or "Determined when played"), "secondary"))
-        if payload.get("source") == "user-override":
+        if payload.get("custom"):
             dl.addWidget(label("Custom pronunciation", "secondary"))
         disclosure(self.layout, "Details", details)
 
@@ -291,9 +292,9 @@ def show_custom(parent=None) -> None:
         current = core._lookup_payload(value)
         if not pronunciation.isModified():
             pronunciation.setText(str(current.get("pronunciation") or ""))
-        custom = current.get("source") == "user-override"
+        custom = current.get("custom")
         if not speech.isModified():
-            speech.setText(str(current.get("speechText") or "") if custom else "")
+            speech.setText(str(current.get("speechText") or "") if current.get("useTextOverride") else "")
         dialog.setWindowTitle("Edit custom pronunciation" if custom else "Add custom pronunciation")
         loaded["term"] = value
     term.editingFinished.connect(populate)
@@ -445,7 +446,7 @@ def show_library(parent=None) -> None:
         try:
             audit = future.result()
             heading.setText("Library check passed" if audit.passed else "The library needs attention")
-            detail.setText(f"{audit.dictionary_terms:,} terms checked. " + ("PronounceIt is ready to use." if audit.passed else "Open the details to see which files need attention."))
+            detail.setText(f"{audit.audio_terms:,} audio pronunciations · {audit.written_terms:,} written pronunciations" + ("" if audit.passed else " — open the details to see which files need attention."))
             technical(dialog.body, json.dumps(audit.as_dict(), indent=2))
         except Exception as exc:
             heading.setText("Could not check the library")
@@ -472,12 +473,12 @@ def show_diagnostics(parent=None) -> None:
 
 
 def show_onboarding() -> None:
-    dialog = Dialog("Offline pronunciations")
-    dialog.body.addWidget(label("Download offline pronunciations?", "title"))
-    dialog.body.addWidget(label("Add more recordings to listen without an internet connection. The download runs in the background.", "secondary"))
+    dialog = Dialog("Audio library")
+    dialog.body.addWidget(label("Download the audio library?", "title"))
+    dialog.body.addWidget(label("Download all 95,902 audio pronunciations in one library (about 1.03 GiB). Written pronunciations are already included. The download runs in the background.", "secondary"))
     dialog.footer.addStretch()
     dialog.footer.addWidget(button("Not now", dialog.reject))
-    dialog.footer.addWidget(button("Download pack", dialog.accept, "primary"))
+    dialog.footer.addWidget(button("Download library", dialog.accept, "primary"))
     dialog.fit(500, 175)
     accepted = dialog.exec() == QDialog.DialogCode.Accepted
     try:
@@ -583,10 +584,10 @@ class Settings(Dialog):
         theme.currentIndexChanged.connect(self.preview)
 
     def build_audio(self):
-        mode = self.combo(self.audio, "audio_backend", "Play using", [("Recordings, then computer voice", "local_audio_then_tts"), ("Recordings only", "local_audio"), ("Computer voice only", "system_tts")])
-        self.audio.addWidget(label("Recordings include audio bundled with PronounceIt, your recordings, and the optional pack.", "secondary"))
+        mode = self.combo(self.audio, "audio_backend", "Play using", [("Audio, then computer voice", "local_audio_then_tts"), ("Audio only", "local_audio"), ("Computer voice only", "system_tts")])
+        self.audio.addWidget(label("Audio uses the downloaded library or your custom recordings. Written pronunciations are included with the add-on.", "secondary"))
         mode.currentIndexChanged.connect(self.dependencies)
-        section(self.audio, "Offline pronunciation pack")
+        section(self.audio, "Audio library")
         self.pack_status = label("", "section")
         self.audio.addWidget(self.pack_status)
         self.pack_help = label("", "secondary")
@@ -596,8 +597,8 @@ class Settings(Dialog):
         self.audio.addWidget(self.progress)
         row = QHBoxLayout()
         self.pack_buttons = {}
-        for action in ["Download pack", "Pause", "Cancel download", "Check files", "Remove"]:
-            control = button(action, lambda a=action: self.pack_action(a), "primary" if action == "Download pack" else "danger" if action == "Remove" else "")
+        for action in ["Download library", "Pause", "Cancel download", "Check files", "Remove"]:
+            control = button(action, lambda a=action: self.pack_action(a), "primary" if action == "Download library" else "danger" if action == "Remove" else "")
             self.pack_buttons[action] = control
             row.addWidget(control)
         row.addStretch()
@@ -719,7 +720,7 @@ class Settings(Dialog):
     def refresh_pack(self):
         controller = core._audio_pack_download
         if controller is None:
-            self.pack_status.setText("Pack unavailable")
+            self.pack_status.setText("Library unavailable")
             return
         state = controller.refresh()
         self.pack_state = state
@@ -728,7 +729,7 @@ class Settings(Dialog):
         self.progress.setVisible(view.progress_visible)
         self.progress.setRange(0, 0 if view.progress_indeterminate else 100)
         self.progress.setValue(view.progress_percent)
-        help_text = "Add more recordings to listen offline."
+        help_text = "Download the complete audio library (about 1.03 GiB)."
         if state.phase == "paused":
             help_text = "Resume whenever you’re ready. Downloaded files are kept."
         elif state.phase == "verifying":
@@ -742,13 +743,13 @@ class Settings(Dialog):
         elif state.phase == "cancelled":
             help_text = "Resume to finish the download. Downloaded files are kept."
         elif state.installed:
-            help_text = "Ready to use. Your recordings stay installed when PronounceIt updates."
+            help_text = "Ready to use. The library stays installed when PronounceIt updates."
         self.pack_help.setText(help_text)
         for control in self.pack_buttons.values():
             control.hide()
-        start = self.pack_buttons["Download pack"]
+        start = self.pack_buttons["Download library"]
         if not state.running:
-            start.setText("Update" if state.installed else "Resume" if state.total_bytes or state.total_shards else "Retry" if state.phase == "failed" else "Download pack")
+            start.setText("Update" if state.installed else "Resume" if state.total_bytes or state.total_shards else "Retry" if state.phase == "failed" else "Download library")
             start.show()
             if state.installed or state.total_shards:
                 self.pack_buttons["Check files"].show()
@@ -766,7 +767,7 @@ class Settings(Dialog):
         if controller is None:
             return
         try:
-            if action == "Download pack":
+            if action == "Download library":
                 core._complete_audio_pack_onboarding(True)
             elif action == "Pause":
                 controller.resume() if self.pack_state.paused else controller.pause()
@@ -775,11 +776,11 @@ class Settings(Dialog):
             elif action == "Check files":
                 controller.start_verify()
             elif action == "Remove":
-                confirm = Dialog("Remove pronunciation pack?", self)
-                confirm.body.addWidget(label("This removes the downloaded pack. Your saved words and custom pronunciations stay available."))
+                confirm = Dialog("Remove audio library?", self)
+                confirm.body.addWidget(label("This removes the downloaded audio library. Your saved words and custom pronunciations stay available."))
                 confirm.footer.addStretch()
-                confirm.footer.addWidget(button("Keep pack", confirm.reject))
-                confirm.footer.addWidget(button("Remove pack", confirm.accept, "danger"))
+                confirm.footer.addWidget(button("Keep library", confirm.reject))
+                confirm.footer.addWidget(button("Remove library", confirm.accept, "danger"))
                 confirm.fit(460, 190)
                 if confirm.exec() == QDialog.DialogCode.Accepted:
                     controller.remove()
