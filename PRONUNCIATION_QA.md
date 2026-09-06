@@ -20,7 +20,11 @@ The 155 high-yield checklist terms are bundled locally. The separately downloade
 - Legacy phonetic speech text: `uh gran yoo loh sy toh sis`
 - Fluent fallback input: `agranulocytosis`
 
-Space-separated respellings must not be sent to ordinary system TTS because they create a pause between every syllable. Neural release audio uses raw term spelling as one fluent SSML phrase by default. A `<phoneme>` element is permitted only for a manually reviewed correction. General-English G2P output must never control release audio. Runtime resolution is custom audio, reviewed bundled audio, reviewed comprehensive pack, generated cache, then raw-term system TTS.
+The current version 3 audio pack uses Kokoro-82M with phoneme input, the American English `af_heart` voice, speed 0.95, and 24 kHz mono MP3 encoding at 48 kbps. Ten exact pilot clips and the generation method were accepted. Every other recording remains individually unreviewed; reference-backed pronunciation inputs and generated estimates are reported separately.
+
+Audio metadata is independent of the displayed guide. Version 1.3.0 preserves the published v1.2.1 written guides while replacing only audio assets and associated provenance. Raw canonical term spelling remains the default system TTS fallback; space-separated respellings are used only for explicit user overrides. Custom recordings retain highest precedence.
+
+The historical version 2 Azure pipeline uses raw-term SSML and manually reviewed SAPI corrections. Its approval cannot approve a version 3 Kokoro pack. Both manifest versions are supported only when the dictionary checksum matches.
 
 The audit reports any zero-frame AIFF placeholders and the package builder excludes them. An AIFF is shippable only when its header reports at least one frame and its sound-data chunk is non-empty; release-ready checkouts should contain none.
 

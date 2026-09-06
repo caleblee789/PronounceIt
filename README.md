@@ -8,25 +8,17 @@ Use it before or after revealing an answer:
 - Hold Option/Alt while clicking or selecting text, or press it after selecting, to play pronunciation without opening details.
 - Control/Ctrl + left- or right-click, or select text and press Control/Ctrl to open the quick pronunciation card.
 
-PronounceIt includes a 95,902-term medical pronunciation guide library, 155 bundled high-yield clips, and an optional High Quality Downloaded Pack. The Azure-native synthesis method is approved against a checksum-bound 1,092-clip pilot; this is method approval, not a claim that every generated clip was individually reviewed.
+PronounceIt includes a 95,902-term medical pronunciation guide library, 155 bundled high-yield clips, and an optional High Quality Downloaded Pack. The recordings use the owner-approved American English Kokoro voice. Ten pilot clips were accepted; the remaining generated clips have not been individually reviewed.
 
 ## Install
 
-Install PronounceIt from [AnkiWeb](https://ankiweb.net/shared/info/1352407063) through `Tools > Add-ons > Get Add-ons...` with code:
+Download [PronounceIt v1.3.0](https://github.com/caleblee789/PronounceIt/releases/download/v1.3.0/pronounceit.ankiaddon), then use **Tools > Add-ons > Install from file...** in Anki and restart.
 
-```text
-1352407063
-```
+The add-on includes 155 recordings. To get all 95,902, open **Caleb M. Add-ons Settings > PronounceIt settings > Offline pronunciation pack** and choose **Download/Update**. The complete download is approximately **1.03 GiB** and supports pause and resume.
 
-Alternatively, install the latest GitHub release manually:
+Your custom pronunciations, recordings, and saved words stay in Anki's preserved user files. The new add-on selects the matching version 3 audio pack automatically. The earlier version 2 pack remains available for matching older installations.
 
-```text
-dist/pronounceit.ankiaddon
-```
-
-The locally built archive is available at the path above. The offline pronunciation pack is published separately and is never embedded in the add-on archive.
-
-In Anki, open the package through `Tools > Add-ons > Install from file...`, then restart Anki.
+The [AnkiWeb listing](https://ankiweb.net/shared/info/1352407063) is a separate distribution channel; this release's verified download is the GitHub package linked above.
 
 ## How To Use
 
@@ -101,7 +93,7 @@ These files stay local to your Anki profile and are preserved during add-on upgr
 
 ## License
 
-PronounceIt is released under the MIT License. See `LICENSE` for details.
+PronounceIt application code is released under the MIT License. The derived pronunciation assets have separate attribution and share-alike terms in `PRONUNCIATION_ASSET_ATTRIBUTION.md` and `pronunciation_licenses/`.
 
 ## For Developers
 
@@ -157,28 +149,11 @@ unzip -l dist/pronounceit.ankiaddon
 
 See `RELEASE_CHECKLIST.md` for the full release gate and manual Anki smoke test.
 
-GitHub deployment is staged: keep the immutable `audio-pack-v2` release available,
-validate the add-on archive, publish the versioned GitHub release, and then upload
-that same verified archive to AnkiWeb.
+GitHub deployment keeps earlier releases intact. Publish the matching version 3 pack, verify the complete anonymous download, and then publish the add-on from the tested source tag. AnkiWeb distribution is tracked separately.
 
 ## Release Notes
 
-Latest release tag:
-
-```text
-v1.2.1
-```
-
-Release focus:
-
-- Replaces all 95,902 legacy pronunciation respellings with the independently generated gpt-5.6-sol set.
-- Regenerates syllable and speech-text fields from the same Sol output.
-- Preserves the existing term order, aliases, and bundled-audio associations.
-- Upgrades Saved Pronunciations into a searchable dialog with Play, Open Original, and Remove actions.
-- Stores card, note, and deck metadata for newly saved pronunciations when Anki provides it.
-- Refreshes README and config wording around the quick pronunciation card and saved-word workflow.
-
-See `RELEASE_NOTES.md` for the PR and release summary.
+Version **1.3.0** replaces all 95,902 audio recordings, including the 155 bundled clips, with the accepted local voice and directs downloads to the matching pack. It preserves the written guides from v1.2.1. Pronunciation details now show only Word and Pronunciation. See `RELEASE_NOTES.md` for validation and attribution.
 
 ### Corpus Maintenance
 
@@ -195,7 +170,9 @@ python3 scripts/corpus/import_source_lexicon.py
 python3 scripts/corpus/audit_pronunciations.py
 ```
 
-Estimate the neural generation job without credentials:
+The commands below maintain the historical Azure version 2 pipeline. They do not generate or publish the current Kokoro pack. Its source preparation and approval-aware tools are `scripts/corpus/kokoro_sources.py`, `scripts/audio/kokoro_pilot.py`, and `scripts/audio/kokoro_rebuild.py`; original generation inputs and approval evidence are archived with the audio release.
+
+Estimate the historical neural generation job without credentials:
 
 ```bash
 python3 scripts/audio/generate_neural_audio.py --dry-run

@@ -27,12 +27,17 @@ class PronunciationEntry:
     quality_tier: str = "curated"
     sapi_phonemes: str = ""
     sapi_segments: tuple[dict[str, str], ...] = ()
+    audio_provider: str = ""
+    audio_review_status: str = ""
+    phoneme_input_sha256: str = ""
 
     def as_payload(self, requested_text: str) -> dict[str, Any]:
         payload = asdict(self)
         payload.pop("speech_text", None)
         payload.pop("audio_file", None)
         payload.pop("sapi_segments", None)
+        for key in ("audio_provider", "audio_review_status", "phoneme_input_sha256"):
+            payload.pop(key, None)
         payload["requestedText"] = requested_text
         payload["speechText"] = self.speech_text or pronunciation_to_speech_text(self.pronunciation)
         payload["synthesisText"] = (
@@ -44,6 +49,11 @@ class PronunciationEntry:
             "manual-sapi" if self.sapi_phonemes or self.sapi_segments else "azure-native"
         )
         payload["audioReviewStatus"] = "passed" if payload["audioFile"] else "unreviewed"
+        if self.audio_provider:
+            payload["audioProvider"] = self.audio_provider
+            payload["audioReviewStatus"] = self.audio_review_status or "unreviewed"
+            payload["phonemeInputSha256"] = self.phoneme_input_sha256
+            payload["synthesisStrategy"] = "kokoro-phonemes" if self.audio_provider == "kokoro-local" else payload["synthesisStrategy"]
         if self.sapi_phonemes:
             payload["sapiPhonemes"] = self.sapi_phonemes
         if self.sapi_segments:
@@ -211,6 +221,9 @@ class PronunciationDictionary:
                 sapi_segments=_parse_sapi_segments(
                     item.get("sapiSegments") or item.get("sapi_segments", [])
                 ),
+                audio_provider=str(item.get("audioProvider") or ""),
+                audio_review_status=str(item.get("audioReviewStatus") or ""),
+                phoneme_input_sha256=str(item.get("phonemeInputSha256") or ""),
             )
             entries[normalize_term(entry.term)] = entry
             aliases = item.get("aliases", [])

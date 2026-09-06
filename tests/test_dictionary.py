@@ -16,6 +16,20 @@ from pronounceit.dictionary import (
 
 
 class DictionaryTests(unittest.TestCase):
+    def test_import_keeps_approved_corrections_and_unknown_audio_metadata(self) -> None:
+        from scripts.corpus.import_source_lexicon import merge_lexicon
+        with TemporaryDirectory() as tmp:
+            data, lexicon = Path(tmp) / "data.json", Path(tmp) / "source.txt"
+            protected = {"term": "test", "pronunciation": "accepted", "syllables": "accepted",
+                         "aliases": ["alias"], "audioReviewStatus": "accepted", "audioFile": "test.mp3",
+                         "futureMetadata": {"enabled": False}, "sapiPhonemes": "t eh 1 s t"}
+            data.write_text(json.dumps({"terms": [protected, {"term": "another", "pronunciation": "old", "syllables": "old"}]}))
+            lexicon.write_text("alias | stale\nanother | NEW\n")
+            merge_lexicon(data, lexicon)
+            actual = json.loads(data.read_text())["terms"]
+            self.assertEqual(actual[0], protected)
+            self.assertEqual(actual[1]["syllables"], "new")
+
     def make_dictionary(self) -> PronunciationDictionary:
         entries = {}
         items = [

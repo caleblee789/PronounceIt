@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import zipfile
 from pathlib import Path
 
@@ -13,11 +14,12 @@ from pronounceit.qa import audit_pronunciations
 from pronounceit.audio import aiff_bytes_have_audio, audio_file_has_content, mp3_bytes_have_audio
 from pronounceit.dictionary import PronunciationDictionary
 from pronounceit.qa import load_checklist
+from pronounceit.audio_pack import file_sha256
 
 
 DIST = ROOT / "dist"
 OUT = DIST / "pronounceit.ankiaddon"
-INCLUDE_DIRS = ["pronounceit", "web", "data", "audio", "user_files"]
+INCLUDE_DIRS = ["pronounceit", "web", "data", "audio", "user_files", "pronunciation_licenses"]
 INCLUDE_FILES = [
     "__init__.py",
     "config.json",
@@ -26,6 +28,7 @@ INCLUDE_FILES = [
     "LICENSE",
     "README.md",
     "PRONUNCIATION_QA.md",
+    "PRONUNCIATION_ASSET_ATTRIBUTION.md",
 ]
 EXCLUDED_PARTS = {"__pycache__", ".pytest_cache"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
@@ -41,6 +44,7 @@ REQUIRED_ARCHIVE_FILES = {
     "manifest.json",
     "LICENSE",
     "PRONUNCIATION_QA.md",
+    "PRONUNCIATION_ASSET_ATTRIBUTION.md",
     "pronounceit/main.py",
     "pronounceit/dictionary.py",
     "pronounceit/tts.py",
@@ -53,6 +57,11 @@ REQUIRED_ARCHIVE_FILES = {
     "web/pronounceit.js",
     "web/pronounceit.css",
     "data/medical_pronunciations.json",
+    "data/audio-pack-release.json",
+    "data/bundled_audio_provenance.json",
+    "pronunciation_licenses/ATTRIBUTION.md",
+    "pronunciation_licenses/CMUdict-LICENSE",
+    "pronunciation_licenses/Misaki-LICENSE",
     "data/high_yield_checklist.json",
     "data/medical_pronunciation_lexicon_for_codex.txt",
     "user_files/README.txt",
@@ -85,6 +94,10 @@ def required_audio_files() -> set[str]:
 
 
 def validate_release_quality() -> None:
+    release = json.loads((ROOT / "data/audio-pack-release.json").read_text(encoding="utf-8"))
+    if (release.get("schemaVersion") != 3
+            or release.get("dictionarySha256") != file_sha256(ROOT / "data/medical_pronunciations.json")):
+        raise SystemExit("The add-on dictionary does not match its version 3 audio release")
     audit = audit_pronunciations()
     if not audit.passed:
         raise SystemExit(
@@ -143,6 +156,14 @@ def validate_archive(path: Path) -> None:
         )
 
 
+def add_file(archive: zipfile.ZipFile, name: str) -> None:
+    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, (ROOT / name).read_bytes())
+
+
 def main() -> None:
     validate_release_quality()
     DIST.mkdir(exist_ok=True)
@@ -151,11 +172,11 @@ def main() -> None:
 
     with zipfile.ZipFile(OUT, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for file_name in INCLUDE_FILES:
-            archive.write(ROOT / file_name, file_name)
+            add_file(archive, file_name)
         for dir_name in INCLUDE_DIRS:
             for path in sorted((ROOT / dir_name).rglob("*")):
                 if path.is_file() and should_include(path.relative_to(ROOT)):
-                    archive.write(path, path.relative_to(ROOT).as_posix())
+                    add_file(archive, path.relative_to(ROOT).as_posix())
 
     validate_archive(OUT)
     print(f"Created {OUT}")

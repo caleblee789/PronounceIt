@@ -32,6 +32,16 @@ class AudioPackTests(unittest.TestCase):
                 "http://127.0.0.1:8765/pack-manifest.json",
             )
 
+    def test_candidate_uses_its_matching_pack_address_and_keeps_explicit_override(self) -> None:
+        with TemporaryDirectory() as tmp, patch.dict("os.environ", {"PRONOUNCEIT_AUDIO_PACK_MANIFEST_URL": ""}):
+            root = Path(tmp)
+            (root / "data").mkdir()
+            url = "https://example.com/audio-pack-v3/pack-manifest.json"
+            (root / "data/audio-pack-release.json").write_text(json.dumps({"schemaVersion": 3, "manifestUrl": url}))
+            self.assertEqual(AudioPackManager(root).manifest_url, url)
+            self.assertEqual(AudioPackManager(root, manifest_url="http://127.0.0.1/pack.json").manifest_url,
+                             "http://127.0.0.1/pack.json")
+
     def test_download_rejects_insufficient_free_space_before_fetching_shards(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

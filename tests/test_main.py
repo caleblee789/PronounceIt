@@ -893,7 +893,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertTrue(payload["found"])
         self.assertEqual(payload["term"], "Glasgow Coma Scale")
         self.assertEqual(payload["speechText"], "glas goh koh muh skayl")
-        self.assertEqual(payload["audioSource"], "azure")
+        self.assertEqual(payload["audioSource"], "recorded")
         self.assertEqual(payload["audioSourceLabel"], "High Quality Downloaded Pack")
         self.assertFalse(payload["alreadySaved"])
 
@@ -1149,8 +1149,8 @@ class MainMessageTests(unittest.TestCase):
                     "audioFile": "audio/agranulocytosis.mp3",
                     "useTextOverride": False,
                     "qualityTier": "generated",
-                    "synthesisStrategy": "azure-native",
-                    "audioReviewStatus": "passed",
+                    "synthesisStrategy": "kokoro-phonemes",
+                    "audioReviewStatus": "unreviewed",
                 }
             ],
         )
@@ -1171,8 +1171,6 @@ class MainMessageTests(unittest.TestCase):
             [
                 ("Word", "agranulocytosis"),
                 ("Pronunciation", "uh-GRAN-yoo-loh-sy-TOH-sis"),
-                ("Syllables", "a·gran·u·lo·cy·to·sis"),
-                ("Speech text", "uh gran yoo loh sy toh sis"),
             ],
         )
 

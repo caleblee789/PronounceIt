@@ -1,0 +1,11 @@
+kokoro==0.9.4
+lameenc==1.8.1
+torch==2.6.0
+transformers==4.51.3
+numpy==2.2.6
+spacy==3.8.7
+spacy-curated-transformers==0.3.1
+click==8.1.8
+typer==0.15.4
+weasel==0.4.1
+huggingface-hub==0.30.2
