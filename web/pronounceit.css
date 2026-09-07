@@ -62,8 +62,13 @@
   --pronounceit-guidance: #E2BD57;
   --pronounceit-danger: #EE7880;
 }
-.pronounceit-popup { width: min(380px, calc(100vw - 20px)); padding: 0; }
-.pronounceit-card { display: grid; gap: 12px; padding: 16px; }
+.pronounceit-popup {
+  --pronounceit-max-width: 320px;
+  width: max-content;
+  max-width: min(var(--pronounceit-max-width), calc(100vw - 20px));
+  padding: 0;
+}
+.pronounceit-card { display: grid; gap: 8px; padding: 12px; }
 .pronounceit-card-header { display: flex; align-items: start; gap: 8px; }
 .pronounceit-term {
   flex: 1; min-width: 0; margin: 0; padding: 0; color: var(--pronounceit-text);
@@ -80,7 +85,7 @@
   font-size: 20px; background: transparent; color: var(--pronounceit-muted); border-color: transparent;
 }
 .pronounceit-pronunciation-block { min-width: 0; }
-.pronounceit-pronunciation-label { margin-bottom: 4px; color: var(--pronounceit-muted); font-size: 12px; line-height: 1.4; }
+.pronounceit-pronunciation-label { margin-bottom: 2px; color: var(--pronounceit-muted); font-size: 12px; line-height: 1.4; }
 .pronounceit-pronunciation {
   color: var(--pronounceit-text); font-size: 20px; font-weight: 550; line-height: 1.4;
   overflow-wrap: anywhere;
@@ -98,11 +103,11 @@
 .pronounceit-details summary { cursor: pointer; width: fit-content; }
 .pronounceit-source { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--pronounceit-muted); }
 .pronounceit-source.audio, .pronounceit-source.loading { color: var(--pronounceit-muted); }
-.pronounceit-status { font-size: 12px; line-height: 1.45; margin: 0 16px 12px; color: var(--pronounceit-status); }
+.pronounceit-status { font-size: 12px; line-height: 1.45; margin: 0 12px 10px; color: var(--pronounceit-status); }
 .pronounceit-status[data-empty="true"] { display: none; }
 .pronounceit-notice { max-width: min(340px, calc(100vw - 20px)); padding: 10px 12px; pointer-events: none; }
 .pronounceit-notice[data-state="loading"] { color: var(--pronounceit-accent-strong); }
 .pronounceit-notice[data-state="success"] { color: var(--pronounceit-status); }
 .pronounceit-status[data-state="info"], .pronounceit-notice[data-state="info"] { color: var(--pronounceit-guidance); }
 .pronounceit-status[data-state="error"], .pronounceit-notice[data-state="error"] { color: var(--pronounceit-danger); }
-@media (max-width: 320px) { .pronounceit-card { padding: 12px; } }
+@media (max-width: 320px) { .pronounceit-card { padding: 10px; } }

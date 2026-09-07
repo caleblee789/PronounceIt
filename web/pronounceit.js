@@ -1064,7 +1064,7 @@
     const height = viewport ? viewport.height : window.innerHeight;
     const x = viewport ? viewport.offsetLeft : 0;
     const y = viewport ? viewport.offsetTop : 0;
-    element.style.maxWidth = Math.max(0, width - margin * 2) + "px";
+    element.style.maxWidth = "min(var(--pronounceit-max-width, 340px), " + Math.max(0, width - margin * 2) + "px)";
     element.style.maxHeight = Math.max(0, height - margin * 2) + "px";
     const rect = element.getBoundingClientRect();
     let desiredTop = top;
@@ -1156,7 +1156,7 @@
       }
     }
 
-    if (payload.autoPlay && playback.audioAvailable) {
+    if (!loading && payload.autoPlay && playback.audioAvailable) {
       playPayload();
     }
   }
@@ -1391,7 +1391,7 @@
       rect: request.rect || {},
     });
     pendingRequest = request;
-    return requestPronunciation({ autoPlay: false });
+    return requestPronunciation({ autoPlay: true });
   }
 
   document.addEventListener("keydown", function (event) {

@@ -8,7 +8,7 @@ The settings workspace has Review, Audio, Tools, and About & support sections. T
 - `direct_click_modifier`: the modifier key. The default is `alt` (Option on macOS): hold it while clicking or selecting text, or press it after selecting, to play pronunciation.
 - `hotkey`: legacy compatibility value retained without data loss; multi-key shortcuts are no longer registered. Fresh installs store an empty value.
 - `popup_click_modifier`: legacy custom-menu modifier retained so older configurations round-trip without data loss; it no longer controls reviewer behavior.
-- `native_context_menu_modifier`: the quick-card modifier. The default is `ctrl` (Control/Ctrl): hold it while left- or right-clicking, or tap it after selecting text, to open the quick pronunciation card.
+- `native_context_menu_modifier`: the quick-card modifier. The default is `ctrl` (Control/Ctrl): hold it while left- or right-clicking, or tap it after selecting text, to open the quick pronunciation card and play its pronunciation. Playback starts after lookup completes and follows the selected audio mode.
 - Plain right-click opens Anki's normal context menu without PronounceIt actions. Control/Ctrl + left- or right-click, or selected text opens the quick pronunciation card.
 - `show_native_context_menu`: enable the quick pronunciation card. The stored key name is retained for compatibility. Defaults to `true`.
 - Supported click modifiers are `alt`, `shift`, `meta`, `ctrl`, `mod`, and `disabled`.

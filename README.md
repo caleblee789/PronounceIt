@@ -10,10 +10,10 @@ All terms use the same lookup and playback behavior. There are no high-yield gro
 ## Use PronounceIt
 
 - Hold **Option/Alt** while clicking or selecting a term, or select text and tap the key, to hear it.
-- Use **Control/Ctrl + click or right-click**, or select text and tap Control/Ctrl, to open a quick card with **Play** and **Save**.
+- Use **Control/Ctrl + click or right-click**, or select text and tap Control/Ctrl, to open a quick card and hear its pronunciation automatically. Use **Play** to repeat it or **Save** to keep the term.
 - Plain right-click keeps Anki’s standard menu.
 
-Search and quick cards show the written pronunciation. **Play** uses the audio library or computer voice according to your settings. **Details** shows the playback source. Closing a result does not play audio; long terms wrap inside the reviewer window.
+Search and quick cards show the written pronunciation. A quick card plays once when its lookup finishes, using the audio library or computer voice according to your settings. **Play** repeats the pronunciation; search results play when you press **Play**. **Details** shows the playback source. Quick cards fit their contents with compact spacing, and long pronunciations wrap inside the reviewer window. Closing a result does not play audio.
 
 ## Install
 

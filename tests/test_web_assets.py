@@ -530,7 +530,7 @@ if (request.text !== "right bundle" || request.contextText.slice(request.context
 """
         )
 
-    def test_ctrl_gestures_open_loading_quick_card_and_preserve_context(self) -> None:
+    def test_ctrl_gestures_open_quick_card_autoplay_once_and_preserve_context(self) -> None:
         self.run_node(
             r"""
 const plainRightClick = emit("contextmenu");
@@ -552,11 +552,11 @@ let play = popup.querySelector(".pronounceit-play-button");
 let save = popup.querySelector(".pronounceit-save-button");
 if (!play.disabled || !save.disabled) throw new Error("Loading card actions should be disabled");
 let request = payload("pronounceit:lookup:");
-if (request.text !== "bundle" || request.autoPlay !== false) {
+if (request.text !== "bundle" || request.autoPlay !== true) {
   throw new Error(`Ctrl-right-click did not preserve the request: ${JSON.stringify(request)}`);
 }
 if (messages.some((message) => message.startsWith("pronounceit:audioLookup:"))) {
-  throw new Error(`Quick card played automatically: ${JSON.stringify(messages)}`);
+  throw new Error(`Quick card played before lookup completed: ${JSON.stringify(messages)}`);
 }
 
 sandbox.window.PronounceIt.show({
@@ -565,6 +565,7 @@ sandbox.window.PronounceIt.show({
   audioSource: "audio",
   audioSourceLabel: "Audio pronunciation",
   audioAvailable: true,
+  autoPlay: request.autoPlay,
   request,
   rect: request.rect,
 });
@@ -573,7 +574,13 @@ if (popup.getAttribute("data-loading") !== "false") throw new Error("Lookup did 
 play = popup.querySelector(".pronounceit-play-button");
 save = popup.querySelector(".pronounceit-save-button");
 if (play.disabled || save.disabled) throw new Error("Loaded quick card actions should be enabled");
+if (messages.filter((message) => message.startsWith("pronounceit:audioLookup:")).length !== 1) {
+  throw new Error(`Opening the loaded card should play once: ${JSON.stringify(messages)}`);
+}
 play.listeners.click({});
+if (messages.filter((message) => message.startsWith("pronounceit:audioLookup:")).length !== 2) {
+  throw new Error(`Play should repeat the pronunciation once: ${JSON.stringify(messages)}`);
+}
 save.listeners.click({});
 for (const action of [payload("pronounceit:audioLookup:"), payload("pronounceit:saveLookup:")]) {
   if (action.text !== "bundle" || !action.contextText.includes("right bundle branch block")) {
@@ -594,7 +601,7 @@ if (!popup || popup.getAttribute("data-loading") !== "true") {
   throw new Error("Control after selection did not open the loading card");
 }
 request = payload("pronounceit:lookup:");
-if (request.text !== "right bundle") throw new Error(`Selection target lost: ${JSON.stringify(request)}`);
+if (request.text !== "right bundle" || request.autoPlay !== true) throw new Error(`Selection should open and play its term: ${JSON.stringify(request)}`);
 
 emit("keydown", { key: "Escape" });
 messages.length = 0;
@@ -605,7 +612,7 @@ if (!popup || popup.getAttribute("data-loading") !== "true") {
   throw new Error("Ctrl-left-click did not open the loading card");
 }
 request = payload("pronounceit:lookup:");
-if (request.text !== "right bundle") throw new Error(`Ctrl-left-click lost selection context: ${JSON.stringify(request)}`);
+if (request.text !== "right bundle" || request.autoPlay !== true) throw new Error(`Ctrl-left-click should open and play its term: ${JSON.stringify(request)}`);
 """
         )
 

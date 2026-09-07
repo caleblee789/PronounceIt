@@ -8,6 +8,8 @@ This development update simplifies PronounceIt to audio pronunciations and writt
 - Gives search, saved pronunciations, custom editors, and other dialogs consistent sizing and styling; saved lists expand with the window.
 - Includes the image-based Buy Me a Coffee button in the settings footer and support links in About & support.
 - Applies Dashboard's parent-before-visibility fix to settings help labels so they cannot briefly become independent native windows. Defers opening until the menu callback finishes and removes forced window activation to address macOS fullscreen desktop switching.
+- Plays pronunciation automatically when a quick card finishes loading. The Play button repeats it; playback still respects audio availability, the selected audio mode, and the before-answer setting.
+- Fits quick cards to their contents, reduces their maximum width and internal spacing, and preserves readable text and viewport bounds for long terms.
 - Removes high-yield groups, term quality tiers, and the 155-clip bundled subset from the runtime and package.
 - Stores compact audio and written inventories; preserves attribution and source-review evidence separately.
 - Retains compatibility with already downloaded v1.3.0 audio through an exact manifest and inventory binding.
