@@ -155,6 +155,7 @@ class MainMessageTests(unittest.TestCase):
         reviewer = FakeReviewer()
         payload = {
             "text": "agranulocytosis",
+            "requestId": 7,
             "rect": {"left": 10, "bottom": 20},
         }
         handled = main._on_js_message(
@@ -167,6 +168,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(reviewer.web.scripts), 1)
         script = reviewer.web.scripts[0]
         self.assertIn("window.PronounceIt.show", script)
+        self.assertIn('"requestId": 7', script)
         self.assertIn('"pronunciation": ' + json.dumps(main._dictionary.lookup("agranulocytosis")["pronunciation"]), script)
         self.assertIn('"speechText": "agranulocytosis"', script)
 

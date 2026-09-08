@@ -214,6 +214,77 @@ class WebAssetTests(unittest.TestCase):
         if completed.returncode:
             self.fail(completed.stderr or completed.stdout)
 
+    def test_delayed_quick_card_responses_are_discarded_after_close_or_replacement(self) -> None:
+        self.run_node(r"""
+function answer(request) {
+  sandbox.window.PronounceIt.show({
+    term: request.text, pronunciation: "guide", audioAvailable: true,
+    autoPlay: true, requestId: request.requestId, request,
+  });
+}
+emit("contextmenu", { ctrlKey: true });
+const first = payload("pronounceit:lookup:");
+emit("keydown", { key: "Escape" });
+messages.length = 0;
+answer(first);
+if (body.querySelector(".pronounceit-popup") || messages.length) {
+  throw new Error("Dismissed lookup reopened or played");
+}
+emit("contextmenu", { ctrlKey: true });
+const second = payload("pronounceit:lookup:");
+messages.length = 0;
+emit("contextmenu", { ctrlKey: true });
+const third = payload("pronounceit:lookup:");
+messages.length = 0;
+answer(second);
+if (messages.length || body.querySelector(".pronounceit-popup").getAttribute("data-loading") !== "true") {
+  throw new Error("Old lookup replaced the current loading card");
+}
+answer(third);
+answer(third);
+if (messages.filter(m => m.startsWith("pronounceit:audioLookup:")).length !== 1) {
+  throw new Error("Current lookup must autoplay exactly once");
+}
+""")
+
+    def test_disabling_addon_releases_keys_and_dismisses_pending_card(self) -> None:
+        self.run_node(r"""
+selectionText = "bundle";
+selectionStart = source.indexOf("bundle");
+selectionEnd = selectionStart + selectionText.length;
+emit("contextmenu", { ctrlKey: true });
+const request = payload("pronounceit:lookup:");
+sandbox.window.PronounceIt.configure({ enabled: false });
+messages.length = 0;
+for (const key of ["Alt", "Control"]) {
+  for (const type of ["keydown", "keyup"]) {
+    const event = emit(type, { key });
+    if (event.defaultPrevented || event.propagationStopped) throw new Error("Disabled add-on intercepted a key");
+  }
+}
+sandbox.window.PronounceIt.show({ term: "bundle", audioAvailable: true, autoPlay: true,
+  requestId: request.requestId, request });
+if (messages.length || body.querySelector(".pronounceit-popup")) throw new Error("Disabled add-on left a card or played");
+sandbox.window.PronounceIt.configure({ enabled: true });
+emit("keydown", { key: "Alt" });
+emit("keyup", { key: "Alt" });
+if (messages.filter(m => m.startsWith("pronounceit:audioLookup:")).length !== 1) throw new Error("Re-enabling failed");
+""")
+
+    def test_audio_shortcut_works_with_matching_disabled_quick_card_key(self) -> None:
+        self.run_node(r"""
+sandbox.window.PronounceIt.configure({ directClickModifier: "alt", contextMenuModifier: "alt", showNativeContextMenu: false });
+emit("pointerdown", { altKey: true });
+emit("pointerup", { altKey: true });
+emit("click", { altKey: true });
+selectionText = "bundle";
+selectionStart = source.indexOf("bundle");
+selectionEnd = selectionStart + selectionText.length;
+emit("keydown", { key: "Alt" });
+emit("keyup", { key: "Alt" });
+if (messages.filter(m => m.startsWith("pronounceit:audioLookup:")).length !== 2) throw new Error("Inactive quick-card shortcut blocked audio");
+""")
+
     def test_javascript_uses_immediate_quick_card_and_no_legacy_hotkey_parser(self) -> None:
         js = (ROOT / "web" / "pronounceit.js").read_text(encoding="utf-8")
 

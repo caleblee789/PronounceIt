@@ -21,6 +21,8 @@
   let config = Object.assign({}, DEFAULT_CONFIG, window.PronounceItConfig || {});
   let lastPayload = null;
   let pendingRequest = null;
+  let lookupSequence = 0;
+  let pendingLookupId = null;
   let lastPointerRequest = null;
   let lastPointerCaptureAt = 0;
   let directGesture = null;
@@ -572,7 +574,8 @@
       return false;
     }
     pendingRequest = null;
-    send("lookup", Object.assign({}, request, options || {}));
+    pendingLookupId = ++lookupSequence;
+    send("lookup", Object.assign({}, request, options || {}, { requestId: pendingLookupId }));
     return true;
   }
 
@@ -635,7 +638,7 @@
       !canPronounce() ||
       isPronounceItElement(event && event.target) ||
       !isPrimaryClick(event) ||
-      modifierMatches(event, config.contextMenuModifier) ||
+      (config.showNativeContextMenu && modifierMatches(event, config.contextMenuModifier)) ||
       !modifierMatches(event, config.directClickModifier)
     ) {
       directGesture = null;
@@ -847,7 +850,8 @@
   }
 
   function handleActivationKeyDown(event) {
-    if (sameModifierKey(config.directClickModifier, config.contextMenuModifier)) {
+    if (!canPronounce()) return;
+    if (config.showNativeContextMenu && sameModifierKey(config.directClickModifier, config.contextMenuModifier)) {
       return;
     }
     const key = modifierKeyName(config.directClickModifier);
@@ -872,7 +876,8 @@
   }
 
   function handleActivationKeyUp(event) {
-    if (sameModifierKey(config.directClickModifier, config.contextMenuModifier)) {
+    if (!canPronounce()) return;
+    if (config.showNativeContextMenu && sameModifierKey(config.directClickModifier, config.contextMenuModifier)) {
       return;
     }
     if (event.key !== modifierKeyName(config.directClickModifier) || !activationKeyDown) {
@@ -900,6 +905,7 @@
   }
 
   function handleContextMenuKeyDown(event) {
+    if (!canPronounce()) return;
     const key = modifierKeyName(config.contextMenuModifier);
     if (!key || !config.showNativeContextMenu) {
       return;
@@ -921,6 +927,7 @@
   }
 
   function handleContextMenuKeyUp(event) {
+    if (!canPronounce()) return;
     if (event.key !== modifierKeyName(config.contextMenuModifier) || !contextMenuKeyDown) {
       return;
     }
@@ -1044,6 +1051,7 @@
   }
 
   function hidePopup() {
+    pendingLookupId = null;
     if (popupEl) {
       if (popupObserver) popupObserver.disconnect();
       popupObserver = null;
@@ -1092,6 +1100,12 @@
   }
 
   function show(payload) {
+    if (!canPronounce()) return;
+    const requestId = payload.requestId ?? (payload.request && payload.request.requestId);
+    if (!payload.loading && requestId != null) {
+      if (requestId !== pendingLookupId) return;
+      pendingLookupId = null;
+    }
     lastPayload = payload;
     hideNotice();
 
@@ -1345,6 +1359,15 @@
 
   function configure(nextConfig) {
     config = Object.assign({}, config, nextConfig || {});
+    if (!canPronounce()) {
+      hideAll();
+      cancelDirectGesture();
+      activationKeyDown = false;
+      activationSelectionRequest = null;
+      contextMenuKeyDown = false;
+      contextMenuSelectionRequest = null;
+      return;
+    }
     if (popupEl) {
       applyTheme(popupEl, "pronounceit-popup");
       placePopup();

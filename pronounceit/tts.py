@@ -94,6 +94,8 @@ class QtTextToSpeechEngine(TtsEngine):
             engine = self._ensure_engine()
         except Exception as exc:
             return TtsResult(False, "Qt TextToSpeech is unavailable", [str(exc)])
+        if self._has_error(engine):
+            return TtsResult(False, "Qt TextToSpeech is unavailable", [engine.errorString()])
         if settings.volume is not None and hasattr(engine, "setVolume"):
             engine.setVolume(max(0, min(100, settings.volume)) / 100)
         if hasattr(engine, "setRate"):
@@ -109,7 +111,13 @@ class QtTextToSpeechEngine(TtsEngine):
             engine.say(text)
         except Exception as exc:
             return TtsResult(False, "Qt TextToSpeech failed to speak", [str(exc)])
+        if self._has_error(engine):
+            return TtsResult(False, "Qt TextToSpeech failed to speak", [engine.errorString()])
         return TtsResult(True, "playing with Qt TextToSpeech", audio_source="computer")
+
+    @staticmethod
+    def _has_error(engine: Any) -> bool:
+        return hasattr(engine, "state") and getattr(engine.state(), "name", "") == "Error"
 
 
 class CommandTtsEngine(TtsEngine):

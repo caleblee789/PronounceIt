@@ -306,16 +306,7 @@ def lookup_variants(value: str) -> list[str]:
     normalized = normalize_term(value)
     variants = [normalized]
 
-    if normalized.endswith("'s"):
-        variants.append(normalized[:-2])
-    elif normalized.endswith("s'"):
-        variants.append(normalized[:-1])
-    elif normalized.endswith("ies") and len(normalized) > 4:
-        variants.append(normalized[:-3] + "y")
-    elif normalized.endswith("es") and len(normalized) > 3:
-        variants.append(normalized[:-2])
-    elif normalized.endswith("s") and len(normalized) > 3:
-        variants.append(normalized[:-1])
+    variants.extend(_final_word_variants(normalized))
 
     if " " in normalized:
         prefix, final_word = normalized.rsplit(" ", 1)

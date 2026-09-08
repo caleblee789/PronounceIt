@@ -387,6 +387,24 @@ class TtsTests(unittest.TestCase):
             self.assertIn("216", run.call_args.args[0])
             self.assertEqual(popen.call_count, 4)
 
+    def test_qt_error_allows_fallback_instead_of_reporting_silent_success(self) -> None:
+        from enum import Enum
+        class State(Enum):
+            Ready = 0
+            Error = 3
+        for states in ([State.Error], [State.Ready, State.Error]):
+            with self.subTest(states=states):
+                qt = QtTextToSpeechEngine()
+                qt._engine = Mock()
+                qt._engine.state.side_effect = states
+                qt._engine.errorString.return_value = "No speech engine available"
+                fallback = Mock()
+                fallback.name = "fallback"
+                fallback.speak_result.return_value = TtsResult(True, audio_source="computer")
+                result = CompositeTtsEngine([qt, fallback]).speak_result("nerve", TtsSettings())
+                self.assertTrue(result.ok)
+                fallback.speak_result.assert_called_once()
+
     def test_qt_voice_and_rate_return_to_default(self) -> None:
         engine = QtTextToSpeechEngine()
         engine._engine = Mock()

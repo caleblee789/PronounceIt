@@ -1149,6 +1149,7 @@ def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
     result["rect"] = payload.get("rect", {})
     result["config"] = _js_config_payload()
     result["autoPlay"] = bool(payload.get("autoPlay"))
+    result["requestId"] = payload.get("requestId")
     result["request"] = _playback_request_payload(payload)
     _eval(context, f"window.PronounceIt && window.PronounceIt.show({json.dumps(result)});")
 

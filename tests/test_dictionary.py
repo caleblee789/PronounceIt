@@ -93,6 +93,9 @@ class DictionaryTests(unittest.TestCase):
 
     def test_lookup_resolves_safe_plural_and_possessive_variants(self) -> None:
         dictionary = PronunciationDictionary.bundled()
+        for plural, singular in [("muscles", "muscle"), ("nerves", "nerve"), ("fractures", "fracture")]:
+            with self.subTest(plural=plural):
+                self.assertEqual(dictionary.lookup(plural)["term"], singular)
         self.assertTrue(dictionary.lookup("carcinomas")["found"])
         self.assertTrue(dictionary.lookup("seizures")["found"])
         self.assertTrue(dictionary.lookup("Crohn's disease")["found"])

@@ -1,5 +1,13 @@
 # Unreleased
 
+## Release functionality audit (September 7, 2026)
+
+- Common plurals such as muscles, nerves, and fractures now find their singular dictionary entries.
+- Closing a quick card cancels its pending display and autoplay. Older or duplicate responses no longer replace a newer lookup or play twice.
+- Disabling PronounceIt dismisses its quick card and releases modifier keys. Audio shortcuts also work when a matching quick-card shortcut is turned off.
+- An unavailable or immediately failing Qt computer voice now lets the next speech backend try playback.
+
+
 This development update simplifies PronounceIt to audio pronunciations and written pronunciations for all 95,902 terms. The complete audio library remains one separate download, using the existing v1.3.0 audio unchanged.
 
 - Rebuilds settings around Review, Audio, Tools, and About & support, with a sidebar, grouped cards, responsive layouts, and consistent Light/Dark colors adapted from the owner's Home Screen Dashboard.
