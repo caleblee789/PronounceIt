@@ -10,6 +10,8 @@ python3 scripts/corpus/audit_pronunciations.py
 node --check web/pronounceit.js
 PYTHONPYCACHEPREFIX=/tmp/pronounceit_pycache python3 -m compileall -q __init__.py pronounceit scripts tests
 python3 scripts/release/build_ankiaddon.py
+python3 scripts/release/build_ankiaddon.py --verify dist/pronounceit.ankiaddon
+shasum -a 256 dist/pronounceit.ankiaddon
 ```
 
 - Verify 95,902 audio pronunciations, 95,902 written pronunciations, and all canonical terms and aliases.
@@ -19,6 +21,7 @@ python3 scripts/release/build_ankiaddon.py
 - Verify the archive contains no pronunciation audio or old subset data and excludes private user files, backups, caches, credentials, scripts, and quality records.
 - Build a second archive with `--output` and confirm the package bytes match when source files are unchanged.
 - Record the tested commit and candidate checksum. Preserve earlier packages and evidence.
+- Immediately before selecting a file for GitHub or AnkiWeb, run `--verify` against that exact path and compare its checksum with the tested candidate. Never upload a similarly named archive from another add-on checkout.
 
 ## Deferred native Anki smoke test
 

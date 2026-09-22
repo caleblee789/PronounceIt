@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import os
+import json
 import tempfile
 import zipfile
 from pathlib import Path
@@ -76,6 +77,15 @@ REQUIRED_ARCHIVE_FILES = {
 } | DATA_FILES
 
 
+def expected_archive_files(root: Path = ROOT) -> set[str]:
+    names = set(INCLUDE_FILES)
+    for dir_name in INCLUDE_DIRS:
+        for path in (root / dir_name).rglob("*"):
+            if path.is_file() and should_include(path.relative_to(root)):
+                names.add(path.relative_to(root).as_posix())
+    return names
+
+
 def should_include(path: Path) -> bool:
     if path.as_posix().startswith(FORBIDDEN_ARCHIVE_PREFIXES):
         return False
@@ -98,15 +108,32 @@ def validate_release_quality(root: Path = ROOT) -> None:
         raise SystemExit(f"Pronunciation audit failed; refusing to build release archive: {audit.as_dict()}")
 
 
-def validate_archive(path: Path) -> None:
+def validate_archive(path: Path, root: Path = ROOT) -> None:
     with zipfile.ZipFile(path) as archive:
         entries = archive.namelist()
         names = set(entries)
         corrupt = archive.testzip()
+        try:
+            manifest = json.loads(archive.read("manifest.json"))
+            initializer = archive.read("__init__.py").decode("utf-8")
+        except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise SystemExit(f"Archive identity validation failed: {error}") from error
     missing = sorted(REQUIRED_ARCHIVE_FILES - names)
     forbidden = sorted(name for name in names if not should_include(Path(name)))
-    if missing or forbidden or corrupt or len(names) != len(entries):
-        raise SystemExit(f"Archive validation failed: missing={missing}, forbidden={forbidden}, corrupt={corrupt}")
+    unexpected = sorted(names - expected_archive_files(root))
+    manifest_identity = (manifest.get("package"), manifest.get("name"))
+    expected_initializer = "from .pronounceit.main import initialize\n\ninitialize(__name__)\n"
+    identity_errors = []
+    if manifest_identity != ("pronounceit", "PronounceIt"):
+        identity_errors.append(f"manifest={manifest_identity!r}")
+    if initializer != expected_initializer:
+        identity_errors.append("unexpected __init__.py entry point")
+    if missing or forbidden or unexpected or corrupt or len(names) != len(entries) or identity_errors:
+        raise SystemExit(
+            "Archive validation failed: "
+            f"missing={missing}, forbidden={forbidden}, unexpected={unexpected}, "
+            f"corrupt={corrupt}, identity={identity_errors}"
+        )
 
 
 def add_file(archive: zipfile.ZipFile, name: str, root: Path = ROOT) -> None:
@@ -130,7 +157,7 @@ def build_archive(root: Path, output: Path) -> None:
                 for path in sorted((root / dir_name).rglob("*")):
                     if path.is_file() and should_include(path.relative_to(root)):
                         add_file(archive, path.relative_to(root).as_posix(), root)
-        validate_archive(temporary)
+        validate_archive(temporary, root)
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
@@ -140,7 +167,12 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Build and validate a PronounceIt add-on archive")
     parser.add_argument("--output", type=Path, default=OUT)
+    parser.add_argument("--verify", type=Path, help="Verify an existing upload candidate without rebuilding it")
     args = parser.parse_args()
+    if args.verify:
+        validate_archive(args.verify)
+        print(f"Verified {args.verify}")
+        return
     build_archive(ROOT, args.output)
     print(f"Created {args.output}")
 
