@@ -7,8 +7,8 @@ from typing import Any
 from aqt import mw
 from aqt.qt import (
     QAbstractButton, QApplication, QBoxLayout, QComboBox, QDialog, QEvent,
-    QGridLayout, QHBoxLayout, QLineEdit, QListWidget, QProgressBar, QScrollArea,
-    QSettings, QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTimer, QVBoxLayout, Qt,
+    QGridLayout, QHBoxLayout, QIcon, QLineEdit, QListWidget, QProgressBar, QScrollArea,
+    QSettings, QSize, QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTimer, QVBoxLayout, Qt,
 )
 
 from . import __version__, main as core
@@ -137,6 +137,15 @@ class Settings(QDialog):
         self.footer_grid.setContentsMargins(16, 8, 16, 8)
         self.footer_grid.setHorizontalSpacing(8)
         self.footer_grid.setVerticalSpacing(4)
+        self.donate = button("Buy Me a Coffee", core._open_support_url, "quiet")
+        self.donate.setAccessibleName("Buy Me a Coffee")
+        self.donate.setToolTip("Donate to support the creator")
+        asset = core._support_image_path()
+        if asset.exists():
+            self.donate.setText("")
+            self.donate.setIcon(QIcon(str(asset)))
+            self.donate.setIconSize(QSize(98, 28))
+            self.donate.setFixedSize(106, 36)
         self.footer_status = label("", "secondary")
         self.footer_status.setAccessibleName("Settings save status")
         self.discard_button = button("Discard changes", self.discard, "quiet")
@@ -167,12 +176,17 @@ class Settings(QDialog):
             return
         self._footer_compact = compact
         actions = (self.discard_button, self.close_control, self.save_control)
-        for widget in (self.footer_status, *actions):
+        for widget in (self.donate, self.footer_status, *actions):
             self.footer_grid.removeWidget(widget)
-        self.footer_grid.setColumnStretch(0, 1)
-        self.footer_grid.addWidget(self.footer_status, 0, 0, 1, 4 if compact else 1)
-        for column_index, action in enumerate(actions, 1):
-            self.footer_grid.addWidget(action, int(compact), column_index)
+        action_row = int(compact)
+        self.footer_grid.setColumnStretch(1, 1)
+        self.footer_grid.addWidget(self.donate, action_row, 0, Qt.AlignmentFlag.AlignLeft)
+        if compact:
+            self.footer_grid.addWidget(self.footer_status, 0, 0, 1, 5)
+        else:
+            self.footer_grid.addWidget(self.footer_status, 0, 1)
+        for column_index, action in enumerate(actions, 2):
+            self.footer_grid.addWidget(action, action_row, column_index)
 
     def navigate(self, index):
         if not 0 <= index < len(self.SECTIONS):
@@ -215,7 +229,7 @@ class Settings(QDialog):
         self.page_title.setVisible(not compact)
         panel_width = self.width() - (0 if compact else sidebar_width)
         actions = (self.discard_button, self.close_control, self.save_control)
-        action_width = sum(control.sizeHint().width() for control in actions)
+        action_width = self.donate.sizeHint().width() + sum(control.sizeHint().width() for control in actions)
         status_width = self.footer_status.fontMetrics().horizontalAdvance("Unsaved changes")
         self._arrange_footer(panel_width < action_width + status_width + 64)
 
@@ -353,7 +367,6 @@ class Settings(QDialog):
     def build_about(self):
         body = self.page_layouts[3]
         about = SettingsCard("PronounceIt", f"Version {__version__}")
-        about.body.addWidget(FieldRow("Support the creator", button("Buy Me a Coffee", core._open_support_url, "quiet"), stack_below=360))
         body.addWidget(about)
         files = SettingsCard("Your data", "Saved words, custom pronunciations, and audio stay on this computer. They are shared by profiles using this add-on and do not sync through AnkiWeb.")
         paths, paths_body = column()
