@@ -38,6 +38,7 @@
   let contextRequest = null;
   let activeRequest = null;
   let popupEl = null;
+  let popupPreviousFocus = null;
   let noticeEl = null;
   let noticeTimer = null;
   let popupObserver = null;
@@ -1053,11 +1054,16 @@
   function hidePopup() {
     pendingLookupId = null;
     if (popupEl) {
+      const restoreFocus = popupEl.contains(document.activeElement);
       if (popupObserver) popupObserver.disconnect();
       popupObserver = null;
       popupEl.remove();
       popupEl = null;
+      if (restoreFocus && popupPreviousFocus && popupPreviousFocus.isConnected) {
+        popupPreviousFocus.focus();
+      }
     }
+    popupPreviousFocus = null;
   }
 
   function hideAll() {
@@ -1114,6 +1120,7 @@
 
 
     if (!popupEl) {
+      popupPreviousFocus = document.activeElement;
       popupEl = document.createElement("div");
       applyTheme(popupEl, "pronounceit-popup");
       popupEl.setAttribute("role", "dialog");
@@ -1165,8 +1172,9 @@
 
     if (!loading) {
       const play = popupEl.querySelector(".pronounceit-play-button");
-      if (play && !play.disabled && typeof play.focus === "function") {
-        play.focus();
+      const focusTarget = play && !play.disabled ? play : popupEl.querySelector(".pronounceit-close");
+      if (focusTarget && typeof focusTarget.focus === "function") {
+        focusTarget.focus();
       }
     }
 

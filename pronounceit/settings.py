@@ -526,7 +526,7 @@ class Settings(QDialog):
         elif state.running:
             help_text = "The download continues when you close settings."
         elif state.phase == "failed":
-            help_text = "Check your connection and available disk space, then try again."
+            help_text = state.error or "Check your connection and available disk space, then try again."
         elif state.phase == "cancelled":
             help_text = "Resume to finish the download. Downloaded files are kept."
         elif state.installed:

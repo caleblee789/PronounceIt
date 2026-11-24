@@ -264,7 +264,7 @@ class ValueSlider(QWidget):
                 scale.addWidget(label(text, "secondary"))
             body.addLayout(scale)
         self.slider.valueChanged.connect(lambda value: self.readout.setText(formatter(value)))
-        self.readout.setText(formatter(low))
+        self.readout.setText(formatter(self.slider.value()))
 
 
 class ActivityIndicator(QWidget):

@@ -9,6 +9,7 @@ from typing import Any
 from .audio import audio_file_has_content
 from .audio_pack import AudioPackError, AudioPackManager
 from .audio_pack_download import AudioPackDownloadController, AudioPackDownloadState
+from .shared_addon_menu import install_shared_menu_footer
 from .config import DEFAULT_CONFIG, PronounceItConfig
 from .dictionary import PronunciationDictionary, display_term
 from .qa import audit_pronunciations
@@ -392,10 +393,6 @@ def _install_tools_menu_actions() -> None:
     except Exception:
         return
 
-    existing = getattr(mw, "_pronounceit_settings_action", None)
-    if existing is not None:
-        return
-
     menu_bar = getattr(getattr(mw, "form", None), "menubar", None)
     if menu_bar is None:
         menu_bar_getter = getattr(mw, "menuBar", None)
@@ -404,6 +401,10 @@ def _install_tools_menu_actions() -> None:
         return
 
     submenu = _get_caleb_addons_menu(menu_bar, mw)
+    install_shared_menu_footer(submenu, mw, "1352407063")
+    existing = getattr(mw, "_pronounceit_settings_action", None)
+    if existing is not None:
+        return
     for action in _menu_actions(submenu):
         if isinstance(action, tuple) and len(action) >= 2:
             action = action[1]

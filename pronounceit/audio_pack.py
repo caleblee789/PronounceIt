@@ -15,11 +15,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .audio import audio_file_has_content
-from .dictionary import normalize_term
+from .dictionary import BUNDLED_PRONUNCIATION_EXCLUSIONS, normalize_term
 
 
 PACK_SCHEMA_VERSION = 3
 AUDIO_ASSET_NAMESPACE = "pronounceit-audio-v2"
+MARIN_REALTIME_MODEL = "gpt-realtime-2.1-mini"
+MARIN_PILOT_CLIP_COUNT = 10
 DEFAULT_MANIFEST_URL = (
     "https://github.com/caleblee789/PronounceIt/releases/download/"
     "audio-pack-v2/pack-manifest.json"
@@ -81,26 +83,70 @@ def _sha256(value: Any) -> bool:
 
 
 def _validate_v3(raw: dict[str, Any]) -> None:
-    generation, phonemes, review, assets = (raw.get(k) for k in ("generation", "phonemeInput", "review", "assets"))
-    if not all(isinstance(value, dict) for value in (generation, phonemes, review, assets)):
+    generation, review, assets = (raw.get(k) for k in ("generation", "review", "assets"))
+    if not all(isinstance(value, dict) for value in (generation, review, assets)):
         raise AudioPackError("audio pack is missing generation and pronunciation metadata")
-    if (generation.get("provider") != "kokoro-local"
-        or not all(generation.get(k) for k in ("model", "modelRevision", "voice", "speed"))
-        or not _sha256(generation.get("bindingSha256"))
-        or phonemes.get("alphabet") != "kokoro-us-v1"
-        or not _sha256(phonemes.get("recordsSha256"))
-        or review.get("methodApproval") != "accepted-kokoro-pilot"
-        or review.get("pilotClipCount") != 10
+    provider = generation.get("provider")
+    marin = provider == "openai" and generation.get("model") == MARIN_REALTIME_MODEL
+    if provider == "kokoro-local":
+        inputs = raw.get("phonemeInput")
+        input_hash = "phonemeInputSha256"
+        provider_valid = (all(generation.get(k) for k in ("model", "modelRevision", "voice", "speed"))
+                          and isinstance(inputs, dict) and inputs.get("alphabet") == "kokoro-us-v1"
+                          and review.get("methodApproval") == "accepted-kokoro-pilot"
+                          and review.get("pilotClipCount") == 10)
+    elif provider == "openai":
+        inputs = raw.get("speechInput")
+        input_hash = "inputSha256"
+        automated = review.get("methodApproval") == "automated-openai-pilot"
+        if marin:
+            listened = review.get("listenedAssetIds")
+            profile_valid = (
+                generation.get("voice") == "marin" and generation.get("sampleRate") == 24000
+                and raw.get("format") == "audio-24khz-48kbitrate-mono-mp3"
+                and review.get("methodApproval") == "accepted-openai-realtime-pilot"
+                and review.get("pilotClipCount") == MARIN_PILOT_CLIP_COUNT
+                and isinstance(listened, list) and len(listened) == MARIN_PILOT_CLIP_COUNT
+                and all(_sha256(identifier) for identifier in listened)
+                and len(set(listened)) == MARIN_PILOT_CLIP_COUNT
+            )
+        else:
+            approval_valid = (review.get("methodApproval") == "accepted-openai-pilot"
+                              or (automated and generation.get("model") == "tts-1-hd"
+                                  and review.get("pilotAudioIntegrityChecked") is True))
+            profile_valid = (
+                generation.get("model") in {"tts-1", "tts-1-hd"} and generation.get("voice") == "nova"
+                and approval_valid and review.get("pilotClipCount") == 60
+            )
+        provider_valid = (
+            profile_valid and generation.get("speed") == 1 and "phonemeInput" not in raw
+            and isinstance(inputs, dict) and review.get("libraryListeningAccuracyMeasured") is False
+        )
+    else:
+        raise AudioPackError("audio pack has unsupported provider metadata")
+    if (not provider_valid or not _sha256(generation.get("bindingSha256"))
+        or not _sha256(inputs.get("recordsSha256"))
         or not _sha256(review.get("pilotBindingSha256"))):
         raise AudioPackError("audio pack has invalid provider or pilot approval metadata")
-    if raw.get("assetCount") != len(assets) or phonemes.get("termCount") != len(assets):
+    if raw.get("assetCount") != len(assets) or inputs.get("termCount") != len(assets):
         raise AudioPackError("audio pack pronunciation coverage differs")
+    if marin:
+        approved = {identifier for identifier, asset in assets.items() if isinstance(asset, dict)
+                    and (asset.get("clipReviewStatus") == "accepted" or asset.get("reviewStatus") == "listening-approved")}
+        if approved != set(listened) or any(
+            assets[identifier].get("clipReviewStatus") != "accepted"
+            or assets[identifier].get("reviewStatus") != "listening-approved" for identifier in approved
+        ):
+            raise AudioPackError("Marin pack assets differ from its listened pilot")
     for identifier, asset in assets.items():
         if (not _sha256(identifier) or not isinstance(asset, dict)
-            or not _sha256(asset.get("sha256")) or not _sha256(asset.get("phonemeInputSha256"))
+            or not _sha256(asset.get("sha256")) or not _sha256(asset.get(input_hash))
             or asset.get("clipReviewStatus") not in {"accepted", "unreviewed"}
             or asset.get("reviewStatus") not in {"listening-approved", "reference-backed", "unverified-estimate"}):
             raise AudioPackError("audio pack contains invalid asset provenance")
+        if provider == "openai" and automated and (asset.get("clipReviewStatus") != "unreviewed"
+                                                   or asset.get("reviewStatus") == "listening-approved"):
+            raise AudioPackError("automated audio checks cannot claim listening approval")
 
 
 def validate_manifest(raw: Any) -> dict[str, Any]:
@@ -173,12 +219,11 @@ class AudioPackManager:
             self.dictionary_path = addon_root / "data" / "medical_pronunciations.json"
         self.pack_root = addon_root / "user_files" / "audio_packs"
         self.cache_root = addon_root / "user_files" / "audio_cache"
-        self.manifest_url = (
+        self._manifest_url_override = (
             manifest_url
             or os.environ.get("PRONOUNCEIT_AUDIO_PACK_MANIFEST_URL", "").strip()
-            or self._candidate_manifest_url()
-            or DEFAULT_MANIFEST_URL
         )
+        self.manifest_url = self._manifest_url_override or self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
         self.cache_bytes = max(0, int(cache_bytes))
         self._pause_event = threading.Event()
         self._pause_event.set()
@@ -193,6 +238,24 @@ class AudioPackManager:
         try:
             release = json.loads((self.addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
             url = str(release.get("manifestUrl") or "")
+            # A separately supplied pack can be installed without publishing it
+            # or downloading it again. Only use the release-bound local pack.
+            local_manifest = self.addon_root / "data/pack-manifest.json"
+            try:
+                manifest = validate_manifest(json.loads(local_manifest.read_text(encoding="utf-8")))
+                if (
+                    release.get("schemaVersion") == 3
+                    and manifest["dictionarySha256"] == release.get("dictionarySha256")
+                    and manifest_content_sha256(manifest) == release.get("packManifestContentSha256")
+                    and all(
+                        (local_manifest.parent / shard["file"]).is_file()
+                        and (local_manifest.parent / shard["file"]).stat().st_size == shard["size"]
+                        for shard in manifest["shards"]
+                    )
+                ):
+                    return local_manifest.resolve().as_uri()
+            except (OSError, ValueError, TypeError, AudioPackError):
+                pass
             if release.get("schemaVersion") == 3 and urllib.parse.urlparse(url).scheme == "https":
                 return url
         except (OSError, ValueError, AttributeError):
@@ -256,6 +319,8 @@ class AudioPackManager:
         progress: Callable[[int, int, str], None] | None = None,
     ) -> AudioPackStatus:
         self._cancel_event.clear()
+        if not self._manifest_url_override:
+            self.manifest_url = self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
         manifest = self._fetch_manifest()
         if not self._dictionary_is_compatible(manifest):
             raise AudioPackError("audio pack was built for a different dictionary version")
@@ -325,6 +390,8 @@ class AudioPackManager:
         self._manifest_cache = None
 
     def resolve(self, term: str) -> Path | None:
+        if normalize_term(term) in BUNDLED_PRONUNCIATION_EXCLUSIONS:
+            return None
         manifest = self._load_local_manifest()
         if manifest is None or not self._dictionary_is_compatible(manifest):
             return None
@@ -378,6 +445,14 @@ class AudioPackManager:
             )
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise AudioPackError(
+                    "The audio library is unavailable at this download address (HTTP 404). "
+                    "Copy the matching pack-manifest.json and all 16 audio ZIP files into "
+                    "PronounceIt's data folder, then retry."
+                ) from exc
+            raise AudioPackError(f"could not download audio pack manifest: {exc}") from exc
         except (OSError, UnicodeError, json.JSONDecodeError, urllib.error.URLError) as exc:
             raise AudioPackError(f"could not download audio pack manifest: {exc}") from exc
         return validate_manifest(raw)
@@ -480,7 +555,7 @@ class AudioPackManager:
         existing = self._prepare_partial(target, shard)
         if self._valid_shard(target, shard):
             return
-        url = str(shard.get("url") or "")
+        url = "" if urllib.parse.urlparse(self.manifest_url).scheme == "file" else str(shard.get("url") or "")
         if not url:
             url = urllib.parse.urljoin(self.manifest_url, str(shard["file"]))
         request = urllib.request.Request(url)
