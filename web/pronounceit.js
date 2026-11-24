@@ -1099,6 +1099,9 @@
 
     const playback = playbackInfo(payload);
     const loading = Boolean(payload.loading);
+    const audioHelp = !loading && !playback.audioAvailable
+      ? payload.audioHelp || "Audio unavailable for this term."
+      : "";
     const request = playbackRequest(payload);
     const openingRevision = config.reviewRevision;
     const hadPopup = Boolean(popupEl);
@@ -1146,9 +1149,6 @@
     const card = createPronunciationCard({
       word: playback.word,
       pronunciation: payload.pronunciation || "Pronunciation unavailable",
-      source: sourceLabel(payload),
-      sourceKey: sourceKey(payload),
-      audioHelp: payload.audioAvailable === false ? payload.audioHelp : "",
       found: Boolean(payload.pronunciation),
       onPlay: playPayload,
       onSave: savePayload,
@@ -1163,7 +1163,11 @@
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
     status.setAttribute("aria-atomic", "true");
-    status.setAttribute("data-empty", "true");
+    status.setAttribute("data-empty", audioHelp ? "false" : "true");
+    if (audioHelp) {
+      status.setAttribute("data-state", "info");
+      status.textContent = audioHelp;
+    }
 
     popupEl.replaceChildren(card, status);
 
@@ -1184,7 +1188,6 @@
 
   function createPronunciationCard(options) {
     const word = options.word || "";
-    const source = options.source || "Computer voice";
     const card = document.createElement("section");
     card.className = "pronounceit-card";
 
@@ -1195,11 +1198,6 @@
     term.className = "pronounceit-term";
     term.setAttribute("id", "pronounceit-quick-card-term");
     term.textContent = word;
-
-    const badge = document.createElement("div");
-    badge.className = "pronounceit-source " + (options.sourceKey || "computer");
-    badge.setAttribute("aria-live", "polite");
-    badge.textContent = options.loading ? "" : source;
 
     header.appendChild(term);
     const close = document.createElement("button");
@@ -1258,42 +1256,8 @@
     card.appendChild(header);
     card.appendChild(pronunciationBlock);
     card.appendChild(actions);
-    card.appendChild(badge);
-    if (options.audioHelp) {
-      const details = document.createElement("details");
-      details.className = "pronounceit-details";
-      const summary = document.createElement("summary");
-      summary.textContent = "Playback help";
-      const help = document.createElement("p");
-      help.textContent = options.audioHelp;
-      details.appendChild(summary);
-      details.appendChild(help);
-      details.addEventListener("toggle", placePopup);
-      card.appendChild(details);
-    }
 
     return card;
-  }
-
-  function sourceLabel(payload) {
-    const explicit = String(payload.audioSourceLabel || "").trim();
-    if (explicit) {
-      return explicit;
-    }
-    const labels = {
-      audio: "Audio pronunciation",
-      custom: "Custom recording",
-      library: "Audio library",
-      computer: "Computer voice",
-      unavailable: "No recording available",
-    };
-    return labels[String(payload.audioSource || "").toLowerCase()]
-      || (payload.audioAvailable === false ? "No recording available" : "Computer voice");
-  }
-
-  function sourceKey(payload) {
-    const value = String(payload.audioSource || "").toLowerCase();
-    return ["audio", "custom", "library", "computer", "unavailable"].includes(value) ? value : "loading";
   }
 
   function updateStatus(text, state) {
@@ -1326,11 +1290,6 @@
     if (popupEl && popupPlaybackId !== null && result.requestId === popupPlaybackId) {
       popupPlaybackId = null;
       if (result.ok) {
-        const source = popupEl.querySelector(".pronounceit-source");
-        if (source && result.audioSource) {
-          source.className = "pronounceit-source " + sourceKey(result);
-          source.textContent = sourceLabel(result);
-        }
         if (popupSaveId === null) updateStatus("");
       } else {
         updateStatus(reason, answerRequired ? "info" : "error");
@@ -1446,7 +1405,6 @@
       term: word,
       requestedText: word,
       pronunciation: "Looking up pronunciation…",
-      audioSource: "loading",
       audioAvailable: false,
       loading: true,
       request: request,

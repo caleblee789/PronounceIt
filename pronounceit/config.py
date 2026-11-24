@@ -11,6 +11,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "popup_click_modifier": "alt",
     "native_context_menu_modifier": "ctrl",
     "show_native_context_menu": True,
+    "show_right_click_play_audio": True,
     "tts_voice": "",
     "tts_rate": 0,
     "tts_volume": 100,
@@ -39,6 +40,7 @@ class PronounceItConfig:
     popup_click_modifier: str
     native_context_menu_modifier: str
     show_native_context_menu: bool
+    show_right_click_play_audio: bool
     tts_voice: str
     tts_rate: int
     tts_volume: int
@@ -85,6 +87,10 @@ class PronounceItConfig:
             show_native_context_menu=_bool_value(
                 merged.get("show_native_context_menu"),
                 DEFAULT_CONFIG["show_native_context_menu"],
+            ),
+            show_right_click_play_audio=_bool_value(
+                merged.get("show_right_click_play_audio"),
+                DEFAULT_CONFIG["show_right_click_play_audio"],
             ),
             tts_voice=str(merged["tts_voice"] or ""),
             tts_rate=max(
@@ -152,6 +158,7 @@ class PronounceItConfig:
             "popup_click_modifier": self.popup_click_modifier,
             "native_context_menu_modifier": self.native_context_menu_modifier,
             "show_native_context_menu": self.show_native_context_menu,
+            "show_right_click_play_audio": self.show_right_click_play_audio,
             "tts_voice": self.tts_voice,
             "tts_rate": self.tts_rate,
             "tts_volume": self.tts_volume,

@@ -2,7 +2,7 @@
 
 PronounceIt adds written pronunciation guides and audio playback to Anki desktop. This release includes 98,305 written guides and provides matching AI-generated recordings using OpenAI Realtime (gpt-realtime-2.1-mini, Marin).
 
-While reviewing a card, select text, right-click, and choose **Play audio**.
+While reviewing a card, select text, right-click, and choose **Play audio** below **Copy**. This is on by default and can be toggled in **PronounceIt settings > Review**.
 
 Install or update PronounceIt through [AnkiWeb](https://ankiweb.net/shared/info/1352407063) using add-on code `1352407063`. For a previous GitHub installation, install the [GitHub release archive](https://github.com/caleblee789/PronounceIt/releases/latest) through **Tools > Add-ons > Install from file**. Update through the channel you already use and restart Anki to retain your settings, saved pronunciations, and custom corrections.
 

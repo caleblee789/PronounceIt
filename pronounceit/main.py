@@ -962,7 +962,7 @@ def _selected_text_from_webview(webview: Any) -> str:
 
 
 def _on_reviewer_webview_context_menu(webview: Any, menu: Any) -> None:
-    from aqt import mw
+    from aqt import mw, tr
 
     reviewer = getattr(mw, "reviewer", None)
     card = getattr(reviewer, "card", None)
@@ -970,6 +970,7 @@ def _on_reviewer_webview_context_menu(webview: Any, menu: Any) -> None:
         getattr(mw, "state", None) != "review"
         or card is None
         or webview is not reviewer.web
+        or not _config().show_right_click_play_audio
         or not _pronunciation_allowed()
     ):
         return
@@ -982,10 +983,17 @@ def _on_reviewer_webview_context_menu(webview: Any, menu: Any) -> None:
         if (
             mw.state == "review" and mw.reviewer is reviewer
             and reviewer.card is card and _review_revision == revision
+            and _config().show_right_click_play_audio
         ):
             _pronounce_text_from_reviewer(selected_text)
 
+    native_actions = menu.actions()
     action = menu.addAction("Play audio")
+    copy_label = tr.actions_copy()
+    for native_action, following_action in zip(native_actions, native_actions[1:]):
+        if _qt_action_text(native_action) == copy_label:
+            menu.insertAction(following_action, action)
+            break
     action.triggered.connect(play_selected)
 
 

@@ -289,7 +289,6 @@ if (messages.filter(m => m.startsWith("pronounceit:audioLookup:")).length !== 2)
         js = (ROOT / "web" / "pronounceit.js").read_text(encoding="utf-8")
 
         self.assertIn("openQuickCard", js)
-        self.assertIn("audioSourceLabel", js)
         self.assertIn("contextMenuModifier", js)
         self.assertNotIn("showContextMenu", js)
         self.assertNotIn("pronounceit-menu", js)
@@ -632,8 +631,6 @@ if (messages.some((message) => message.startsWith("pronounceit:audioLookup:"))) 
 sandbox.window.PronounceIt.show({
   term: "bundle",
   pronunciation: "BUN-dul",
-  audioSource: "audio",
-  audioSourceLabel: "Audio pronunciation",
   audioAvailable: true,
   autoPlay: request.autoPlay,
   request,
@@ -738,7 +735,7 @@ if (messages.length) throw new Error(`Empty target sent bridge message: ${JSON.s
 """
         )
 
-    def test_details_popup_save_uses_preserved_request_and_disables_after_save(self) -> None:
+    def test_quick_card_save_preserves_request_and_disables_after_save(self) -> None:
         self.run_node(
             r"""
 const request = {
@@ -766,7 +763,7 @@ let save = popup && popup.querySelector(".pronounceit-save-button");
 const play = popup && popup.querySelector(".pronounceit-play-button");
 if (!play || play.textContent !== "Play") throw new Error("Play action was not simplified");
 if (!save || save.disabled || save.textContent !== "Save") {
-  throw new Error("Save action missing from details popup");
+  throw new Error("Save action missing from the quick card");
 }
 save.listeners.click();
 save.listeners.click();
@@ -797,7 +794,7 @@ if (save.getAttribute("aria-disabled") !== "true") throw new Error("A persistent
 """
         )
 
-    def test_details_popup_respects_disabled_save_setting(self) -> None:
+    def test_quick_card_respects_disabled_save_setting(self) -> None:
         self.run_node(
             r"""
 sandbox.window.PronounceIt.configure({ showSaveButton: false });
@@ -814,51 +811,39 @@ if (popup.querySelector(".pronounceit-save-button")) throw new Error("Disabled S
 """
         )
 
-    def test_popup_uses_friendly_source_labels_and_updates_after_fallback(self) -> None:
+    def test_quick_card_keeps_action_feedback_without_source_details(self) -> None:
         self.run_node(
             r"""
-sandbox.window.PronounceIt.show({
+const ui = sandbox.window.PronounceIt;
+const content = node => [node.textContent, ...node.children.flatMap(content)];
+const ready = {
   term: "clozapine",
   pronunciation: "KLOH-zuh-peen",
-  found: true,
-  audioSource: "library",
+  audioSourceLabel: "Marin library",
   audioAvailable: true,
   request: { text: "clozapine", rect: {} },
-  rect: {},
-});
+};
+ui.show(ready);
 const popup = body.querySelector(".pronounceit-popup");
-const badge = popup && popup.querySelector(".pronounceit-source");
-if (!badge || badge.textContent !== "Audio library") {
-  throw new Error("Recorded audio was not shown");
+const playbackStatus = () => popup.querySelector(".pronounceit-status");
+if (content(popup).some(text => /Marin library|Details|Playback help/.test(text))) {
+  throw new Error("The quick card displays a source or details block");
 }
-sandbox.window.PronounceIt.playText("different term");
-const direct = payload("pronounceit:audioLookup:");
-sandbox.window.PronounceIt.spoken({ requestId: direct.requestId, ok: true, term: "different term", audioSource: "computer" });
-if (badge.textContent !== "Audio library") throw new Error("Unrelated playback changed the quick card’s source");
 popup.querySelector(".pronounceit-play-button").listeners.click();
-const play = payload("pronounceit:audioLookup:", 1);
-sandbox.window.PronounceIt.spoken({
-  requestId: play.requestId,
-  ok: true,
-  audioSource: "computer",
-  audioSourceLabel: "Computer voice",
-  term: "clozapine",
-});
-if (badge.textContent !== "Computer voice" || !badge.className.includes("computer")) {
-  throw new Error(`Actual fallback source was not shown: ${badge.textContent}`);
+const play = payload("pronounceit:audioLookup:");
+ui.playText("different term");
+const direct = payload("pronounceit:audioLookup:", 1);
+ui.spoken({ requestId: direct.requestId, ok: true, term: "different term" });
+if (playbackStatus().getAttribute("data-state") !== "loading" || !body.querySelector(".pronounceit-notice")) {
+  throw new Error("Direct playback interrupted the quick card’s playback status");
 }
-sandbox.window.PronounceIt.show({
-  term: "unknown",
-  pronunciation: "Unavailable",
-  audioSource: "computer",
-  audioAvailable: true,
-  request: { text: "unknown", rect: {} },
-  rect: {},
-});
-if (body.querySelector(".pronounceit-source").textContent !== "Computer voice") {
-  throw new Error("Generated audio did not use the standard text-to-speech label");
+ui.spoken({ requestId: play.requestId, ok: false });
+if (playbackStatus().getAttribute("data-state") !== "error") throw new Error("Playback failure was hidden");
+ui.show({ ...ready, term: "unknown", audioAvailable: false, audioHelp: "Choose computer voice in Audio settings." });
+ui.spoken({ requestId: play.requestId, ok: true, audioSourceLabel: "Computer voice" });
+if (!popup.querySelector(".pronounceit-play-button").disabled || playbackStatus().textContent !== "Choose computer voice in Audio settings.") {
+  throw new Error("An unavailable recording lacks guidance or a stale playback changed the new card");
 }
-
 """
         )
 

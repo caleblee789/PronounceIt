@@ -525,37 +525,58 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(text, "Agranulocytosis")
 
     def test_native_context_menu_plays_the_captured_reviewer_selection(self) -> None:
+        class ContextMenu:
+            def __init__(self):
+                self.items = []
+
+            def actions(self):
+                return list(self.items)
+
+            def addAction(self, label):
+                action = FakeAction(label)
+                self.items.append(action)
+                return action
+
+            def insertAction(self, before, action):
+                self.items.remove(action)
+                self.items.insert(self.items.index(before), action)
+
         reviewer = FakeReviewer()
         webview = FakeWebView("  right bundle branch block, ")
         reviewer.web = webview
         mw = types.SimpleNamespace(reviewer=reviewer, state="review")
-        aqt = types.SimpleNamespace(mw=mw)
+        aqt = types.SimpleNamespace(mw=mw, tr=types.SimpleNamespace(actions_copy=lambda: "Kopieren"))
         config = PronounceItConfig.from_mapping({"show_native_context_menu": False})
 
         with patch.dict(sys.modules, {"aqt": aqt}), patch.object(main, "_config", return_value=config):
-            menu = FakeMenu()
-            menu.addAction("Copy")
+            menu = ContextMenu()
+            menu.addAction("Kopieren")
+            menu.addAction("Another action")
             main._on_reviewer_webview_context_menu(webview, menu)
-            self.assertEqual([label for label, _ in menu.actions], ["Copy", "Play audio"])
-            play_audio = menu.actions[-1][1].callback
+            self.assertEqual([action.label for action in menu.actions()], ["Kopieren", "Play audio", "Another action"])
+            play_audio = menu.actions()[1].callback
             webview._selected_text = ""
             play_audio()
             with patch.object(main, "_review_revision", main._review_revision + 1):
                 play_audio()
 
-            no_selection = FakeMenu()
+            no_selection = ContextMenu()
             main._on_reviewer_webview_context_menu(webview, no_selection)
-            self.assertFalse(no_selection.actions)
-            other_webview = FakeMenu()
+            self.assertFalse(no_selection.actions())
+            other_webview = ContextMenu()
             main._on_reviewer_webview_context_menu(FakeWebView("clozapine"), other_webview)
-            self.assertFalse(other_webview.actions)
+            self.assertFalse(other_webview.actions())
             webview._selected_text = "clozapine"
-            blocked = FakeMenu()
+            blocked = ContextMenu()
             config = PronounceItConfig.from_mapping({"allow_on_question_side": False})
             with patch.object(main, "_config", return_value=config), patch.object(main, "_reviewer_answer_visible", False):
                 main._on_reviewer_webview_context_menu(webview, blocked)
                 play_audio()
-            self.assertFalse(blocked.actions)
+            self.assertFalse(blocked.actions())
+            with patch.object(main, "_config", return_value=PronounceItConfig.from_mapping({"show_right_click_play_audio": False})):
+                main._on_reviewer_webview_context_menu(webview, blocked)
+                play_audio()
+            self.assertFalse(blocked.actions())
 
         self.assertEqual(webview.scripts, ['window.PronounceIt && window.PronounceIt.playText("right bundle branch block");'])
 

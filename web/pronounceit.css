@@ -99,15 +99,9 @@
 }
 .pronounceit-popup button:hover { background: var(--pronounceit-hover); }
 .pronounceit-popup .pronounceit-play-button:hover { background: var(--pronounceit-accent-hover); }
-.pronounceit-popup button:focus-visible, .pronounceit-details summary:focus-visible { outline: 3px solid var(--pronounceit-accent-strong); outline-offset: 2px; }
+.pronounceit-popup button:focus-visible { outline: 3px solid var(--pronounceit-accent-strong); outline-offset: 2px; }
 .pronounceit-popup button:disabled,
 .pronounceit-popup button[aria-disabled="true"] { cursor: default; color: var(--pronounceit-disabled); background: var(--pronounceit-disabled-bg); border-color: var(--pronounceit-border); }
-.pronounceit-details { color: var(--pronounceit-muted); font-size: 12px; }
-.pronounceit-details summary { cursor: pointer; width: fit-content; }
-.pronounceit-details p { margin: 4px 0 0; }
-.pronounceit-source { font-size: 12px; line-height: 1.4; color: var(--pronounceit-muted); }
-.pronounceit-source:empty { display: none; }
-.pronounceit-source.unavailable { color: var(--pronounceit-guidance); }
 .pronounceit-status { font-size: 12px; line-height: 1.4; margin: 0 14px 12px; color: var(--pronounceit-status); }
 .pronounceit-status[data-empty="true"], .pronounceit-visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);

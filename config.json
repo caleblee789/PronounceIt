@@ -5,6 +5,7 @@
   "popup_click_modifier": "alt",
   "native_context_menu_modifier": "ctrl",
   "show_native_context_menu": true,
+  "show_right_click_play_audio": true,
   "tts_voice": "",
   "tts_rate": 0,
   "tts_volume": 100,

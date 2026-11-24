@@ -237,6 +237,8 @@ class Settings(QDialog):
         behavior = SettingsCard("Review behavior")
         self.check(behavior, "enabled", "Enable PronounceIt")
         self.check(behavior, "allow_on_question_side", "Allow before revealing the answer")
+        self.check(behavior, "show_right_click_play_audio", "Right-click Play audio",
+                   "Show Play audio below Copy when you right-click selected text.")
         body.addWidget(behavior)
         shortcuts = SettingsCard("Shortcuts")
         for key, title in [("direct_click_modifier", "Play audio"), ("native_context_menu_modifier", "Open quick card")]:
@@ -246,7 +248,7 @@ class Settings(QDialog):
             self.controls[key] = control
             shortcuts.body.addWidget(FieldRow(title, control, stack_below=280))
         how, instructions = column()
-        instructions.addWidget(label("Select text, right-click, and choose Play audio. To use a shortcut, hold its key while clicking or selecting text, or tap it after selecting text.", "secondary"))
+        instructions.addWidget(label("Hold the shortcut key while clicking or selecting text, or tap it after selecting text.", "secondary"))
         disclosure(shortcuts.body, "How to use", how)
         self.shortcut_conflict = label("The quick card takes priority when both shortcuts use the same key.", "warning")
         shortcuts.body.addWidget(self.shortcut_conflict)
@@ -427,7 +429,7 @@ class Settings(QDialog):
     def dependencies(self):
         enabled = self.controls["enabled"].isChecked()
         popup = enabled and self.controls["show_native_context_menu"].isChecked()
-        for key in ["direct_click_modifier", "show_native_context_menu", "allow_on_question_side"]:
+        for key in ["direct_click_modifier", "show_native_context_menu", "allow_on_question_side", "show_right_click_play_audio"]:
             self.controls[key].setEnabled(enabled)
         for key in ["native_context_menu_modifier", "auto_close_on_card_change", "show_save_button"]:
             self.controls[key].setEnabled(popup)

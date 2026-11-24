@@ -21,6 +21,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.as_js_payload()["contextMenuModifier"], "ctrl")
         self.assertTrue(config.as_js_payload()["showNativeContextMenu"])
         self.assertTrue(config.show_native_context_menu)
+        self.assertTrue(config.show_right_click_play_audio)
         self.assertEqual(config.theme, "light")
         self.assertEqual(config.as_js_payload()["theme"], "light")
         self.assertFalse(config.theme_initialized)
@@ -136,6 +137,7 @@ class ConfigTests(unittest.TestCase):
                 "auto_close_on_card_change": "0",
                 "allow_on_question_side": "yes",
                 "show_context_menu": 0,
+                "show_right_click_play_audio": "off",
                 "show_save_button": 1,
             }
         )
@@ -144,6 +146,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.auto_close_on_card_change)
         self.assertTrue(config.allow_on_question_side)
         self.assertFalse(config.show_context_menu)
+        self.assertFalse(config.as_config_mapping()["show_right_click_play_audio"])
         self.assertTrue(config.show_save_button)
 
         defaults = PronounceItConfig.from_mapping(
