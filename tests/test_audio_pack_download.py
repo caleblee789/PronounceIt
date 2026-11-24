@@ -54,6 +54,7 @@ class FakeAudioPackManager:
 
     def pause(self):
         self.paused = True
+        return True
 
     def resume(self):
         self.paused = False

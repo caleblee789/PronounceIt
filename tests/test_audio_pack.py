@@ -258,6 +258,12 @@ class AudioPackTests(unittest.TestCase):
                     manager.download()
                 self.assertFalse((version_dir / "shard-4.zip.part").exists())
                 self.assertTrue(manager.download().installed)
+                local_manifest = version_dir / "pack-manifest.json"
+                local_manifest.write_text(json.dumps({**manifest, "dictionarySha256": "0" * 64}))
+                self.assertFalse(manager.status().compatible)
+                requested_shards = len(requests)
+                self.assertTrue(manager.download().verified)
+                self.assertEqual(len(requests), requested_shards)
             self.assertNotIn(("0", None), requests)
             self.assertIn(("1", "bytes=5-"), requests)
             self.assertIn(("2", None), requests)
@@ -309,6 +315,7 @@ class AudioPackTests(unittest.TestCase):
 
             self.assertEqual(json.loads(manager.state_path.read_text())["packVersion"], "2-new")
             self.assertFalse(manager.cancel())
+            self.assertFalse(manager.pause())
 
 
 if __name__ == "__main__":

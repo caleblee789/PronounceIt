@@ -12,6 +12,7 @@ from aqt.qt import (
 )
 
 from . import __version__, main as core
+from .audio_pack import read_release_metadata
 from .config import DEFAULT_CONFIG, PronounceItConfig
 from .theme import dialog_qss, web_theme_tokens
 from .ui_components import (
@@ -23,13 +24,7 @@ from .ui_components import (
 
 def audio_library_summary() -> str:
     """Read the small bundled release binding, without scanning audio files."""
-    try:
-        path = core._addon_dir() / "data" / "audio-pack-release.json"
-        release = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
-    if not isinstance(release, dict):
-        return ""
+    release = read_release_metadata(core._addon_dir())
     parts = []
     count = release.get("assetCount")
     if type(count) is int and count > 0:

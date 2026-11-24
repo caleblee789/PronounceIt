@@ -996,7 +996,7 @@ class MainMessageTests(unittest.TestCase):
             main._config = original_config
 
         self.assertEqual(pack_payload["audioSource"], "library")
-        self.assertEqual(pack_payload["audioSourceLabel"], "Audio library")
+        self.assertEqual(pack_payload["audioSourceLabel"], "Marin library")
         self.assertEqual(live_payload["audioSource"], "computer")
         self.assertEqual(live_payload["audioSourceLabel"], "Computer voice")
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .audio import audio_file_has_content
-from .audio_pack import AudioPackError, AudioPackManager
+from .audio_pack import AudioPackError, AudioPackManager, read_release_metadata
 from .audio_pack_download import AudioPackDownloadController, AudioPackDownloadState
 from .shared_addon_menu import install_shared_menu_footer
 from .config import DEFAULT_CONFIG, PronounceItConfig
@@ -68,10 +68,10 @@ _LOOKUP_START_OPTION_SELECT = "option_select"
 
 
 def _audio_source_label(source: Any) -> str:
-    return _AUDIO_SOURCE_LABELS.get(
-        str(source or "").casefold(),
-        "Computer voice",
-    )
+    kind = str(source or "").casefold()
+    if kind == "library" and read_release_metadata(_addon_dir()).get("voice") == "marin":
+        return "Marin library"
+    return _AUDIO_SOURCE_LABELS.get(kind, "Computer voice")
 
 
 @dataclass(frozen=True)

@@ -212,6 +212,14 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
     return raw
 
 
+def read_release_metadata(addon_root: Path) -> dict[str, Any]:
+    try:
+        release = json.loads((addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return release if isinstance(release, dict) and release.get("schemaVersion") == 3 else {}
+
+
 class AudioPackManager:
     def __init__(
         self,
@@ -245,20 +253,13 @@ class AudioPackManager:
     def manifest_url(self) -> str:
         return self._manifest_url_override or self._source_url or self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
 
-    def _release_metadata(self) -> dict[str, Any]:
-        try:
-            release = json.loads((self.addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
-        return release if isinstance(release, dict) and release.get("schemaVersion") == 3 else {}
-
     @staticmethod
     def _configured_version(release: dict[str, Any]) -> str:
         version = str(release.get("releaseTag") or "").removeprefix("audio-pack-v")
         return version if is_supported_pack_version(version) else ""
 
     def _candidate_manifest_url(self) -> str:
-        release = self._release_metadata()
+        release = read_release_metadata(self.addon_root)
         if not release:
             return ""
         # A separately supplied pack must match the same release binding.
@@ -284,8 +285,12 @@ class AudioPackManager:
     def state_path(self) -> Path:
         return self.pack_root / "installed.json"
 
-    def pause(self) -> None:
-        self._pause_event.clear()
+    def pause(self) -> bool:
+        with self._promotion_lock:
+            if self._download_promoted or self._cancel_event.is_set():
+                return False
+            self._pause_event.clear()
+            return True
 
     def resume(self) -> None:
         self._pause_event.set()
@@ -306,7 +311,7 @@ class AudioPackManager:
 
     def status(self, verify_hashes: bool = False) -> AudioPackStatus:
         active_version = self._local_state_version()
-        version = self._configured_version(self._release_metadata())
+        version = self._configured_version(read_release_metadata(self.addon_root))
         manifest = self._manifest_for_version(version) if version else self._legacy_target_manifest(active_version)
         if manifest is None:
             message = (
@@ -383,7 +388,8 @@ class AudioPackManager:
         previous_version = self._local_state_version()
         version = str(manifest["packVersion"]).strip()
         previous_manifest = self._manifest_for_version(version)
-        if previous_version == version and previous_manifest and previous_manifest != manifest:
+        if (previous_version == version and previous_manifest and previous_manifest != manifest
+                and self._dictionary_is_compatible(previous_manifest)):
             raise AudioPackError("audio pack manifest changed without a new pack version")
         manifest_path = self.pack_root / version / "pack-manifest.json"
         if previous_manifest != manifest:
@@ -435,13 +441,16 @@ class AudioPackManager:
         verified = self._manifest_status(manifest, version, True, self._raise_if_cancelled)
         if not verified.installed:
             raise AudioPackError(f"could not verify the new offline pronunciation pack: {verified.message}")
-        self._wait_if_paused()
         # Cancellation and activation meet at the installed pointer. Once it
-        # changes, the new pack is active and the operation can no longer cancel.
-        with self._promotion_lock:
-            self._raise_if_cancelled()
-            self._write_json_atomic(self.state_path, {"packVersion": version})
-            self._download_promoted = True
+        # changes, the new pack is active and can no longer pause or cancel.
+        while True:
+            self._wait_if_paused()
+            with self._promotion_lock:
+                self._raise_if_cancelled()
+                if self._pause_event.is_set():
+                    self._write_json_atomic(self.state_path, {"packVersion": version})
+                    self._download_promoted = True
+                    break
         if previous_version and previous_version != version:
             shutil.rmtree(self.pack_root / previous_version, ignore_errors=True)
             shutil.rmtree(self.cache_root / previous_version, ignore_errors=True)
@@ -523,7 +532,7 @@ class AudioPackManager:
             )
             with urllib.request.urlopen(request, timeout=30) as response:
                 data = response.read()
-            release = self._release_metadata()
+            release = read_release_metadata(self.addon_root)
             expected_hash = release.get("packManifestSha256")
             if (not self._manifest_url_override and request.full_url == release.get("manifestUrl")
                     and _sha256(expected_hash) and hashlib.sha256(data).hexdigest() != expected_hash):
@@ -571,7 +580,7 @@ class AudioPackManager:
         return active
 
     def _active_manifest(self) -> dict[str, Any] | None:
-        release = self._release_metadata()
+        release = read_release_metadata(self.addon_root)
         expected_version = self._configured_version(release)
         active_version = self._local_state_version()
         if not active_version or (expected_version and active_version != expected_version):
@@ -596,7 +605,7 @@ class AudioPackManager:
                 dictionary_cache = (stamp, dictionary_sha256(self.dictionary_path))
                 self._dictionary_cache = dictionary_cache
             if release is None:
-                release = self._release_metadata()
+                release = read_release_metadata(self.addon_root)
             expected_version = self._configured_version(release)
             if expected_version and str(manifest["packVersion"]).strip() != expected_version:
                 return False

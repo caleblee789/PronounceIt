@@ -87,9 +87,8 @@ class AudioPackDownloadController:
 
     def pause(self) -> bool:
         with self._lock:
-            if self._state.phase not in {"preparing", "downloading"}:
+            if self._state.phase not in {"preparing", "downloading"} or not self.manager.pause():
                 return False
-            self.manager.pause()
             self._state = replace(
                 self._state,
                 phase="paused",
