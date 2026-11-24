@@ -573,7 +573,7 @@ class Settings(QDialog):
         self.pack_buttons["Check files"].setVisible(can_check)
         start = self.pack_buttons["Download library"]
         download_label = {
-            "update-available": "Update library",
+            "update-available": "Update Audio",
             "incomplete": "Resume download",
             "cancelled": "Resume download",
         }.get(phase, "Download library")
