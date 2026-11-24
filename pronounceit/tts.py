@@ -15,7 +15,7 @@ from .audio_pack import AudioPackManager
 
 
 AudioBackend = Literal["system_tts", "local_audio", "local_audio_then_tts"]
-AudioSource = Literal["audio", "computer"]
+AudioSource = Literal["audio", "custom", "library", "computer"]
 
 
 @dataclass(frozen=True)
@@ -188,7 +188,7 @@ class LocalAudioFileEngine(TtsEngine):
         result = self.play_path(audio_path)
         if not result.ok:
             return result
-        return TtsResult(True, result.reason, result.attempts, "audio")
+        return TtsResult(True, result.reason, result.attempts, "custom")
 
     def play_path(self, audio_path: Path) -> TtsResult:
         anki_result = self._play_with_anki(audio_path)
@@ -362,7 +362,7 @@ class AudioPackEngine(TtsEngine):
             f"asset: {audio_path.stem}",
             f"provider: {metadata.get('provider', 'azure-speech')}",
         ]
-        return TtsResult(True, "playing offline pronunciation pack", details, "audio")
+        return TtsResult(True, "playing offline pronunciation pack", details, "library")
 
 
 class CompositeTtsEngine(TtsEngine):

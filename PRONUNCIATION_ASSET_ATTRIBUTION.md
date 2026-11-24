@@ -1,3 +1,9 @@
+# Current pronunciation audio
+
+This private offline candidate includes AI-generated pronunciation audio from OpenAI Realtime (gpt-realtime-2.1-mini, Marin).
+
+# Historical audio attribution
+
 # Pronunciation asset attribution
 
 This notice applies to the newly derived pronunciation records and recordings

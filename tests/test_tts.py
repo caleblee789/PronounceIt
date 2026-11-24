@@ -230,7 +230,7 @@ class TtsTests(unittest.TestCase):
                 ).ok)
 
         self.assertTrue(result.ok)
-        self.assertEqual(result.audio_source, "audio")
+        self.assertEqual(result.audio_source, "library")
 
     def test_local_audio_only_does_not_fall_back_to_tts(self) -> None:
         recording = RecordingEngine()

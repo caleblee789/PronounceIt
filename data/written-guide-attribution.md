@@ -16,6 +16,8 @@ Secondary source: Carnegie Mellon University Speech Group, CMU Pronouncing Dicti
 
 See written-guide-CMUdict-LICENSE.txt for its copyright notice, redistribution terms, and disclaimer. Original ARPABET and the selected variant are recorded in the repository source evidence.
 
+The AnKing written supplement includes per-word source links. It uses the pinned CMUdict, cited Wiktionary entries, NCI pronunciation references, and the cited Cambridge US pronunciations. The review records identify the spelling and sound changes used for inflected forms and the two compound respellings.
+
 ## Documented corrections and reproducibility
 
 The supplemental pass uses the National Cancer Institute's Dictionary of Cancer Terms, retrieved September 6, 2026, and Grady Ward's Moby Pronunciator II. These fill entries unresolved by the primary pass. NCI supplies readable pronunciation keys; only complete keys without ellipses are used. The original keys and per-term NCI links are retained. NCI text may be reused with attribution unless otherwise indicated: https://www.cancer.gov/policies/copyright-reuse. These pronunciation keys were originally published by the National Cancer Institute; no NCI endorsement is implied.
@@ -23,6 +25,8 @@ The supplemental pass uses the National Cancer Institute's Dictionary of Cancer 
 Grady Ward dedicated the Moby documentation and database to the public domain in January 2001. Its ASCII phonetic data is converted using the documented phone set; unknown symbols are rejected. The Moby source can be obtained at https://www.gutenberg.org/ebooks/3205. The original source download and its license are retained with the build snapshots. Per-record provenance identifies the exact source line and transcription. Moby is a historical general-English reference; its entries are source-backed, not individually clinically verified. The two supplemental snapshots are checksummed in the data manifest.
 
 Documented corrections cite their individual references in data/written-guide-corrections.json in the repository; selected references are included in written-pronunciation-sources.json. These are independently written short pronunciation guides, not imported dictionary definitions. They fill gaps or, when explicitly marked, correct an identified error in a selected source. Only corrections actually selected by the builder appear in the runtime data.
+
+Clinical initialisms use an explicit reviewed list in `data/clinical-initialisms.json`. Their identities link to NCI/Wiktionary entries, NIH resources including NLM, NHGRI, NIDDK, NIMH and PubChem, FDA device descriptions, CDC public-health references, and RadiologyInfo from ACR/RSNA. Their guides compose English letter names using CMUdict phonetics. This is a documented clinical interpretation, not a claim that each source publishes the complete spoken initialism. Roman numerals in numbered medical terms are rendered as their corresponding number words. Acronyms spoken as words retain their own pronunciation sources.
 
 ## Generation for remaining terms
 

@@ -55,6 +55,7 @@ REQUIRED_ARCHIVE_FILES = {
     "pronounceit/config.py",
     "pronounceit/storage.py",
     "pronounceit/main.py",
+    "pronounceit/shared_addon_menu.py",
     "pronounceit/dictionary.py",
     "pronounceit/tts.py",
     "pronounceit/qa.py",
@@ -109,6 +110,7 @@ def validate_release_quality(root: Path = ROOT) -> None:
 
 
 def validate_archive(path: Path, root: Path = ROOT) -> None:
+    expected = expected_archive_files(root)
     with zipfile.ZipFile(path) as archive:
         entries = archive.namelist()
         names = set(entries)
@@ -118,9 +120,9 @@ def validate_archive(path: Path, root: Path = ROOT) -> None:
             initializer = archive.read("__init__.py").decode("utf-8")
         except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise SystemExit(f"Archive identity validation failed: {error}") from error
-    missing = sorted(REQUIRED_ARCHIVE_FILES - names)
+    missing = sorted((REQUIRED_ARCHIVE_FILES | expected) - names)
     forbidden = sorted(name for name in names if not should_include(Path(name)))
-    unexpected = sorted(names - expected_archive_files(root))
+    unexpected = sorted(names - expected)
     manifest_identity = (manifest.get("package"), manifest.get("name"))
     expected_initializer = "from .pronounceit.main import initialize\n\ninitialize(__name__)\n"
     identity_errors = []
@@ -134,6 +136,10 @@ def validate_archive(path: Path, root: Path = ROOT) -> None:
             f"missing={missing}, forbidden={forbidden}, unexpected={unexpected}, "
             f"corrupt={corrupt}, identity={identity_errors}"
         )
+    with zipfile.ZipFile(path) as archive:
+        changed = [name for name in sorted(expected) if archive.read(name) != (root / name).read_bytes()]
+    if changed:
+        raise SystemExit(f"Archive contents differ from the selected checkout: {', '.join(changed)}")
 
 
 def add_file(archive: zipfile.ZipFile, name: str, root: Path = ROOT) -> None:

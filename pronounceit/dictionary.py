@@ -8,6 +8,8 @@ from typing import Any
 
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "audio_pronunciations.json"
+# Older release-bound inventories still contain these withdrawn entries.
+BUNDLED_PRONUNCIATION_EXCLUSIONS = frozenset({"igg", "saands"})
 TERM_RE = re.compile(r"[^\s.,;!?{}\[\]<>\"`][^.,;!?{}\[\]<>\"`]{0,79}")
 CLOZE_RE = re.compile(r"\{\{c\d+::([^{}]*?)(?:::[^{}]*)?\}\}", re.IGNORECASE)
 CONTEXT_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\u2010-\u2015-]*")
@@ -94,13 +96,14 @@ class PronunciationDictionary:
         data_file: Path = DATA_FILE,
         user_file: Path | None = None,
     ) -> "PronunciationDictionary":
+        from .written_guides import ANKING_WRITTEN_FILE, load_written_guides, load_written_supplement
+
         entries: dict[str, PronunciationEntry] = {}
         issues: list[str] = []
         bundled_items = _read_terms_file(data_file)
         written_file = data_file.with_name("written_pronunciations.json")
         written = None
         if written_file.exists() or data_file.resolve() == DATA_FILE.resolve():
-            from .written_guides import load_written_guides
             try:
                 written = load_written_guides(written_file, bundled_items)
             except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -108,6 +111,14 @@ class PronunciationDictionary:
                 # Audio and term lookup still work when display data is damaged.
                 written = {}
         cls._merge_entries(entries, bundled_items, False, issues, written_guides=written)
+        supplement = data_file.with_name(ANKING_WRITTEN_FILE)
+        if supplement.exists():
+            try:
+                records = load_written_supplement(json.loads(supplement.read_text(encoding="utf-8")), entries.keys())
+            except (OSError, ValueError, TypeError) as exc:
+                issues.append(f"AnKing written pronunciations unavailable: {exc}")
+            else:
+                cls._merge_entries(entries, records, False, issues)
         if user_file and user_file.exists():
             try:
                 user_items = _read_terms_file(user_file)
@@ -152,6 +163,9 @@ class PronunciationDictionary:
                     raise ValueError(message)
                 load_issues.append(message)
                 continue
+            term_key = normalize_term(item["term"])
+            if not custom and term_key in BUNDLED_PRONUNCIATION_EXCLUSIONS:
+                continue
             entry = PronunciationEntry(
                 term=item["term"],
                 pronunciation=(written_guides.get(item["term"], {}).get("pronunciation", "")
@@ -162,17 +176,19 @@ class PronunciationDictionary:
                 custom=custom,
                 notes=str(item.get("notes") or "") if custom else "",
             )
-            previous = entries.get(normalize_term(entry.term))
-            if custom and previous and normalize_term(previous.term) == normalize_term(entry.term):
+            previous = entries.get(term_key)
+            if custom and previous and normalize_term(previous.term) == term_key:
                 for alias, value in list(entries.items()):
                     if value is previous:
                         entries[alias] = entry
-            entries[normalize_term(entry.term)] = entry
+            entries[term_key] = entry
             aliases = item.get("aliases", [])
             if isinstance(aliases, list):
                 for alias in aliases:
-                    if isinstance(alias, str) and normalize_term(alias):
-                        entries[normalize_term(alias)] = entry
+                    if isinstance(alias, str):
+                        alias_key = normalize_term(alias)
+                        if alias_key and (custom or alias_key not in BUNDLED_PRONUNCIATION_EXCLUSIONS):
+                            entries[alias_key] = entry
 
     def lookup(self, selected_text: str) -> dict[str, Any]:
         clean = display_term(selected_text)

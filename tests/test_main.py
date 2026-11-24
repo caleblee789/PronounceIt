@@ -237,11 +237,18 @@ class MainMessageTests(unittest.TestCase):
             "contextOffsetStart": start,
             "contextOffsetEnd": start + len("bundle"),
             "rect": {"left": 6, "bottom": 10},
+            "requestId": 7,
+            "reviewRevision": main._review_revision,
         }
         captured = []
         original_handle_save = main._handle_save
         try:
             main._handle_save = lambda context, resolved: captured.append(resolved)
+            main._on_js_message(
+                (False, None),
+                "pronounceit:saveLookup:" + json.dumps({**payload, "reviewRevision": main._review_revision - 1}),
+                reviewer,
+            )
             handled = main._on_js_message(
                 (False, None),
                 "pronounceit:saveLookup:" + json.dumps(payload),
@@ -251,8 +258,10 @@ class MainMessageTests(unittest.TestCase):
             main._handle_save = original_handle_save
 
         self.assertEqual(handled, (True, None))
+        self.assertEqual(len(captured), 1)
         self.assertEqual(captured[0]["requestedText"], "bundle")
         self.assertEqual(captured[0]["term"], "right bundle branch block")
+        self.assertEqual(captured[0]["requestId"], 7)
 
     def test_support_message_opens_support_url(self) -> None:
         reviewer = FakeReviewer()
@@ -282,6 +291,7 @@ class MainMessageTests(unittest.TestCase):
                 + json.dumps(
                     {
                         "text": "bundle",
+                        "requestId": 6,
                         "contextText": context,
                         "contextOffsetStart": start,
                         "contextOffsetEnd": start + len("bundle"),
@@ -298,6 +308,7 @@ class MainMessageTests(unittest.TestCase):
         self.assertEqual(len(reviewer.web.scripts), 1)
         self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
         self.assertIn('"term": "right bundle branch block"', reviewer.web.scripts[0])
+        self.assertIn('"requestId": 6', reviewer.web.scripts[0])
 
     def test_audio_lookup_uses_fluent_raw_term_instead_of_spaced_respellings(self) -> None:
         reviewer = FakeReviewer()
@@ -448,13 +459,12 @@ class MainMessageTests(unittest.TestCase):
             main._config = original_config
 
         self.assertEqual(handled, (True, None))
-        self.assertEqual(len(reviewer.web.scripts), 2)
-        self.assertEqual(reviewer.web.scripts[0], "window.PronounceIt && window.PronounceIt.hide();")
-        self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[1])
-        self.assertIn('"ok": false', reviewer.web.scripts[1])
-        self.assertIn('"reason": "Reveal the answer before playing pronunciation."', reviewer.web.scripts[1])
-        self.assertIn('"term": "agranulocytosis"', reviewer.web.scripts[1])
-        self.assertIn("pronunciation blocked before answer reveal", reviewer.web.scripts[1])
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        self.assertIn("window.PronounceIt && window.PronounceIt.spoken", reviewer.web.scripts[0])
+        self.assertIn('"ok": false', reviewer.web.scripts[0])
+        self.assertIn('"reason": "Reveal the answer before playing pronunciation."', reviewer.web.scripts[0])
+        self.assertIn('"term": "agranulocytosis"', reviewer.web.scripts[0])
+        self.assertIn("pronunciation blocked before answer reveal", reviewer.web.scripts[0])
 
     def test_audio_lookup_blocked_on_question_side_returns_spoken_status(self) -> None:
         reviewer = FakeReviewer()
@@ -467,7 +477,7 @@ class MainMessageTests(unittest.TestCase):
             )
             handled = main._on_js_message(
                 (False, None),
-                "pronounceit:audioLookup:" + json.dumps({"text": "clozapine"}),
+                "pronounceit:audioLookup:" + json.dumps({"text": "clozapine", "requestId": 8}),
                 reviewer,
             )
         finally:
@@ -475,11 +485,11 @@ class MainMessageTests(unittest.TestCase):
             main._config = original_config
 
         self.assertEqual(handled, (True, None))
-        self.assertEqual(len(reviewer.web.scripts), 2)
-        self.assertEqual(reviewer.web.scripts[0], "window.PronounceIt && window.PronounceIt.hide();")
-        self.assertIn('"ok": false', reviewer.web.scripts[1])
-        self.assertIn('"reason": "Reveal the answer before playing pronunciation."', reviewer.web.scripts[1])
-        self.assertIn('"term": "clozapine"', reviewer.web.scripts[1])
+        self.assertEqual(len(reviewer.web.scripts), 1)
+        self.assertIn('"ok": false', reviewer.web.scripts[0])
+        self.assertIn('"requestId": 8', reviewer.web.scripts[0])
+        self.assertIn('"reason": "Reveal the answer before playing pronunciation."', reviewer.web.scripts[0])
+        self.assertIn('"term": "clozapine"', reviewer.web.scripts[0])
 
     def test_lookup_message_can_be_enabled_on_question_side(self) -> None:
         reviewer = FakeReviewer()
@@ -770,7 +780,7 @@ class MainMessageTests(unittest.TestCase):
 
     def test_pack_presentation_uses_semantic_user_facing_states(self) -> None:
         installed = main._pack_presentation(
-            main.AudioPackDownloadState(phase="installed", installed=True)
+            main.AudioPackDownloadState(phase="installed", installed=True, verified=True)
         )
         downloading = main._pack_presentation(
             main.AudioPackDownloadState(phase="downloading", done_bytes=10, total_bytes=100)
@@ -958,8 +968,8 @@ class MainMessageTests(unittest.TestCase):
                 main._addon_root = original_root
                 main._config = original_config
 
-        self.assertEqual(payload["audioSource"], "audio")
-        self.assertEqual(payload["audioSourceLabel"], "Audio pronunciation")
+        self.assertEqual(payload["audioSource"], "custom")
+        self.assertEqual(payload["audioSourceLabel"], "Custom recording")
         self.assertEqual(payload["audioStatus"], "Audio pronunciation ready")
 
     def test_lookup_payload_classifies_pack_and_system_tts_sources(self) -> None:
@@ -985,8 +995,8 @@ class MainMessageTests(unittest.TestCase):
             main._audio_pack = original_pack
             main._config = original_config
 
-        self.assertEqual(pack_payload["audioSource"], "audio")
-        self.assertEqual(pack_payload["audioSourceLabel"], "Audio pronunciation")
+        self.assertEqual(pack_payload["audioSource"], "library")
+        self.assertEqual(pack_payload["audioSourceLabel"], "Marin library")
         self.assertEqual(live_payload["audioSource"], "computer")
         self.assertEqual(live_payload["audioSourceLabel"], "Computer voice")
 

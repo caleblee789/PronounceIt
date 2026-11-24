@@ -291,7 +291,6 @@ if (messages.filter(m => m.startsWith("pronounceit:audioLookup:")).length !== 2)
         self.assertIn("openQuickCard", js)
         self.assertIn("audioSourceLabel", js)
         self.assertIn("contextMenuModifier", js)
-        self.assertIn('send("saveLookup", request)', js)
         self.assertNotIn("showContextMenu", js)
         self.assertNotIn("pronounceit-menu", js)
         self.assertNotIn("event.shiftKey ? rememberPointerRequest", js)
@@ -684,6 +683,9 @@ if (!popup || popup.getAttribute("data-loading") !== "true") {
 }
 request = payload("pronounceit:lookup:");
 if (request.text !== "right bundle" || request.autoPlay !== true) throw new Error(`Ctrl-left-click should open and play its term: ${JSON.stringify(request)}`);
+if (emit("click", { target: popup.querySelector(".pronounceit-close") }).defaultPrevented) {
+  throw new Error("Opening with a pointer gesture suppressed a quick-card button");
+}
 """
         )
 
@@ -747,7 +749,9 @@ const request = {
   contextOffsetEnd: source.indexOf("bundle") + 3,
   rect: { left: 20, top: 1, right: 80, bottom: 24, width: 60, height: 23 },
 };
-sandbox.window.PronounceIt.show({
+const ui = sandbox.window.PronounceIt;
+ui.configure({ reviewRevision: 5 });
+const result = {
   term: "right bundle branch block",
   pronunciation: "RYT BUN-dul branch block",
   found: true,
@@ -755,21 +759,41 @@ sandbox.window.PronounceIt.show({
   alreadySaved: false,
   request,
   rect: request.rect,
-});
+};
+ui.show(result);
 const popup = body.querySelector(".pronounceit-popup");
-const save = popup && popup.querySelector(".pronounceit-save-button");
+let save = popup && popup.querySelector(".pronounceit-save-button");
 const play = popup && popup.querySelector(".pronounceit-play-button");
 if (!play || play.textContent !== "Play") throw new Error("Play action was not simplified");
 if (!save || save.disabled || save.textContent !== "Save") {
   throw new Error("Save action missing from details popup");
 }
 save.listeners.click();
+save.listeners.click();
 const savedRequest = payload("pronounceit:saveLookup:");
-if (savedRequest.contextText !== source || savedRequest.contextOffsetStart !== request.contextOffsetStart) {
+if (savedRequest.contextText !== source || savedRequest.contextOffsetStart !== request.contextOffsetStart || savedRequest.reviewRevision !== 5) {
   throw new Error(`Save lost context: ${JSON.stringify(savedRequest)}`);
 }
-sandbox.window.PronounceIt.saved({ alreadySaved: true, duplicate: false });
-if (!save.disabled || save.textContent !== "Saved") throw new Error("Save action did not update");
+if (messages.filter(message => message.startsWith("pronounceit:saveLookup:")).length !== 1) {
+  throw new Error("Repeated activation sent duplicate saves while pending");
+}
+ui.show({ ...result, term: "second term" });
+save = popup.querySelector(".pronounceit-save-button");
+ui.saved({ requestId: savedRequest.requestId, alreadySaved: true });
+if (save.textContent !== "Save") throw new Error("Previous save marked a different term as saved");
+save.listeners.click();
+const retry = payload("pronounceit:saveLookup:", 1);
+ui.saved({ requestId: retry.requestId, error: "Check file permissions." });
+if (save.getAttribute("aria-disabled") === "true" || save.textContent !== "Save") throw new Error("An unsuccessful save prevented retry");
+save.listeners.click();
+const success = payload("pronounceit:saveLookup:", 2);
+ui.saved({ requestId: success.requestId, alreadySaved: true });
+if (save.getAttribute("aria-disabled") !== "true" || save.textContent !== "Saved") throw new Error("Save action did not update");
+ui.configure({ reviewRevision: 6 });
+ui.show(result);
+ui.configure({ reviewRevision: 7 });
+save = popup.querySelector(".pronounceit-save-button");
+if (save.getAttribute("aria-disabled") !== "true") throw new Error("A persistent result could be saved to the wrong review card");
 """
         )
 
@@ -797,17 +821,24 @@ sandbox.window.PronounceIt.show({
   term: "clozapine",
   pronunciation: "KLOH-zuh-peen",
   found: true,
-  audioSource: "audio",
+  audioSource: "library",
   audioAvailable: true,
   request: { text: "clozapine", rect: {} },
   rect: {},
 });
 const popup = body.querySelector(".pronounceit-popup");
 const badge = popup && popup.querySelector(".pronounceit-source");
-if (!badge || badge.textContent !== "Audio pronunciation") {
+if (!badge || badge.textContent !== "Audio library") {
   throw new Error("Recorded audio was not shown");
 }
+sandbox.window.PronounceIt.playText("different term");
+const direct = payload("pronounceit:audioLookup:");
+sandbox.window.PronounceIt.spoken({ requestId: direct.requestId, ok: true, term: "different term", audioSource: "computer" });
+if (badge.textContent !== "Audio library") throw new Error("Unrelated playback changed the quick card’s source");
+popup.querySelector(".pronounceit-play-button").listeners.click();
+const play = payload("pronounceit:audioLookup:", 1);
 sandbox.window.PronounceIt.spoken({
+  requestId: play.requestId,
   ok: true,
   audioSource: "computer",
   audioSourceLabel: "Computer voice",
@@ -873,14 +904,14 @@ let notice = body.querySelector(".pronounceit-notice");
 if (!notice || notice.textContent !== "Playing…" || notice.getAttribute("aria-live") !== "polite") {
   throw new Error("Missing loading status");
 }
-sandbox.window.PronounceIt.spoken({ ok: true, term: "right bundle branch block" });
+sandbox.window.PronounceIt.spoken({ requestId: payload("pronounceit:audioLookup:").requestId, ok: true, term: "right bundle branch block" });
 notice = body.querySelector(".pronounceit-notice");
-if (!notice || notice.textContent !== "Played right bundle branch block" || notice.getAttribute("data-state") !== "success") {
+if (!notice || notice.textContent !== "Playing right bundle branch block" || notice.getAttribute("data-state") !== "success") {
   throw new Error(`Missing success status: ${notice && notice.textContent}`);
 }
 emit("pointerdown", { altKey: true });
 emit("pointerup", { altKey: true });
-sandbox.window.PronounceIt.spoken({ ok: false, reason: "Reveal the answer before using PronounceIt." });
+sandbox.window.PronounceIt.spoken({ requestId: payload("pronounceit:audioLookup:", 1).requestId, ok: false, reason: "Reveal the answer before using PronounceIt." });
 notice = body.querySelector(".pronounceit-notice");
 if (!notice || notice.textContent !== "Reveal the answer before playing pronunciation." || notice.getAttribute("data-state") !== "info") {
   throw new Error(`Missing answer-side guidance: ${notice && notice.textContent}`);
@@ -910,8 +941,6 @@ if (context.contextText.slice(context.contextOffsetStart, context.contextOffsetE
         self.assertIn('[data-state="success"]', css)
         self.assertIn('[data-state="info"]', css)
         self.assertIn('[data-state="error"]', css)
-        self.assertIn(".pronounceit-source.audio", css)
-        self.assertIn(".pronounceit-source.loading", css)
         self.assertIn(".pronounceit-theme-light", css)
         self.assertIn(".pronounceit-theme-dark", css)
         self.assertNotIn(".pronounceit-theme-clinical_light", css)
