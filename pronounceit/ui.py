@@ -439,7 +439,10 @@ def show_diagnostics(parent=None) -> None:
 
 def show_onboarding() -> None:
     dialog = Dialog("Download the audio library?")
-    dialog.body.addWidget(label("Download all 95,902 audio pronunciations in one library (about 1.03 GiB). Written pronunciations are already included. The download runs in the background.", "secondary"))
+    summary = audio_library_summary()
+    if summary:
+        dialog.body.addWidget(label(summary, "section"))
+    dialog.body.addWidget(label("Download recordings for offline playback. The download runs in the background. Written pronunciations are already included.", "secondary"))
     dialog.footer.addStretch()
     dialog.footer.addWidget(button("Not now", dialog.reject))
     dialog.footer.addWidget(button("Download library", dialog.accept, "primary"))
@@ -452,7 +455,7 @@ def show_onboarding() -> None:
         feedback("Could not save your download choice. Try again in Audio settings.", error=True)
 
 
-from .settings import Settings
+from .settings import Settings, audio_library_summary
 
 
 _settings: Settings | None = None

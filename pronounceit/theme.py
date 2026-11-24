@@ -187,7 +187,7 @@ def dialog_qss(theme: str, object_name: str = "pronounceitOptions") -> str:
     {r} QListView::item:selected {{ background: {t.accent_soft}; color: {t.primary_text}; }}
     {r} QListView:focus {{ border-color: {t.focus_border}; }}
     {r} QListWidget#pronounceitNav {{ background: transparent; border: none; padding: 0; }}
-    {r} QListWidget#pronounceitNav::item {{ color: {t.secondary_text}; border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 6px; padding: 0 8px; margin: 2px 0; min-height: 40px; }}
+    {r} QListWidget#pronounceitNav::item {{ color: {t.secondary_text}; border: 1px solid transparent; border-left: 3px solid transparent; border-radius: 6px; padding: 2px 8px; margin: 2px 0; min-height: 32px; }}
     {r} QListWidget#pronounceitNav::item:hover {{ background: {t.button_hover_bg}; }}
     {r} QListWidget#pronounceitNav::item:selected {{ color: {t.primary_text}; background: {t.accent_soft}; border-color: {t.card_border}; border-left-color: {t.accent}; }}
     {r} QListWidget#pronounceitNav::item:focus {{ border-color: {t.focus_border}; }}

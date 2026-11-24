@@ -73,6 +73,7 @@ def audit_pronunciations(data_file: Path = DATA_FILE) -> PronunciationAudit:
             written_terms += active_additions
         release = json.loads(data_file.with_name("audio-pack-release.json").read_text(encoding="utf-8"))
         if (release.get("schemaVersion") != 3 or release.get("audioLibrarySha256") != file_sha256(data_file)
+                or release.get("assetCount", audio_terms) != audio_terms
                 or any(len(str(release.get(key, ""))) != 64 for key in (
                     "dictionarySha256", "packManifestSha256", "packManifestContentSha256"))):
             errors.append("The audio inventory does not match its library download.")

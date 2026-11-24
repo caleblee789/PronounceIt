@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from pronounceit.audio_pack import (
+    AudioPackCancelled,
     AudioPackManager,
     AudioPackError,
     audio_asset_id,
@@ -175,7 +176,17 @@ class AudioPackTests(unittest.TestCase):
             data_dir.mkdir()
             dictionary = data_dir / "medical_pronunciations.json"
             dictionary.write_text('{"terms": []}\n', encoding="utf-8")
+            (data_dir / "audio-pack-release.json").write_text(
+                '{"schemaVersion":3,"releaseTag":"audio-pack-v2-test"}', encoding="utf-8"
+            )
             manager = AudioPackManager(root)
+            manager.pack_root.mkdir(parents=True)
+            manager.state_path.write_text('{"packVersion":"2-old"}', encoding="utf-8")
+            first_status = manager.status()
+            self.assertEqual(first_status.active_version, "2-old")
+            self.assertEqual(first_status.version, "2-test")
+            self.assertEqual(first_status.downloaded_bytes, 0)
+
             version_dir = manager.pack_root / "2-test"
             version_dir.mkdir(parents=True)
 
@@ -204,6 +215,9 @@ class AudioPackTests(unittest.TestCase):
 
             status = manager.status()
             self.assertFalse(status.installed)
+            self.assertTrue(status.compatible)
+            self.assertEqual(status.active_version, "2-old")
+            self.assertEqual(status.version, "2-test")
             self.assertEqual((status.downloaded_shards, status.total_shards), (1, 16))
             self.assertEqual(status.message, "Offline pronunciation pack download is incomplete (1/16 files).")
             (version_dir / "shard-1.zip.part").write_bytes(b"x")
@@ -249,6 +263,52 @@ class AudioPackTests(unittest.TestCase):
             self.assertIn(("2", None), requests)
             self.assertIn(("3", None), requests)
             self.assertIn(("4", None), requests)
+
+    def test_update_promotes_only_verified_shards_and_honors_late_cancellation(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "data").mkdir()
+            dictionary = root / "data/medical_pronunciations.json"
+            dictionary.write_text('{"terms": []}')
+            manager = AudioPackManager(root)
+            old_pack = manager.pack_root / "2-old"
+            old_pack.mkdir(parents=True)
+            (old_pack / "shard-0.zip").write_bytes(b"previous library bytes")
+            old_state = '{"packVersion":"2-old"}'
+            manager.state_path.write_text(old_state)
+
+            data = b"new library bytes"
+            staged = manager.pack_root / "2-new"
+            staged.mkdir()
+            shards = []
+            for shard_id in "0123456789abcdef":
+                path = staged / f"shard-{shard_id}.zip"
+                path.write_bytes(data)
+                shards.append({"id": shard_id, "file": path.name, "sha256": file_sha256(path), "size": len(data)})
+            manifest = {"schemaVersion": 2, "packVersion": "2-new", "dictionarySha256": dictionary_sha256(dictionary),
+                        "reviewLedgerSha256": "1" * 64, "synthesisStrategyCounts": {"azure-native": 1}, "shards": shards}
+
+            def cancel_on_last_shard(done, total, shard):
+                if done == total:
+                    self.assertTrue(manager.cancel())
+
+            def corrupt_on_last_shard(done, total, shard):
+                if done == total:
+                    (staged / "shard-0.zip").write_bytes(b"x" * len(data))
+
+            with patch.object(manager, "_fetch_manifest", return_value=manifest):
+                with self.assertRaises(AudioPackCancelled):
+                    manager.download(cancel_on_last_shard)
+                self.assertEqual(manager.state_path.read_text(), old_state)
+                with self.assertRaisesRegex(AudioPackError, "could not verify"):
+                    manager.download(corrupt_on_last_shard)
+                self.assertEqual(manager.state_path.read_text(), old_state)
+                self.assertEqual((old_pack / "shard-0.zip").read_bytes(), b"previous library bytes")
+                (staged / "shard-0.zip").write_bytes(data)
+                self.assertTrue(manager.download().verified)
+
+            self.assertEqual(json.loads(manager.state_path.read_text())["packVersion"], "2-new")
+            self.assertFalse(manager.cancel())
 
 
 if __name__ == "__main__":

@@ -13,14 +13,14 @@ class BuildScriptTests(unittest.TestCase):
     def _write_valid_archive(
         archive: zipfile.ZipFile,
         manifest: Optional[Dict[str, object]] = None,
+        release_binding: Optional[bytes] = None,
     ) -> None:
         for name in build_ankiaddon.expected_archive_files():
-            if name == "manifest.json":
-                payload = json.dumps(manifest or {"package": "pronounceit", "name": "PronounceIt", "mod": 1})
-            elif name == "__init__.py":
-                payload = "from .pronounceit.main import initialize\n\ninitialize(__name__)\n"
-            else:
-                payload = ""
+            payload = (build_ankiaddon.ROOT / name).read_bytes()
+            if manifest is not None and name == "manifest.json":
+                payload = json.dumps(manifest).encode()
+            if release_binding is not None and name == "data/audio-pack-release.json":
+                payload = release_binding
             archive.writestr(name, payload)
 
     def test_should_include_rejects_python_cache_files(self) -> None:
@@ -85,6 +85,15 @@ class BuildScriptTests(unittest.TestCase):
                 )
 
             with self.assertRaises(SystemExit):
+                build_ankiaddon.validate_archive(archive_path)
+
+    def test_validate_archive_rejects_stale_audio_binding(self) -> None:
+        with TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "pronounceit.ankiaddon"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                self._write_valid_archive(archive, release_binding=b'{}')
+
+            with self.assertRaisesRegex(SystemExit, "data/audio-pack-release.json"):
                 build_ankiaddon.validate_archive(archive_path)
 
 if __name__ == "__main__":

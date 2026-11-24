@@ -2,7 +2,7 @@ import threading
 import time
 import unittest
 
-from pronounceit.audio_pack import AudioPackStatus
+from pronounceit.audio_pack import AudioPackCancelled, AudioPackStatus
 from pronounceit.audio_pack_download import AudioPackDownloadController
 
 
@@ -10,31 +10,42 @@ class FakeAudioPackManager:
     def __init__(self) -> None:
         self.release = threading.Event()
         self.started = threading.Event()
+        self.status_ready = threading.Event()
+        self.status_ready.set()
         self.paused = False
         self.cancelled = False
         self.removed = False
         self.installed = False
+        self.downloaded_bytes = 0
         self.progress = None
 
     def status(self, verify_hashes: bool = False) -> AudioPackStatus:
+        self.status_ready.wait(timeout=2)
         return AudioPackStatus(
             installed=self.installed,
             compatible=self.installed,
             version="2" if self.installed else "",
             downloaded_shards=16 if self.installed else 0,
             total_shards=16 if self.installed else 0,
-            downloaded_bytes=800 if self.installed else 0,
-            total_bytes=800 if self.installed else 0,
+            downloaded_bytes=800 if self.installed else self.downloaded_bytes,
+            total_bytes=800 if self.installed or self.downloaded_bytes else 0,
             message="Audio pack 2 is installed and ready." if self.installed else "Audio pack is not installed.",
+            active_version="2" if self.installed else "",
+            verified=self.installed and verify_hashes,
         )
 
-    def download(self, progress):
+    def prepare_download(self):
+        self.paused = False
+        self.cancelled = False
+
+    def download(self, progress, *, prepared=False):
         self.progress = progress
         self.started.set()
+        self.downloaded_bytes = 100
         progress(100, 800, "0")
         self.release.wait(timeout=2)
         if self.cancelled:
-            raise RuntimeError("audio pack download cancelled")
+            raise AudioPackCancelled("audio pack download cancelled")
         self.installed = True
         return self.status(True)
 
@@ -49,10 +60,12 @@ class FakeAudioPackManager:
 
     def cancel(self):
         self.cancelled = True
+        return True
 
     def remove(self):
         self.removed = True
         self.installed = False
+        self.downloaded_bytes = 0
 
 
 class AudioPackDownloadControllerTests(unittest.TestCase):
@@ -66,6 +79,7 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
 
     def test_download_outlives_ui_scope_and_rejects_duplicate_start(self) -> None:
         manager = FakeAudioPackManager()
+        manager.status_ready.clear()
         notices = []
         controller = AudioPackDownloadController(
             manager,
@@ -73,6 +87,9 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
             notifier=lambda message, error: notices.append((message, error)),
         )
 
+        self.assertEqual(controller.refresh().phase, "loading")
+        manager.status_ready.set()
+        self.wait_for(lambda: controller.snapshot().phase == "idle")
         self.assertTrue(controller.start())
         self.assertTrue(manager.started.wait(timeout=1))
         self.assertFalse(controller.start())
@@ -81,6 +98,7 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
 
         manager.release.set()
         self.wait_for(lambda: controller.snapshot().installed)
+        self.wait_for(lambda: bool(notices))
         self.assertEqual(
             notices,
             [("Offline pronunciation pack download completed.", False)],
@@ -89,7 +107,8 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
     def test_pause_resume_and_cancel_are_process_lifetime_operations(self) -> None:
         manager = FakeAudioPackManager()
         controller = AudioPackDownloadController(manager)
-        controller.start()
+        self.wait_for(lambda: controller.snapshot().phase == "idle")
+        self.assertTrue(controller.start())
         self.assertTrue(manager.started.wait(timeout=1))
 
         self.assertTrue(controller.pause())
@@ -116,9 +135,12 @@ class AudioPackDownloadControllerTests(unittest.TestCase):
         manager.installed = True
         controller = AudioPackDownloadController(manager)
 
+        self.wait_for(lambda: controller.snapshot().installed)
+        self.assertFalse(controller.snapshot().verified)
         self.assertTrue(controller.start_verify())
-        self.wait_for(lambda: controller.snapshot().phase == "installed")
+        self.wait_for(lambda: controller.snapshot().verified)
         self.assertTrue(controller.remove())
+        self.wait_for(lambda: controller.snapshot().phase == "idle")
         self.assertTrue(manager.removed)
         self.assertFalse(controller.snapshot().installed)
 

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import threading
 import urllib.error
 import urllib.parse
@@ -34,6 +35,10 @@ class AudioPackError(RuntimeError):
     pass
 
 
+class AudioPackCancelled(AudioPackError):
+    pass
+
+
 @dataclass(frozen=True)
 class AudioPackStatus:
     installed: bool
@@ -44,6 +49,8 @@ class AudioPackStatus:
     downloaded_bytes: int = 0
     total_bytes: int = 0
     message: str = "Offline pronunciation pack is not installed."
+    active_version: str = ""
+    verified: bool = False
 
 
 def manifest_content_sha256(manifest: dict[str, Any]) -> str:
@@ -223,44 +230,55 @@ class AudioPackManager:
             manifest_url
             or os.environ.get("PRONOUNCEIT_AUDIO_PACK_MANIFEST_URL", "").strip()
         )
-        self.manifest_url = self._manifest_url_override or self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
+        self._source_url = ""
         self.cache_bytes = max(0, int(cache_bytes))
         self._pause_event = threading.Event()
         self._pause_event.set()
         self._cancel_event = threading.Event()
-        self._dictionary_hash: str | None = None
-        self._dictionary_stamp: tuple[int, int, int] | None = None
-        self._compatibility_manifest: dict[str, Any] | None = None
-        self._compatibility_manifest_hash = ""
+        self._promotion_lock = threading.Lock()
+        self._download_promoted = False
+        self._dictionary_cache: tuple[tuple[int, int, int], str] | None = None
+        self._compatibility_cache: tuple[dict[str, Any], str] | None = None
         self._manifest_cache: tuple[Path, int, int, dict[str, Any]] | None = None
 
-    def _candidate_manifest_url(self) -> str:
+    @property
+    def manifest_url(self) -> str:
+        return self._manifest_url_override or self._source_url or self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
+
+    def _release_metadata(self) -> dict[str, Any]:
         try:
             release = json.loads((self.addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
-            url = str(release.get("manifestUrl") or "")
-            # A separately supplied pack can be installed without publishing it
-            # or downloading it again. Only use the release-bound local pack.
-            local_manifest = self.addon_root / "data/pack-manifest.json"
-            try:
-                manifest = validate_manifest(json.loads(local_manifest.read_text(encoding="utf-8")))
-                if (
-                    release.get("schemaVersion") == 3
-                    and manifest["dictionarySha256"] == release.get("dictionarySha256")
-                    and manifest_content_sha256(manifest) == release.get("packManifestContentSha256")
-                    and all(
-                        (local_manifest.parent / shard["file"]).is_file()
-                        and (local_manifest.parent / shard["file"]).stat().st_size == shard["size"]
-                        for shard in manifest["shards"]
-                    )
-                ):
-                    return local_manifest.resolve().as_uri()
-            except (OSError, ValueError, TypeError, AudioPackError):
-                pass
-            if release.get("schemaVersion") == 3 and urllib.parse.urlparse(url).scheme == "https":
-                return url
-        except (OSError, ValueError, AttributeError):
+        except (OSError, ValueError):
+            return {}
+        return release if isinstance(release, dict) and release.get("schemaVersion") == 3 else {}
+
+    @staticmethod
+    def _configured_version(release: dict[str, Any]) -> str:
+        version = str(release.get("releaseTag") or "").removeprefix("audio-pack-v")
+        return version if is_supported_pack_version(version) else ""
+
+    def _candidate_manifest_url(self) -> str:
+        release = self._release_metadata()
+        if not release:
+            return ""
+        # A separately supplied pack must match the same release binding.
+        local_manifest = self.addon_root / "data/pack-manifest.json"
+        try:
+            manifest = validate_manifest(json.loads(local_manifest.read_text(encoding="utf-8")))
+            if (
+                manifest["dictionarySha256"] == release.get("dictionarySha256")
+                and manifest_content_sha256(manifest) == release.get("packManifestContentSha256")
+                and all(
+                    (local_manifest.parent / shard["file"]).is_file()
+                    and (local_manifest.parent / shard["file"]).stat().st_size == shard["size"]
+                    for shard in manifest["shards"]
+                )
+            ):
+                return local_manifest.resolve().as_uri()
+        except (OSError, ValueError, TypeError, AudioPackError):
             pass
-        return ""
+        url = str(release.get("manifestUrl") or "")
+        return url if url.startswith("https://") else ""
 
     @property
     def state_path(self) -> Path:
@@ -272,18 +290,47 @@ class AudioPackManager:
     def resume(self) -> None:
         self._pause_event.set()
 
-    def cancel(self) -> None:
-        self._cancel_event.set()
-        self._pause_event.set()
+    def prepare_download(self) -> None:
+        with self._promotion_lock:
+            self._cancel_event.clear()
+            self._pause_event.set()
+            self._download_promoted = False
+
+    def cancel(self) -> bool:
+        with self._promotion_lock:
+            if self._download_promoted:
+                return False
+            self._cancel_event.set()
+            self._pause_event.set()
+            return True
 
     def status(self, verify_hashes: bool = False) -> AudioPackStatus:
-        manifest = self._load_local_manifest()
+        active_version = self._local_state_version()
+        version = self._configured_version(self._release_metadata())
+        manifest = self._manifest_for_version(version) if version else self._legacy_target_manifest(active_version)
         if manifest is None:
-            return AudioPackStatus(False, False)
+            message = (
+                "An audio library update is available."
+                if active_version and version and active_version != version
+                else "Offline pronunciation pack is not installed."
+            )
+            return AudioPackStatus(False, False, version=version, message=message, active_version=active_version)
+        return self._manifest_status(manifest, active_version, verify_hashes)
+
+    def _manifest_status(
+        self,
+        manifest: dict[str, Any],
+        active_version: str,
+        verify_hashes: bool,
+        check_cancelled: Callable[[], None] | None = None,
+    ) -> AudioPackStatus:
+        version = str(manifest["packVersion"]).strip()
         compatible = self._dictionary_is_compatible(manifest)
         complete = 0
         downloaded_bytes = 0
         for shard in manifest["shards"]:
+            if check_cancelled:
+                check_cancelled()
             path = self._shard_path(manifest, shard)
             if self._valid_shard(path, shard, checksum=verify_hashes):
                 complete += 1
@@ -296,58 +343,80 @@ class AudioPackManager:
                     pass
         total = len(manifest["shards"])
         total_bytes = sum(int(shard["size"]) for shard in manifest["shards"])
-        installed = complete == total and compatible
+        installed = complete == total and compatible and active_version == version
         if not compatible:
-            message = "Installed offline pronunciation pack does not match this dictionary version."
+            message = "Offline pronunciation pack does not match this dictionary version."
         elif installed:
-            message = f"Offline pronunciation pack {manifest['packVersion']} is installed and ready."
+            message = f"Offline pronunciation pack {version} is installed and ready."
+        elif complete == total:
+            message = "Offline pronunciation pack is ready to finish installing."
         else:
             message = f"Offline pronunciation pack download is incomplete ({complete}/{total} files)."
         return AudioPackStatus(
             installed=installed,
             compatible=compatible,
-            version=str(manifest["packVersion"]),
+            version=version,
             downloaded_shards=complete,
             total_shards=total,
             downloaded_bytes=downloaded_bytes,
             total_bytes=total_bytes,
             message=message,
+            active_version=active_version,
+            verified=installed and verify_hashes,
         )
 
     def download(
         self,
         progress: Callable[[int, int, str], None] | None = None,
+        *,
+        prepared: bool = False,
     ) -> AudioPackStatus:
-        self._cancel_event.clear()
+        if not prepared:
+            self.prepare_download()
+        self._raise_if_cancelled()
         if not self._manifest_url_override:
-            self.manifest_url = self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
+            self._source_url = self._candidate_manifest_url() or DEFAULT_MANIFEST_URL
         manifest = self._fetch_manifest()
+        self._raise_if_cancelled()
         if not self._dictionary_is_compatible(manifest):
             raise AudioPackError("audio pack was built for a different dictionary version")
         previous_version = self._local_state_version()
-        version_dir = self.pack_root / str(manifest["packVersion"])
-        version_dir.mkdir(parents=True, exist_ok=True)
-        self._write_json_atomic(version_dir / "pack-manifest.json", manifest)
+        version = str(manifest["packVersion"]).strip()
+        previous_manifest = self._manifest_for_version(version)
+        if previous_version == version and previous_manifest and previous_manifest != manifest:
+            raise AudioPackError("audio pack manifest changed without a new pack version")
+        manifest_path = self.pack_root / version / "pack-manifest.json"
+        if previous_manifest != manifest:
+            self._write_json_atomic(manifest_path, manifest)
+        stamp = manifest_path.stat()
+        self._manifest_cache = (manifest_path, stamp.st_mtime_ns, stamp.st_size, manifest)
 
         remaining_bytes = 0
+        ready_shards = set()
         for shard in manifest["shards"]:
+            self._raise_if_cancelled()
             target = self._shard_path(manifest, shard)
-            if not self._valid_shard(target, shard):
-                target.unlink(missing_ok=True)
-                existing = self._prepare_partial(target, shard)
-                if not self._valid_shard(target, shard, checksum=False):
-                    remaining_bytes += int(shard["size"]) - existing
-        try:
-            free_bytes = shutil.disk_usage(self.pack_root.parent).free
-        except OSError as exc:
-            raise AudioPackError(f"could not check free disk space: {exc}") from exc
-        required_bytes = remaining_bytes + DOWNLOAD_SPACE_MARGIN_BYTES
-        if free_bytes < required_bytes:
-            raise AudioPackError(
-                "not enough free disk space for the audio pack "
-                f"(need {required_bytes / (1024 * 1024):.0f} MiB, "
-                f"have {free_bytes / (1024 * 1024):.0f} MiB)"
-            )
+            if self._valid_shard(target, shard):
+                ready_shards.add(shard["id"])
+                continue
+            target.unlink(missing_ok=True)
+            existing = self._prepare_partial(target, shard)
+            if self._valid_shard(target, shard, checksum=False):
+                ready_shards.add(shard["id"])
+            else:
+                remaining_bytes += int(shard["size"]) - existing
+        if remaining_bytes:
+            try:
+                free_bytes = shutil.disk_usage(self.pack_root.parent).free
+            except OSError as exc:
+                raise AudioPackError(f"could not check free disk space: {exc}") from exc
+            required_bytes = remaining_bytes + DOWNLOAD_SPACE_MARGIN_BYTES
+            if free_bytes < required_bytes:
+                raise AudioPackError(
+                    "not enough free disk space for the audio pack "
+                    f"(need {required_bytes / (1024 * 1024):.0f} MiB, "
+                    f"have {free_bytes / (1024 * 1024):.0f} MiB)"
+                )
 
         total_bytes = sum(int(shard["size"]) for shard in manifest["shards"])
         complete_bytes = 0
@@ -355,19 +424,28 @@ class AudioPackManager:
             self._wait_if_paused()
             self._raise_if_cancelled()
             target = self._shard_path(manifest, shard)
-            if self._valid_shard(target, shard):
+            if shard["id"] in ready_shards:
                 complete_bytes += int(shard["size"])
                 if progress:
                     progress(complete_bytes, total_bytes, str(shard["id"]))
                 continue
-            self._download_shard(manifest, shard, target, complete_bytes, total_bytes, progress)
+            self._download_shard(shard, target, complete_bytes, total_bytes, progress)
             complete_bytes += int(shard["size"])
-        self.pack_root.mkdir(parents=True, exist_ok=True)
-        self._write_json_atomic(self.state_path, {"packVersion": manifest["packVersion"]})
-        if previous_version and previous_version != str(manifest["packVersion"]):
+
+        verified = self._manifest_status(manifest, version, True, self._raise_if_cancelled)
+        if not verified.installed:
+            raise AudioPackError(f"could not verify the new offline pronunciation pack: {verified.message}")
+        self._wait_if_paused()
+        # Cancellation and activation meet at the installed pointer. Once it
+        # changes, the new pack is active and the operation can no longer cancel.
+        with self._promotion_lock:
+            self._raise_if_cancelled()
+            self._write_json_atomic(self.state_path, {"packVersion": version})
+            self._download_promoted = True
+        if previous_version and previous_version != version:
             shutil.rmtree(self.pack_root / previous_version, ignore_errors=True)
             shutil.rmtree(self.cache_root / previous_version, ignore_errors=True)
-        return self.status(verify_hashes=True)
+        return verified
 
     def verify(self) -> AudioPackStatus:
         return self.status(verify_hashes=True)
@@ -392,8 +470,8 @@ class AudioPackManager:
     def resolve(self, term: str) -> Path | None:
         if normalize_term(term) in BUNDLED_PRONUNCIATION_EXCLUSIONS:
             return None
-        manifest = self._load_local_manifest()
-        if manifest is None or not self._dictionary_is_compatible(manifest):
+        manifest = self._active_manifest()
+        if manifest is None:
             return None
         asset_id = audio_asset_id(term)
         shard_id = asset_id[0]
@@ -431,8 +509,8 @@ class AudioPackManager:
         return cache_path if audio_file_has_content(cache_path) else None
 
     def playback_metadata(self, term: str) -> dict[str, str]:
-        manifest = self._load_local_manifest()
-        if manifest and self._dictionary_is_compatible(manifest) and manifest["schemaVersion"] == 3:
+        manifest = self._active_manifest()
+        if manifest and manifest["schemaVersion"] == 3:
             return {"provider": manifest["generation"]["provider"],
                     "packVersion": manifest["packVersion"]}
         return {"provider": "azure-speech"}
@@ -444,7 +522,13 @@ class AudioPackManager:
                 headers={"User-Agent": "PronounceIt-audio-pack/1"},
             )
             with urllib.request.urlopen(request, timeout=30) as response:
-                raw = json.loads(response.read().decode("utf-8"))
+                data = response.read()
+            release = self._release_metadata()
+            expected_hash = release.get("packManifestSha256")
+            if (not self._manifest_url_override and request.full_url == release.get("manifestUrl")
+                    and _sha256(expected_hash) and hashlib.sha256(data).hexdigest() != expected_hash):
+                raise AudioPackError("downloaded audio pack manifest failed checksum validation")
+            raw = json.loads(data.decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
                 raise AudioPackError(
@@ -457,43 +541,43 @@ class AudioPackManager:
             raise AudioPackError(f"could not download audio pack manifest: {exc}") from exc
         return validate_manifest(raw)
 
-    def _load_local_manifest(self) -> dict[str, Any] | None:
-        """Load an installed manifest, or a persisted partial-download manifest.
-
-        ``installed.json`` is deliberately written only after every shard has
-        passed validation.  The manifest is written before downloading shards,
-        though, and must remain discoverable after an Anki restart so the UI
-        can show progress and the downloader can resume from ``.part`` files.
-        """
-        version = self._local_state_version()
-        candidates: list[Path] = []
-        if version:
-            candidates.append(self.pack_root / version / "pack-manifest.json")
-        else:
-            try:
-                candidates.extend(
-                    sorted(
-                        self.pack_root.glob("*/pack-manifest.json"),
-                        key=lambda path: path.parent.name,
-                        reverse=True,
-                    )
-                )
-            except OSError:
-                return None
-
-        for path in candidates:
-            try:
-                stamp = path.stat()
-                cache = self._manifest_cache
-                if cache and cache[:3] == (path, stamp.st_mtime_ns, stamp.st_size):
-                    return cache[3]
-                manifest = validate_manifest(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError, TypeError, AudioPackError):
-                continue
-            if str(manifest["packVersion"]) == path.parent.name:
-                self._manifest_cache = (path, stamp.st_mtime_ns, stamp.st_size, manifest)
-                return manifest
+    def _manifest_for_version(self, version: str) -> dict[str, Any] | None:
+        if not is_supported_pack_version(version):
+            return None
+        path = self.pack_root / version / "pack-manifest.json"
+        try:
+            stamp = path.stat()
+            cache = self._manifest_cache
+            if cache and cache[:3] == (path, stamp.st_mtime_ns, stamp.st_size):
+                return cache[3]
+            manifest = validate_manifest(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError, AudioPackError):
+            return None
+        if str(manifest["packVersion"]).strip() == version:
+            self._manifest_cache = (path, stamp.st_mtime_ns, stamp.st_size, manifest)
+            return manifest
         return None
+
+    def _legacy_target_manifest(self, active_version: str) -> dict[str, Any] | None:
+        active = self._manifest_for_version(active_version)
+        if active and self._dictionary_is_compatible(active):
+            return active
+        # Early libraries lack a release tag. Discover a compatible partial
+        # download using its manifest instead of ordering arbitrary version IDs.
+        for path in self.pack_root.glob("*/pack-manifest.json"):
+            manifest = self._manifest_for_version(path.parent.name)
+            if manifest and self._dictionary_is_compatible(manifest):
+                return manifest
+        return active
+
+    def _active_manifest(self) -> dict[str, Any] | None:
+        release = self._release_metadata()
+        expected_version = self._configured_version(release)
+        active_version = self._local_state_version()
+        if not active_version or (expected_version and active_version != expected_version):
+            return None
+        manifest = self._manifest_for_version(active_version)
+        return manifest if manifest and self._dictionary_is_compatible(manifest, release) else None
 
     def _local_state_version(self) -> str:
         try:
@@ -503,24 +587,29 @@ class AudioPackManager:
         except (OSError, UnicodeError, AttributeError, json.JSONDecodeError):
             return ""
 
-    def _dictionary_is_compatible(self, manifest: dict[str, Any]) -> bool:
+    def _dictionary_is_compatible(self, manifest: dict[str, Any], release: dict[str, Any] | None = None) -> bool:
         try:
             stat = self.dictionary_path.stat()
             stamp = (stat.st_mtime_ns, stat.st_size, stat.st_ino)
-            if self._dictionary_hash is None or stamp != self._dictionary_stamp:
-                self._dictionary_hash = dictionary_sha256(self.dictionary_path)
-                self._dictionary_stamp = stamp
+            dictionary_cache = self._dictionary_cache
+            if not dictionary_cache or stamp != dictionary_cache[0]:
+                dictionary_cache = (stamp, dictionary_sha256(self.dictionary_path))
+                self._dictionary_cache = dictionary_cache
+            if release is None:
+                release = self._release_metadata()
+            expected_version = self._configured_version(release)
+            if expected_version and str(manifest["packVersion"]).strip() != expected_version:
+                return False
             if self.dictionary_path.name == "medical_pronunciations.json":
-                return self._dictionary_hash == manifest["dictionarySha256"]
-            release = json.loads((self.addon_root / "data/audio-pack-release.json").read_text(encoding="utf-8"))
-            if self._compatibility_manifest is not manifest:
-                self._compatibility_manifest_hash = manifest_content_sha256(manifest)
-                self._compatibility_manifest = manifest
+                return dictionary_cache[1] == manifest["dictionarySha256"]
+            compatibility_cache = self._compatibility_cache
+            if not compatibility_cache or compatibility_cache[0] is not manifest:
+                compatibility_cache = (manifest, manifest_content_sha256(manifest))
+                self._compatibility_cache = compatibility_cache
             return (
-                release.get("schemaVersion") == 3
-                and self._dictionary_hash == release.get("audioLibrarySha256")
+                dictionary_cache[1] == release.get("audioLibrarySha256")
                 and manifest["dictionarySha256"] == release.get("dictionarySha256")
-                and self._compatibility_manifest_hash == release.get("packManifestContentSha256")
+                and compatibility_cache[1] == release.get("packManifestContentSha256")
             )
         except (OSError, ValueError, TypeError, AttributeError, KeyError):
             return False
@@ -543,7 +632,6 @@ class AudioPackManager:
 
     def _download_shard(
         self,
-        manifest: dict[str, Any],
         shard: dict[str, Any],
         target: Path,
         base_bytes: int,
@@ -580,6 +668,7 @@ class AudioPackManager:
                         self._wait_if_paused()
                         self._raise_if_cancelled()
                         chunk = response.read(1024 * 1024)
+                        self._raise_if_cancelled()
                         if not chunk:
                             break
                         handle.write(chunk)
@@ -623,13 +712,20 @@ class AudioPackManager:
 
     def _raise_if_cancelled(self) -> None:
         if self._cancel_event.is_set():
-            raise AudioPackError("audio pack download cancelled")
+            raise AudioPackCancelled("audio pack download cancelled")
 
     def _write_json_atomic(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp = path.with_suffix(path.suffix + ".tmp")
-        temp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        os.replace(temp, path)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as output:
+            temp = Path(output.name)
+            try:
+                output.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+                output.close()
+                os.replace(temp, path)
+            finally:
+                temp.unlink(missing_ok=True)
 
     def _enforce_cache_limit(self, keep: Path) -> None:
         if self.cache_bytes <= 0:

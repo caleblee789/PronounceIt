@@ -23,8 +23,10 @@ jobs:
       - name: Run complete test suite
         run: python3 -m unittest discover -s tests
 
-      - name: Build and validate add-on
-        run: python3 scripts/release/build_ankiaddon.py
+      - name: Build from source and verify the release candidate
+        run: |
+          python3 scripts/release/build_ankiaddon.py --output "$RUNNER_TEMP/pronounceit.ankiaddon"
+          python3 scripts/release/build_ankiaddon.py --verify dist/pronounceit.ankiaddon
 
       - name: Refuse to overwrite an existing release
         env:

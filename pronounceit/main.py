@@ -42,7 +42,10 @@ CALEB_ADDONS_MENU_TITLE = "Caleb M. Add-ons Settings"
 CALEB_ADDONS_MENU_OBJECT_NAME = "caleb_m_addons_menu"
 _AUDIO_SOURCE_LABELS = {
     "audio": "Audio pronunciation",
+    "custom": "Custom recording",
+    "library": "Audio library",
     "computer": "Computer voice",
+    "unavailable": "No recording available",
 }
 
 _addon_module = ""
@@ -53,6 +56,7 @@ _custom: CustomPronunciations | None = None
 _audio_pack: AudioPackManager | None = None
 _audio_pack_download: AudioPackDownloadController | None = None
 _reviewer_answer_visible = False
+_review_revision = 0
 _tts = CompositeTtsEngine()
 _playback_diagnostics: list[dict[str, Any]] = []
 _runtime_diagnostics: list[str] = []
@@ -86,8 +90,12 @@ def _pack_presentation(state: AudioPackDownloadState) -> _PackPresentation:
     done = max(0, int(state.done_bytes))
     percent = min(100, round(done * 100 / total)) if total else 0
 
-    if state.phase == "installed":
-        return _PackPresentation("Installed", "installed", verified=True)
+    if state.phase == "loading":
+        return _PackPresentation("Checking library…", "downloading", progress_visible=True, progress_indeterminate=True)
+    if state.phase == "removing":
+        return _PackPresentation("Removing library…", "downloading", progress_visible=True, progress_indeterminate=True)
+    if state.phase == "installed" or (state.phase == "idle" and state.installed):
+        return _PackPresentation("Installed", "installed", verified=state.verified)
     if state.phase == "verifying":
         return _PackPresentation(
             "Verifying…", "downloading", progress_visible=True, progress_indeterminate=True
@@ -116,7 +124,11 @@ def _pack_presentation(state: AudioPackDownloadState) -> _PackPresentation:
             progress_text=f"{percent}% • Ready to resume" if total else "Ready to resume",
         )
     if state.phase == "failed":
-        status = "Verification failed" if "verif" in state.message.casefold() else "Download failed"
+        status = {
+            "Verification failed.": "Verification failed",
+            "Could not remove the audio library.": "Removal failed",
+            "Could not check the audio library.": "Library check failed",
+        }.get(state.message, "Download failed")
         return _PackPresentation(
             status,
             "failed",
@@ -132,13 +144,15 @@ def _pack_presentation(state: AudioPackDownloadState) -> _PackPresentation:
             progress_percent=percent,
             progress_text=f"{percent}% • Ready to resume" if total else "",
         )
-    if state.installed:
-        return _PackPresentation("Installed", "installed", verified=True)
-    if total:
+    if state.phase == "update-available":
+        return _PackPresentation("Update available", "paused")
+    if state.phase == "idle" and state.total_shards and not state.compatible:
+        return _PackPresentation("Library needs repair", "failed")
+    if state.phase == "incomplete" or total:
         return _PackPresentation(
-            "Not installed",
+            "Download incomplete",
             "not-installed",
-            progress_visible=True,
+            progress_visible=bool(total),
             progress_percent=percent,
             progress_text=f"{percent}% • Ready to resume",
         )
@@ -153,7 +167,15 @@ def initialize(addon_module: str) -> None:
     _migrate_theme_config()
     cache_bytes = _config().audio_pack_cache_mb * 1024 * 1024
     _audio_pack = AudioPackManager(_addon_root, cache_bytes=cache_bytes)
-    _audio_pack_download = AudioPackDownloadController(_audio_pack)
+    try:
+        from aqt import gui_hooks, mw
+    except Exception:
+        gui_hooks = mw = None
+    _audio_pack_download = AudioPackDownloadController(
+        _audio_pack,
+        dispatch=(lambda callback: mw.taskman.run_on_main(callback)) if mw is not None else None,
+        notifier=_notify_audio_pack if mw is not None else None,
+    )
     _tts = CompositeTtsEngine(
         [
             LocalAudioFileEngine(_addon_root),
@@ -167,18 +189,7 @@ def initialize(addon_module: str) -> None:
     _saved = SavedPronunciations(_addon_root)
     _custom = CustomPronunciations(_addon_root)
 
-    try:
-        from aqt import gui_hooks, mw
-    except Exception:
-        return
-
-    _audio_pack_download = AudioPackDownloadController(
-        _audio_pack,
-        dispatch=lambda callback: mw.taskman.run_on_main(callback),
-        notifier=_notify_audio_pack,
-    )
-
-    if _hooks_installed:
+    if gui_hooks is None or mw is None or _hooks_installed:
         return
 
     mw.addonManager.setWebExports(addon_module, r"web/.*(css|js)")
@@ -207,6 +218,10 @@ def _notify_audio_pack(message: str, error: bool = False) -> None:
         feedback("Could not finish the audio library operation. Open Troubleshoot audio for details.", error=True)
     elif "cancel" in message.casefold():
         feedback("Download cancelled. Resume it in Audio settings.")
+    elif "removed" in message.casefold():
+        feedback("Audio library removed.")
+    elif "verification" in message.casefold():
+        feedback("Audio library files verified.")
     else:
         feedback("Audio library is ready." if _audio_pack_download and _audio_pack_download.snapshot().installed else "Audio library updated.")
 
@@ -255,7 +270,7 @@ def _migrate_theme_config() -> dict[str, Any]:
 def _audio_pack_onboarding_needed(
     config: PronounceItConfig, state: AudioPackDownloadState
 ) -> bool:
-    return not config.audio_pack_prompt_seen and not state.installed and not state.running
+    return not config.audio_pack_prompt_seen and not (state.installed or state.active_version or state.running)
 
 
 def _complete_audio_pack_onboarding(download: bool) -> None:
@@ -271,9 +286,15 @@ def _maybe_show_audio_pack_onboarding() -> None:
         return
     state = _audio_pack_download.refresh()
     config = _config()
-    if state.installed or state.running:
-        if not config.audio_pack_prompt_seen:
-            _complete_audio_pack_onboarding(False)
+    if config.audio_pack_prompt_seen:
+        return
+    if state.phase == "loading":
+        from aqt.qt import QTimer
+
+        QTimer.singleShot(300, _maybe_show_audio_pack_onboarding)
+        return
+    if state.installed or state.active_version or state.running:
+        _complete_audio_pack_onboarding(False)
         return
     if not _audio_pack_onboarding_needed(config, state):
         return
@@ -1009,14 +1030,14 @@ def _enrich_lookup_payload(payload: dict[str, Any]) -> dict[str, Any]:
             _record_runtime_diagnostic(str(exc))
     recorded = (local or pack) and config.audio_backend != "system_tts" and not override
     if recorded:
-        result["audioSource"] = "audio"
+        result["audioSource"] = "custom" if local else "library"
         result["audioStatus"] = "Audio pronunciation ready"
         result["audioHelp"] = "Play this recording."
     else:
-        result["audioSource"] = "computer"
+        result["audioSource"] = "unavailable" if config.audio_backend == "local_audio" else "computer"
         result["audioStatus"] = "Computer voice ready" if config.audio_backend != "local_audio" else "No recording available"
         result["audioHelp"] = "Play using your computer voice." if config.audio_backend != "local_audio" else "Choose a mode with computer voice in Audio settings to hear this term."
-    result["audioSourceLabel"] = _audio_source_label(result["audioSource"]) if recorded or config.audio_backend != "local_audio" else "No recording available"
+    result["audioSourceLabel"] = _audio_source_label(result["audioSource"])
     result["audioAvailable"] = recorded or config.audio_backend != "local_audio"
     result["alreadySaved"] = _payload_is_saved(result)
     return result
@@ -1138,12 +1159,18 @@ def _send_pronunciation_blocked(context: Any, payload: dict[str, Any]) -> None:
         TtsSettings(audio_backend=_config().audio_backend, term=text),
         result,
     )
-    _send_spoken_result(context, result, text=text, term=text)
+    _send_spoken_result(context, result, text=text, term=text, request_id=payload.get("requestId"))
+
+
+def _current_review_request(payload: dict[str, Any]) -> bool:
+    revision = payload.get("reviewRevision")
+    return revision is None or revision == _review_revision
 
 
 def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
+    if not _current_review_request(payload):
+        return
     if not _pronunciation_allowed():
-        _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
         _send_pronunciation_blocked(context, payload)
         return
     result = _lookup_payload_from_request(payload)
@@ -1156,12 +1183,15 @@ def _handle_lookup(context: Any, payload: dict[str, Any]) -> None:
 
 
 def _handle_audio_lookup(context: Any, payload: dict[str, Any]) -> None:
+    if not _current_review_request(payload):
+        return
     if not _pronunciation_allowed():
-        _eval(context, "window.PronounceIt && window.PronounceIt.hide();")
         _send_pronunciation_blocked(context, payload)
         return
     result = _lookup_payload_from_request(payload)
-    _handle_speak(_playback_payload_from_lookup(result), context)
+    playback = _playback_payload_from_lookup(result)
+    playback["requestId"] = payload.get("requestId")
+    _handle_speak(playback, context)
 
 
 def _playback_request_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1211,7 +1241,7 @@ def _handle_speak(payload: dict[str, Any], context: Any | None = None) -> bool:
     result = _tts.speak_result(text, settings)
     _record_playback_diagnostic(text, settings, result)
     if context is not None:
-        _send_spoken_result(context, result, text=text, term=settings.term)
+        _send_spoken_result(context, result, text=text, term=settings.term, request_id=payload.get("requestId"))
     return result.ok
 
 
@@ -1231,12 +1261,13 @@ def _record_playback_diagnostic(text: str, settings: TtsSettings, result: Any) -
     del _playback_diagnostics[:-20]
 
 
-def _send_spoken_result(context: Any, result: Any, text: str = "", term: str = "") -> None:
+def _send_spoken_result(context: Any, result: Any, text: str = "", term: str = "", request_id: Any = None) -> None:
     payload = {
         "ok": bool(getattr(result, "ok", False)),
         "reason": str(getattr(result, "reason", "")),
         "text": text,
         "term": term,
+        "requestId": request_id,
         "attempts": list(getattr(result, "attempts", [])),
         "audioSource": str(getattr(result, "audio_source", "") or ""),
         "audioSourceLabel": _audio_source_label(
@@ -1247,38 +1278,36 @@ def _send_spoken_result(context: Any, result: Any, text: str = "", term: str = "
 
 
 def _handle_save(context: Any, payload: dict[str, Any]) -> None:
+    request_id = payload.get("requestId")
     if not _saved:
+        _send_save_result(context, request_id, error="Saved pronunciations are unavailable.")
         return
     try:
         result = _saved.save_entry(_payload_with_origin(context, payload))
     except StorageError as exc:
         _record_runtime_diagnostic(str(exc))
-        js_payload = json.dumps(
-            {
-                "saved": False,
-                "duplicate": False,
-                "alreadySaved": False,
-                "error": _storage_error_text(exc),
-            }
-        )
-        _eval(context, f"window.PronounceIt && window.PronounceIt.saved({js_payload});")
+        _send_save_result(context, request_id, error="Could not save. Check the saved pronunciations file in About & support.")
         return
-    js_payload = json.dumps(
-        {
-            "saved": result.saved,
-            "duplicate": result.duplicate,
-            "total": result.total,
-            "alreadySaved": result.saved or result.duplicate,
-        }
+    _send_save_result(
+        context, request_id, saved=result.saved, duplicate=result.duplicate, total=result.total,
+        alreadySaved=result.saved or result.duplicate,
     )
+
+
+def _send_save_result(context: Any, request_id: Any, **updates: Any) -> None:
+    js_payload = json.dumps({"requestId": request_id, "saved": False, "duplicate": False, "alreadySaved": False, **updates})
     _eval(context, f"window.PronounceIt && window.PronounceIt.saved({js_payload});")
 
 
 def _handle_save_lookup(context: Any, payload: dict[str, Any]) -> None:
-    if not _pronunciation_allowed():
-        _send_pronunciation_blocked(context, payload)
+    if not _current_review_request(payload):
         return
-    _handle_save(context, _lookup_payload_from_request(payload))
+    if not _pronunciation_allowed():
+        _send_save_result(context, payload.get("requestId"), error="Reveal the answer before saving the pronunciation.")
+        return
+    result = _lookup_payload_from_request(payload)
+    result["requestId"] = payload.get("requestId")
+    _handle_save(context, result)
 
 
 def _payload_with_origin(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1380,8 +1409,10 @@ def _on_reviewer_show_answer(card: Any) -> None:
 
 
 def _set_reviewer_answer_visible(answer_visible: bool) -> None:
-    global _reviewer_answer_visible
+    global _reviewer_answer_visible, _review_revision
     _reviewer_answer_visible = answer_visible
+    if not answer_visible:
+        _review_revision += 1
     if not _config().auto_close_on_card_change:
         _send_reviewer_config()
         return
@@ -1441,6 +1472,7 @@ def _js_config_payload(config: PronounceItConfig | None = None) -> dict[str, Any
     payload = selected.as_js_payload()
     payload["themeTokens"] = web_theme_tokens(selected.theme)
     payload["answerVisible"] = _answer_visible()
+    payload["reviewRevision"] = _review_revision
     payload["platformModifier"] = "meta" if sys.platform.startswith("darwin") else "ctrl"
     return payload
 

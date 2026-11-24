@@ -166,7 +166,8 @@ class FieldRow(QWidget):
         # a native window and can pull macOS out of Anki's full-screen Space.
         self.help.setVisible(bool(description))
         self.control = control
-        control.setAccessibleName(title)
+        if not control.accessibleName() and not (isinstance(control, QPushButton) and control.text()):
+            control.setAccessibleName(title)
         control.setAccessibleDescription(description)
         self.stack_below = stack_below
         self.grid = QGridLayout(self)
@@ -201,8 +202,8 @@ class SettingsCard(QWidget):
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.body = QVBoxLayout(self)
-        self.body.setContentsMargins(16, 16, 16, 16)
-        self.body.setSpacing(12)
+        self.body.setContentsMargins(14, 12, 14, 12)
+        self.body.setSpacing(8)
         if title:
             self.body.addWidget(label(title, "section"))
         if description:
@@ -216,7 +217,7 @@ class CardGrid(QWidget):
         self.cards = cards
         self.grid = QGridLayout(self)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setSpacing(16)
+        self.grid.setSpacing(12)
         self._wide = None
         self.arrange(False)
 
@@ -234,7 +235,7 @@ class CardGrid(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self.arrange(self.width() >= max(760, self.fontMetrics().horizontalAdvance("M") * 76))
+        self.arrange(self.width() >= max(630, self.fontMetrics().horizontalAdvance("M") * 40))
 
 
 class ValueSlider(QWidget):

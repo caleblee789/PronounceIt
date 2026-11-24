@@ -2,11 +2,14 @@
   "schemaVersion": 3,
   "manifestUrl": "https://github.com/caleblee789/PronounceIt/releases/download/audio-pack-v3-8f434ad6b9cd8e7c/pack-manifest.json",
   "releaseTag": "audio-pack-v3-8f434ad6b9cd8e7c",
-  "addonVersion": "1.4.0",
+  "addonVersion": "1.4.1",
   "packManifestSha256": "8d934b78d6ceb268f9f6ec126f882a3e07bcf088283f29c67c73b61d7b3c95de",
   "publicationStatus": "published",
   "dictionarySha256": "1d8f6b7365e8c121fc6bbf04fedb5308e917ee34bc3be1d376629a66d8f53af7",
   "audioLibrarySha256": "1d8f6b7365e8c121fc6bbf04fedb5308e917ee34bc3be1d376629a66d8f53af7",
   "packManifestContentSha256": "7c19fa9fc3128153b84fa1d3f14f88f7084f107c34a8494a56437cdb4ffc43f3",
-  "packBytes": 1039293980
+  "packBytes": 1039293980,
+  "manifestBytes": 45883435,
+  "assetCount": 98305,
+  "voice": "marin"
 }

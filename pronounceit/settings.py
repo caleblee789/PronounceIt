@@ -6,13 +6,12 @@ from typing import Any
 
 from aqt import mw
 from aqt.qt import (
-    QAbstractButton, QApplication, QComboBox, QDialog, QEvent, QGridLayout,
-    QHBoxLayout, QIcon, QLabel, QLineEdit, QListWidget, QProgressBar, QPushButton,
-    QScrollArea, QSettings, QSize, QSizePolicy, QSlider, QSpinBox,
-    QStackedWidget, QTimer, QVBoxLayout, QWidget, Qt,
+    QAbstractButton, QApplication, QBoxLayout, QComboBox, QDialog, QEvent,
+    QGridLayout, QHBoxLayout, QLineEdit, QListWidget, QProgressBar, QScrollArea,
+    QSettings, QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTimer, QVBoxLayout, Qt,
 )
 
-from . import main as core
+from . import __version__, main as core
 from .config import DEFAULT_CONFIG, PronounceItConfig
 from .theme import dialog_qss, web_theme_tokens
 from .ui_components import (
@@ -22,14 +21,31 @@ from .ui_components import (
 )
 
 
+def audio_library_summary() -> str:
+    """Read the small bundled release binding, without scanning audio files."""
+    try:
+        path = core._addon_dir() / "data" / "audio-pack-release.json"
+        release = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(release, dict):
+        return ""
+    parts = []
+    count = release.get("assetCount")
+    if type(count) is int and count > 0:
+        parts.append(f"{count:,} recordings")
+    voice = release.get("voice")
+    if isinstance(voice, str) and voice.strip():
+        parts.append(voice.strip().capitalize() + " voice")
+    size = release.get("packBytes")
+    if type(size) is int and size > 0:
+        parts.append(f"{size / 1024 ** 3:.2f} GiB")
+    return " · ".join(parts)
+
+
 class Settings(QDialog):
-    SECTIONS = (
-        ("Review", "Choose how pronunciation works while you study."),
-        ("Audio", "Choose your playback source and manage the audio library."),
-        ("Tools", "Find, save, and customize pronunciations."),
-        ("About & support", "About PronounceIt, your local files, and support."),
-    )
-    GEOMETRY_KEY = "pronounceit/settings/geometry-v1"
+    SECTIONS = ("Review", "Audio", "Tools", "About & support")
+    GEOMETRY_KEY = "pronounceit/settings/geometry-v2"
 
     def __init__(self):
         super().__init__(mw)
@@ -43,6 +59,7 @@ class Settings(QDialog):
         self._closing = False
         self._prompt = None
         self._footer_compact = None
+        self.pack_state = None
         self.setStyleSheet(dialog_qss(self.theme, self.objectName()))
         self._build_shell()
         self.build_review()
@@ -65,6 +82,7 @@ class Settings(QDialog):
         self.saved_timer.timeout.connect(self.update_dirty)
         self.pack_timer = QTimer(self)
         self.pack_timer.timeout.connect(self.refresh_pack)
+        self.pack_timer.timeout.connect(self.update_selection)
         self.pack_timer.start(400)
         self.finished.connect(self.pack_timer.stop)
         self.finished.connect(lambda *_: core._send_reviewer_config())
@@ -85,32 +103,25 @@ class Settings(QDialog):
         grid.setColumnStretch(1, 1)
         grid.setRowStretch(1, 1)
         self.sidebar, sidebar = column("sidebar")
-        self.sidebar.setFixedWidth(184)
-        sidebar.setContentsMargins(16, 20, 16, 16)
-        sidebar.setSpacing(8)
+        sidebar.setContentsMargins(12, 16, 12, 12)
+        sidebar.setSpacing(12)
         sidebar.addWidget(label("PronounceIt", "brand"))
-        sidebar.addWidget(label("Pronunciation for Anki", "secondary"))
-        sidebar.addSpacing(12)
         self.nav = QListWidget()
         self.nav.setObjectName("pronounceitNav")
         self.nav.setAccessibleName("Settings sections")
         self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        for title, _ in self.SECTIONS:
+        for title in self.SECTIONS:
             self.nav.addItem(title)
         sidebar.addWidget(self.nav, 1)
         grid.addWidget(self.sidebar, 0, 0, 4, 1)
         self.header, header = column("header")
-        header.setContentsMargins(24, 12, 24, 12)
-        header.setSpacing(4)
-        self.header.setMinimumHeight(72)
+        self.header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        header.setContentsMargins(18, 12, 18, 12)
         self.page_title = label("", "page_title")
-        self.page_help = label("", "secondary")
         header.addWidget(self.page_title)
-        header.addWidget(self.page_help)
         self.compact_nav = QComboBox()
-        self.compact_nav.setAccessibleName("Settings sections")
-        self.compact_nav.addItems([title for title, _ in self.SECTIONS])
-        self.compact_row = FieldRow("Section", self.compact_nav)
+        self.compact_nav.addItems(self.SECTIONS)
+        self.compact_row = FieldRow("Settings section", self.compact_nav, stack_below=265)
         self.compact_row.hide()
         header.addWidget(self.compact_row)
         grid.addWidget(self.header, 0, 1)
@@ -119,35 +130,24 @@ class Settings(QDialog):
         grid.addWidget(self.pages, 1, 1)
         self.page_layouts = [self.page() for _ in self.SECTIONS]
         self.error_region, errors = column("canvas")
-        errors.setContentsMargins(24, 8, 24, 8)
+        errors.setContentsMargins(18, 8, 18, 8)
         self.settings_message = label("", "error")
         self.settings_message.setAccessibleName("Settings error")
         errors.addWidget(self.settings_message)
         self.error_region.hide()
         grid.addWidget(self.error_region, 2, 1)
         self.footer = surface("footer")
-        self.footer.setMinimumHeight(56)
+        self.footer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.footer_grid = QGridLayout(self.footer)
         self.footer_grid.setContentsMargins(16, 8, 16, 8)
         self.footer_grid.setHorizontalSpacing(8)
-        self.footer_grid.setVerticalSpacing(6)
-        self.donate = button("", core._open_support_url, "quiet")
-        self.donate.setAccessibleName("Buy Me a Coffee")
-        self.donate.setToolTip("Donate to support the creator")
-        asset = core._addon_dir() / "pronounceit" / "assets" / core.SUPPORT_IMAGE_NAME
-        if asset.exists():
-            self.donate.setIcon(QIcon(str(asset)))
-            self.donate.setIconSize(QSize(98, 28))
-            self.donate.setFixedSize(106, 36)
-        else:
-            self.donate.setText("Buy me a coffee")
+        self.footer_grid.setVerticalSpacing(4)
         self.footer_status = label("", "secondary")
         self.footer_status.setAccessibleName("Settings save status")
         self.discard_button = button("Discard changes", self.discard, "quiet")
         self.close_control = button("Close", self.request_close)
         self.save_control = button("Save changes", self.commit, "primary")
         self.save_control.setAccessibleDescription("Apply all changes without closing settings.")
-        self.save_control.setMinimumWidth(124)
         self._arrange_footer(False)
         grid.addWidget(self.footer, 3, 1)
         self.nav.currentRowChanged.connect(self.navigate)
@@ -160,8 +160,8 @@ class Settings(QDialog):
         area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         area.viewport().setProperty("role", "canvas")
         widget, body = column("page")
-        body.setContentsMargins(24, 24, 24, 24)
-        body.setSpacing(16)
+        body.setContentsMargins(18, 16, 18, 16)
+        body.setSpacing(12)
         body.setAlignment(Qt.AlignmentFlag.AlignTop)
         area.setWidget(widget)
         self.pages.addWidget(area)
@@ -171,19 +171,13 @@ class Settings(QDialog):
         if self._footer_compact == compact:
             return
         self._footer_compact = compact
-        widgets = [self.donate, self.footer_status, self.discard_button, self.close_control, self.save_control]
-        for widget in widgets:
+        actions = (self.discard_button, self.close_control, self.save_control)
+        for widget in (self.footer_status, *actions):
             self.footer_grid.removeWidget(widget)
-        self.footer_grid.setColumnStretch(1, 1)
-        self.footer_grid.addWidget(self.donate, 0, 0)
-        self.footer_grid.addWidget(self.close_control, 0, 3)
-        self.footer_grid.addWidget(self.save_control, 0, 4)
-        if compact:
-            self.footer_grid.addWidget(self.footer_status, 1, 0, 1, 3)
-            self.footer_grid.addWidget(self.discard_button, 1, 3, 1, 2)
-        else:
-            self.footer_grid.addWidget(self.footer_status, 0, 1)
-            self.footer_grid.addWidget(self.discard_button, 0, 2)
+        self.footer_grid.setColumnStretch(0, 1)
+        self.footer_grid.addWidget(self.footer_status, 0, 0, 1, 4 if compact else 1)
+        for column_index, action in enumerate(actions, 1):
+            self.footer_grid.addWidget(action, int(compact), column_index)
 
     def navigate(self, index):
         if not 0 <= index < len(self.SECTIONS):
@@ -193,35 +187,49 @@ class Settings(QDialog):
             setter(index)
             widget.blockSignals(False)
         self.pages.setCurrentIndex(index)
-        self.page_title.setText(self.SECTIONS[index][0])
-        self.page_help.setText(self.SECTIONS[index][1])
+        self.page_title.setText(self.SECTIONS[index])
         self.update_selection()
 
     def _initial_geometry(self):
-        available = self.screen().availableGeometry()
+        available = (self.screen() or QApplication.primaryScreen()).availableGeometry()
         width, height = max(280, available.width() - 48), max(180, available.height() - 48)
-        self.setMinimumSize(min(860, width), min(640, height))
-        self.resize(min(1080, width), min(760, height))
+        self.setMinimumSize(min(560, width), min(440, height))
+        self.resize(min(900, width), min(620, height))
         saved = QSettings().value(self.GEOMETRY_KEY)
         if saved:
             self.restoreGeometry(saved)
         self.resize(min(self.width(), width), min(self.height(), height))
         if not saved or not available.contains(self.frameGeometry()):
             self.move(available.center() - self.rect().center())
+        self._arrange_workspace()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if not hasattr(self, "sidebar"):
+        if not hasattr(self, "save_control"):
             return
-        compact = self.width() < 860
+        self._arrange_workspace()
+        if self._prompt is not None:
+            self._arrange_prompt()
+
+    def _arrange_workspace(self):
+        sidebar_width = max(178, self.nav.fontMetrics().horizontalAdvance(self.SECTIONS[-1]) + 66)
+        self.sidebar.setFixedWidth(sidebar_width)
+        compact = self.width() < max(720, sidebar_width + 520)
         self.sidebar.setVisible(not compact)
         self.compact_row.setVisible(compact)
-        self._arrange_footer(self.width() - (0 if compact else 184) < 680)
+        self.page_title.setVisible(not compact)
+        panel_width = self.width() - (0 if compact else sidebar_width)
+        actions = (self.discard_button, self.close_control, self.save_control)
+        action_width = sum(control.sizeHint().width() for control in actions)
+        status_width = self.footer_status.fontMetrics().horizontalAdvance("Unsaved changes")
+        self._arrange_footer(panel_width < action_width + status_width + 64)
 
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == QEvent.Type.ApplicationFontChange:
             apply_fonts(self)
+            if hasattr(self, "save_control"):
+                self._arrange_workspace()
 
     def check(self, card, key, text, help_text=""):
         control = SettingsSwitch(text, help_text)
@@ -233,21 +241,20 @@ class Settings(QDialog):
         body = self.page_layouts[0]
         behavior = SettingsCard("Review behavior")
         self.check(behavior, "enabled", "Enable PronounceIt")
-        self.check(behavior, "allow_on_question_side", "Allow before revealing the answer", "Turn off when hearing a term could reveal the answer.")
+        self.check(behavior, "allow_on_question_side", "Allow before revealing the answer")
         body.addWidget(behavior)
         shortcuts = SettingsCard("Shortcuts")
-        self.shortcut_help = {}
         for key, title in [("direct_click_modifier", "Play audio"), ("native_context_menu_modifier", "Open quick card")]:
             control = QComboBox()
             control.setMinimumWidth(130)
             core._add_activation_modifier_items(control)
             self.controls[key] = control
-            row = FieldRow(title, control, " ", stack_below=330)
-            shortcuts.body.addWidget(row)
-            self.shortcut_help[key] = row.help
+            shortcuts.body.addWidget(FieldRow(title, control, stack_below=280))
         how, instructions = column()
         instructions.addWidget(label("Hold the key while clicking or selecting a term, or select text first and tap the key. Plain right-click keeps Anki’s menu.", "secondary"))
         disclosure(shortcuts.body, "How to use", how)
+        self.shortcut_conflict = label("The quick card takes priority when both shortcuts use the same key.", "warning")
+        shortcuts.body.addWidget(self.shortcut_conflict)
         quick = SettingsCard("Quick card")
         self.check(quick, "show_native_context_menu", "Show quick card")
         self.check(quick, "auto_close_on_card_change", "Close when changing cards")
@@ -261,7 +268,7 @@ class Settings(QDialog):
         theme.addItem("Dark", "dark")
         theme.setMinimumWidth(130)
         self.controls["theme"] = theme
-        appearance.body.addWidget(FieldRow("Color mode", theme, "Applies to PronounceIt settings and pronunciation cards."))
+        appearance.body.addWidget(FieldRow("Color mode", theme))
         body.addWidget(appearance)
 
     def build_audio(self):
@@ -271,17 +278,21 @@ class Settings(QDialog):
         for text, value in [("Audio, then computer voice", "local_audio_then_tts"), ("Audio only", "local_audio"), ("Computer voice only", "system_tts")]:
             mode.addItem(text, value)
         self.controls["audio_backend"] = mode
-        playback.body.addWidget(FieldRow("Play using", mode, "Audio uses your custom recordings or the downloaded library.", stack_below=530))
+        playback.body.addWidget(FieldRow("Play using", mode, stack_below=390))
         body.addWidget(playback)
-        library = SettingsCard("Audio library", "All 95,902 audio pronunciations · About 1.03 GiB")
+        library = SettingsCard("Audio library", audio_library_summary())
         status_row = QHBoxLayout()
         self.activity = ActivityIndicator()
         self.pack_status = label("", "section")
+        self.pack_status.setAccessibleName("Audio library status")
         status_row.addWidget(self.activity)
         status_row.addWidget(self.pack_status, 1)
         library.body.addLayout(status_row)
         self.pack_help = label("", "secondary")
         library.body.addWidget(self.pack_help)
+        self.pack_error = label("", "error")
+        self.pack_error.hide()
+        library.body.addWidget(self.pack_error)
         self.progress = QProgressBar()
         self.progress.setAccessibleName("Audio library download progress")
         self.progress.setTextVisible(False)
@@ -293,17 +304,17 @@ class Settings(QDialog):
         self.pack_buttons = {}
         actions = QHBoxLayout()
         actions.setSpacing(8)
-        for action in ["Download library", "Pause", "Cancel download"]:
-            control = button(action, lambda a=action: self.pack_action(a), "primary" if action == "Download library" else "")
+        for action in ["Download library", "Check files", "Pause", "Cancel download"]:
+            control = button(action, lambda a=action: self.pack_action(a), "primary" if action in {"Download library", "Check files"} else "")
             self.pack_buttons[action] = control
             actions.addWidget(control)
         actions.addStretch()
         library.body.addLayout(actions)
         maintenance, maintenance_body = column()
-        for action, text in [("Check files", "Check downloaded files"), ("Remove", "Remove library")]:
-            control = button(text, lambda a=action: self.pack_action(a), "danger" if action == "Remove" else "")
-            self.pack_buttons[action] = control
-            maintenance_body.addWidget(control, 0, Qt.AlignmentFlag.AlignLeft)
+        self.pack_versions = label("", "secondary")
+        maintenance_body.addWidget(self.pack_versions)
+        self.pack_buttons["Remove"] = button("Remove library", lambda: self.pack_action("Remove"), "danger")
+        maintenance_body.addWidget(self.pack_buttons["Remove"], 0, Qt.AlignmentFlag.AlignLeft)
         self.maintenance = disclosure(library.body, "Manage library", maintenance)
         voice = SettingsCard("Computer voice")
         volume = ValueSlider("Computer voice volume", 0, 100, lambda value: f"{value}%")
@@ -326,30 +337,26 @@ class Settings(QDialog):
         from . import ui
         body = self.page_layouts[2]
         tools = SettingsCard("Pronunciations")
-        for title, help_text, action, callback in [
-            ("Search", "Look up a word or medical term.", "Search", lambda: ui.show_search(parent=self)),
-            ("Saved pronunciations", "Find your saved words and their original cards.", "Open saved", lambda: ui.show_saved(self)),
-            ("Custom pronunciation", "Add or edit a written pronunciation or speech correction.", "Add custom", lambda: ui.show_custom(self)),
+        for title, action, callback in [
+            ("Search pronunciations", "Search", lambda: ui.show_search(parent=self)),
+            ("Saved pronunciations", "Open saved", lambda: ui.show_saved(self)),
+            ("Custom pronunciations", "Add custom", lambda: ui.show_custom(self)),
         ]:
-            tools.body.addWidget(FieldRow(title, button(action, callback), help_text, stack_below=430))
+            tools.body.addWidget(FieldRow(title, button(action, callback), stack_below=360))
         self.selection_button = button("Play selected text", core._pronounce_current_reviewer_selection)
-        tools.body.addWidget(FieldRow("Current selection", self.selection_button, "Select a term in the reviewer to play it here.", stack_below=430))
+        selection = FieldRow("Current selection", self.selection_button, "Select text on the current review card.", stack_below=360)
+        self.selection_help = selection.help
+        tools.body.addWidget(selection)
         body.addWidget(tools)
         diagnostics = SettingsCard("Troubleshooting")
-        diagnostics.body.addWidget(FieldRow("Pronunciation data", button("Check data", lambda: ui.show_library(self)), "Check the included terms and written guides.", stack_below=430))
-        diagnostics.body.addWidget(FieldRow("Audio playback", button("Troubleshoot", lambda: ui.show_diagnostics(self)), "Review recent playback attempts and available audio sources.", stack_below=430))
+        diagnostics.body.addWidget(FieldRow("Pronunciation data", button("Check data", lambda: ui.show_library(self)), stack_below=360))
+        diagnostics.body.addWidget(FieldRow("Audio playback", button("Troubleshoot", lambda: ui.show_diagnostics(self)), "Review recent playback attempts.", stack_below=360))
         body.addWidget(diagnostics)
 
     def build_about(self):
         body = self.page_layouts[3]
-        about = SettingsCard("PronounceIt", "Pronunciation help for Anki desktop.")
-        metadata = {}
-        try:
-            metadata = json.loads((core._addon_dir() / "manifest.json").read_text())
-        except (OSError, ValueError):
-            pass
-        about.body.addWidget(label("Version " + str(metadata.get("human_version") or metadata.get("version")) if metadata.get("human_version") or metadata.get("version") else "Development build", "secondary"))
-        about.body.addWidget(FieldRow("Support the creator", button("Buy me a coffee", core._open_support_url), "Help support continued development.", stack_below=430))
+        about = SettingsCard("PronounceIt", f"Version {__version__}")
+        about.body.addWidget(FieldRow("Support the creator", button("Buy Me a Coffee", core._open_support_url, "quiet"), stack_below=360))
         body.addWidget(about)
         files = SettingsCard("Your data", "Saved words, custom pronunciations, and audio stay on this computer. They are shared by profiles using this add-on and do not sync through AnkiWeb.")
         paths, paths_body = column()
@@ -365,8 +372,23 @@ class Settings(QDialog):
         if not hasattr(self, "selection_button"):
             return
         reviewer = getattr(mw, "reviewer", None)
-        selected = core._selected_text_from_webview(getattr(reviewer, "web", None)) if reviewer else ""
-        self.selection_button.setEnabled(bool(selected and mw.state == "review"))
+        in_review = (
+            getattr(mw, "state", None) == "review"
+            and getattr(reviewer, "web", None) is not None
+        )
+        allowed = self.config.enabled and (self.config.allow_on_question_side or core._answer_visible())
+        self.selection_button.setEnabled(in_review and allowed)
+        if not self.config.enabled:
+            guidance = "Enable PronounceIt in Review settings."
+        elif not in_review:
+            guidance = "Open a review card to use this action."
+        elif not allowed:
+            guidance = "Reveal the answer to use this action."
+        else:
+            guidance = "Select text on the current review card."
+        if self.selection_help.text() != guidance:
+            self.selection_help.setText(guidance)
+            self.selection_button.setAccessibleDescription(guidance)
 
     def values(self):
         values = {}
@@ -415,9 +437,9 @@ class Settings(QDialog):
         for key in ["native_context_menu_modifier", "auto_close_on_card_change", "show_save_button"]:
             self.controls[key].setEnabled(popup)
         self.quick_hint.setVisible(not popup)
-        for key, help_label in self.shortcut_help.items():
-            control = self.controls[key]
-            help_label.setText("Shortcut is off." if control.currentData() == "disabled" else f"Select text, then tap {control.currentText()}.")
+        direct_key = self.controls["direct_click_modifier"].currentData()
+        quick_key = self.controls["native_context_menu_modifier"].currentData()
+        self.shortcut_conflict.setVisible(popup and direct_key == quick_key and direct_key != "disabled")
         voice = self.controls["audio_backend"].currentData() != "local_audio"
         for key in ["tts_voice", "tts_rate", "tts_volume"]:
             self.controls[key].setEnabled(voice)
@@ -432,6 +454,7 @@ class Settings(QDialog):
         for switch in self.findChildren(SettingsSwitch):
             switch.update()
         apply_fonts(self)
+        self._arrange_workspace()
         reviewer = getattr(mw, "reviewer", None)
         if reviewer and getattr(reviewer, "web", None):
             data = {"theme": self.theme, "themeTokens": web_theme_tokens(self.theme)}
@@ -484,76 +507,99 @@ class Settings(QDialog):
         self.config = PronounceItConfig.from_mapping(saved)
         self.error_region.hide()
         self.update_dirty()
+        self.update_selection()
         core._send_reviewer_config()
         self.show_feedback("Saved")
         return True
 
     def refresh_pack(self):
-        for control in self.pack_buttons.values():
-            control.hide()
         controller = core._audio_pack_download
         if controller is None:
-            self.pack_status.setText("Library unavailable")
-            self.pack_help.setText("Reopen Anki, then return to Audio settings.")
+            status(self.pack_status, "Library unavailable", tone="error")
+            self.pack_help.setText("Restart Anki to try again.")
+            self.pack_help.show()
             self.progress.hide()
             self.progress_detail.hide()
             self.activity.hide()
             self.maintenance.hide()
             self.maintenance.content.hide()
+            for control in self.pack_buttons.values():
+                control.hide()
             return
         state = controller.refresh()
+        if state == self.pack_state:
+            return
         self.pack_state = state
+        phase = state.phase
         view = core._pack_presentation(state)
-        text = "Preparing download…" if state.phase == "preparing" else view.status.replace("Verifying", "Checking files")
-        tone = "error" if view.tone == "failed" else "warning" if view.tone == "paused" else "success" if state.phase == "installed" else "section"
+        text = view.status.replace("Verifying", "Checking files")
+        if phase == "installed" and state.verified:
+            text = "Installed and verified"
+        tone = {"failed": "error", "paused": "warning", "installed": "success"}.get(view.tone, "section")
         status(self.pack_status, text, tone=tone)
-        busy = view.progress_indeterminate and state.phase not in {"paused", "cancelled", "failed"}
+        busy = view.progress_indeterminate and phase not in {"paused", "cancelled", "failed"}
         self.activity.setVisible(busy)
         self.progress.setVisible(view.progress_visible and not view.progress_indeterminate)
         self.progress.setValue(view.progress_percent)
-        measurable = bool(state.total_bytes and view.progress_visible)
+        measurable = bool(state.total_bytes and view.progress_visible and not view.progress_indeterminate)
         self.progress_detail.setVisible(measurable)
         if measurable:
             done, total = state.done_bytes / 1024 ** 2, state.total_bytes / 1024 ** 2
             self.progress_detail.setText(f"{done:,.0f} of {total:,.0f} MiB")
-        help_text = "Written pronunciations are already included. Download the library to add recorded audio."
-        if state.phase == "paused":
-            help_text = "Resume whenever you’re ready. Downloaded files are kept."
-        elif state.phase == "verifying":
-            help_text = "Checking downloaded files. This may take a moment."
-        elif state.phase == "cancelling":
-            help_text = "Stopping the download. Downloaded files will be kept."
-        elif state.running:
-            help_text = "The download continues when you close settings."
-        elif state.phase == "failed":
-            help_text = state.error or "Check your connection and available disk space, then try again."
-        elif state.phase == "cancelled":
-            help_text = "Resume to finish the download. Downloaded files are kept."
-        elif state.installed:
-            help_text = "Ready to use. The library stays installed when PronounceIt updates."
+        help_text = {
+            "idle": "Download recordings for offline playback.",
+            "update-available": "Download the library that matches this add-on.",
+            "incomplete": "Resume to finish the download.",
+            "preparing": "The download continues when you close settings.",
+            "downloading": "The download continues when you close settings.",
+            "paused": "Downloaded files are kept until you resume.",
+            "cancelling": "Downloaded files will be kept.",
+            "cancelled": "Resume to finish the download.",
+            "failed": state.error or "Check your connection and available space, then retry.",
+            "installed": "Ready for offline playback.",
+        }.get(phase, "")
         self.pack_help.setText(help_text)
-        manage = bool(not state.running and (state.installed or state.total_shards))
+        self.pack_help.setVisible(bool(help_text))
+
+        can_manage = not state.running
+        manage = can_manage and bool(state.active_version or state.total_shards)
+        versions = []
+        if state.active_version:
+            versions.append(f"Installed library {state.active_version}")
+        if state.target_version and state.target_version != state.active_version:
+            versions.append(f"Available library {state.target_version}")
+        self.pack_versions.setText("\n".join(versions))
+        self.pack_versions.setVisible(bool(versions))
         self.maintenance.setVisible(manage)
         self.maintenance.content.setVisible(manage and self.maintenance.isChecked())
-        if not state.running:
-            start = self.pack_buttons["Download library"]
-            start.setText("Update library" if state.installed else "Resume download" if state.total_bytes or state.total_shards else "Retry download" if state.phase == "failed" else "Download library")
-            start.show()
-            for action in ["Check files", "Remove"]:
-                self.pack_buttons[action].setVisible(manage)
-        else:
-            if state.phase in {"downloading", "paused"}:
-                pause = self.pack_buttons["Pause"]
-                pause.setText("Resume" if state.paused else "Pause")
-                pause.show()
-            if state.phase in {"preparing", "downloading", "paused"}:
-                self.pack_buttons["Cancel download"].show()
+        self.pack_buttons["Remove"].setVisible(manage)
+        removal_failed = phase == "failed" and "remov" in state.message.casefold()
+        can_check = can_manage and (phase == "installed" or removal_failed and state.installed)
+        self.pack_buttons["Check files"].setVisible(can_check)
+        start = self.pack_buttons["Download library"]
+        download_label = {
+            "update-available": "Update library",
+            "incomplete": "Resume download",
+            "cancelled": "Resume download",
+        }.get(phase, "Download library")
+        if phase == "failed":
+            if "verif" in state.message.casefold():
+                download_label = "Repair library"
+            elif "download" in state.message.casefold():
+                download_label = "Retry download"
+        start.setText(download_label)
+        start.setVisible(can_manage and not can_check)
+        pause = self.pack_buttons["Pause"]
+        pause.setText("Resume" if state.paused else "Pause")
+        pause.setVisible(phase in {"downloading", "paused"})
+        self.pack_buttons["Cancel download"].setVisible(phase in {"preparing", "downloading", "paused"})
 
     def pack_action(self, action):
         from .ui import Dialog
         controller = core._audio_pack_download
         if controller is None:
             return
+        self.pack_error.hide()
         try:
             if action == "Download library":
                 core._complete_audio_pack_onboarding(True)
@@ -574,7 +620,7 @@ class Settings(QDialog):
                     controller.remove()
         except Exception as exc:
             core._record_runtime_diagnostic(str(exc))
-            self.show_feedback("Could not complete this action. Open Troubleshoot audio for details.", True)
+            status(self.pack_error, "Could not complete this action. See Audio playback in Tools for details.", error=True)
         self.refresh_pack()
 
     def request_close(self):
@@ -592,17 +638,23 @@ class Settings(QDialog):
         keep = button("Keep editing", self._finish_prompt)
         discard = button("Discard changes", self._discard_and_close, "danger")
         save = button("Save and close", self._save_and_close, "primary")
-        actions = QHBoxLayout()
-        for control in [keep, discard, save]:
-            actions.addWidget(control)
-        card.body.addLayout(actions)
+        self._prompt_actions = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        for control in (keep, discard, save):
+            self._prompt_actions.addWidget(control)
+        card.body.addLayout(self._prompt_actions)
         body.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
         body.addStretch()
         self._prompt = prompt
         self.workspace_stack.addWidget(prompt)
         self.workspace_stack.setCurrentWidget(prompt)
         apply_fonts(prompt)
+        self._arrange_prompt()
         keep.setFocus()
+
+    def _arrange_prompt(self):
+        actions = self._prompt_actions
+        required = sum(actions.itemAt(i).widget().sizeHint().width() for i in range(actions.count())) + 96
+        actions.setDirection(QBoxLayout.Direction.LeftToRight if self.width() >= required else QBoxLayout.Direction.TopToBottom)
 
     def _finish_prompt(self):
         if self._prompt is None:
