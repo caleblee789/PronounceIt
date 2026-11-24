@@ -4,6 +4,7 @@ import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from pronounceit import main
 from pronounceit.config import PronounceItConfig
@@ -523,11 +524,40 @@ class MainMessageTests(unittest.TestCase):
 
         self.assertEqual(text, "Agranulocytosis")
 
-    def test_native_context_menu_injection_is_retired(self) -> None:
-        source = Path(main.__file__).read_text(encoding="utf-8")
+    def test_native_context_menu_plays_the_captured_reviewer_selection(self) -> None:
+        reviewer = FakeReviewer()
+        webview = FakeWebView("  right bundle branch block, ")
+        reviewer.web = webview
+        mw = types.SimpleNamespace(reviewer=reviewer, state="review")
+        aqt = types.SimpleNamespace(mw=mw)
+        config = PronounceItConfig.from_mapping({"show_native_context_menu": False})
 
-        self.assertNotIn("reviewer_will_show_context_menu.append", source)
-        self.assertNotIn('menu.addMenu("PronounceIt")', source)
+        with patch.dict(sys.modules, {"aqt": aqt}), patch.object(main, "_config", return_value=config):
+            menu = FakeMenu()
+            menu.addAction("Copy")
+            main._on_reviewer_webview_context_menu(webview, menu)
+            self.assertEqual([label for label, _ in menu.actions], ["Copy", "Play audio"])
+            play_audio = menu.actions[-1][1].callback
+            webview._selected_text = ""
+            play_audio()
+            with patch.object(main, "_review_revision", main._review_revision + 1):
+                play_audio()
+
+            no_selection = FakeMenu()
+            main._on_reviewer_webview_context_menu(webview, no_selection)
+            self.assertFalse(no_selection.actions)
+            other_webview = FakeMenu()
+            main._on_reviewer_webview_context_menu(FakeWebView("clozapine"), other_webview)
+            self.assertFalse(other_webview.actions)
+            webview._selected_text = "clozapine"
+            blocked = FakeMenu()
+            config = PronounceItConfig.from_mapping({"allow_on_question_side": False})
+            with patch.object(main, "_config", return_value=config), patch.object(main, "_reviewer_answer_visible", False):
+                main._on_reviewer_webview_context_menu(webview, blocked)
+                play_audio()
+            self.assertFalse(blocked.actions)
+
+        self.assertEqual(webview.scripts, ['window.PronounceIt && window.PronounceIt.playText("right bundle branch block");'])
 
     def test_selected_text_uses_audio_only_javascript_path(self) -> None:
         reviewer = FakeReviewer()

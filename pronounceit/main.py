@@ -195,6 +195,8 @@ def initialize(addon_module: str) -> None:
     mw.addonManager.setWebExports(addon_module, r"web/.*(css|js)")
     gui_hooks.webview_will_set_content.append(_on_webview_will_set_content)
     gui_hooks.webview_did_receive_js_message.append(_on_js_message)
+    if hasattr(gui_hooks, "webview_will_show_context_menu"):
+        gui_hooks.webview_will_show_context_menu.append(_on_reviewer_webview_context_menu)
     if hasattr(gui_hooks, "reviewer_did_show_question"):
         gui_hooks.reviewer_did_show_question.append(_on_reviewer_show_question)
     if hasattr(gui_hooks, "reviewer_did_show_answer"):
@@ -957,6 +959,34 @@ def _selected_text_from_webview(webview: Any) -> str:
         return display_term(str(webview.selectedText()))
     except Exception:
         return ""
+
+
+def _on_reviewer_webview_context_menu(webview: Any, menu: Any) -> None:
+    from aqt import mw
+
+    reviewer = getattr(mw, "reviewer", None)
+    card = getattr(reviewer, "card", None)
+    if (
+        getattr(mw, "state", None) != "review"
+        or card is None
+        or webview is not reviewer.web
+        or not _pronunciation_allowed()
+    ):
+        return
+    selected_text = _selected_text_from_webview(webview)
+    if not selected_text:
+        return
+    revision = _review_revision
+
+    def play_selected() -> None:
+        if (
+            mw.state == "review" and mw.reviewer is reviewer
+            and reviewer.card is card and _review_revision == revision
+        ):
+            _pronounce_text_from_reviewer(selected_text)
+
+    action = menu.addAction("Play audio")
+    action.triggered.connect(play_selected)
 
 
 def _pronounce_text_from_reviewer(selected_text: str) -> None:

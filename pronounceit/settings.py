@@ -246,7 +246,7 @@ class Settings(QDialog):
             self.controls[key] = control
             shortcuts.body.addWidget(FieldRow(title, control, stack_below=280))
         how, instructions = column()
-        instructions.addWidget(label("Hold the key while clicking or selecting a term, or select text first and tap the key. Plain right-click keeps Anki’s menu.", "secondary"))
+        instructions.addWidget(label("Select text, right-click, and choose Play audio. To use a shortcut, hold its key while clicking or selecting text, or tap it after selecting text.", "secondary"))
         disclosure(shortcuts.body, "How to use", how)
         self.shortcut_conflict = label("The quick card takes priority when both shortcuts use the same key.", "warning")
         shortcuts.body.addWidget(self.shortcut_conflict)
